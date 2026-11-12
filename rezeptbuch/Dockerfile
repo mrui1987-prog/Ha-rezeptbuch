@@ -1,0 +1,12 @@
+ARG BUILD_FROM
+FROM ${BUILD_FROM}
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+
+# Datenbank und Einstellungen liegen in /data (wird von HA gesichert)
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8099"]

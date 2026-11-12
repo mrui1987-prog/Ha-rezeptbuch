@@ -1,0 +1,9 @@
+configuration:
+  stations:
+    name: Waagestationen
+    description: >-
+      Je Station: Nummer (1 oder 2), Treiber, IP-Adresse und Port des
+      RS-232/Netzwerk-Konverters (Waveshare-Standardport 4196).
+  log_level:
+    name: Protokollstufe
+    description: Wie ausführlich das Add-on protokolliert.

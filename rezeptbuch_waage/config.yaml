@@ -1,0 +1,25 @@
+name: HA-Rezeptbuch Waage
+version: "0.1.0"
+slug: rezeptbuch_waage
+description: Liest bis zu zwei Waagen über RS-232/Netzwerk-Konverter und meldet Gewicht per MQTT
+url: https://github.com/mrui1987-prog/ha-rezeptbuch
+arch:
+  - aarch64
+  - amd64
+init: false
+services:
+  - mqtt:need
+options:
+  stations:
+    - station: 1
+      driver: kern
+      host: "192.168.1.200"
+      port: 4196
+  log_level: info
+schema:
+  stations:
+    - station: int(1,2)
+      driver: list(kern|simulator)
+      host: str
+      port: port
+  log_level: list(debug|info|warning|error)

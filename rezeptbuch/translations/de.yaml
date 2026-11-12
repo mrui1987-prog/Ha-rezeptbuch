@@ -1,0 +1,7 @@
+configuration:
+  admin_timeout_minutes:
+    name: Admin-Sitzung (Minuten)
+    description: Nach dieser Zeit ohne Eingabe wird der Admin-Bereich automatisch verlassen.
+  log_level:
+    name: Protokollstufe
+    description: Wie ausführlich das Add-on protokolliert.

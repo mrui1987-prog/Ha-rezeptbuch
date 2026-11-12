@@ -1,0 +1,5 @@
+# Macht dieses Repository in Home Assistant als Add-on-Quelle installierbar.
+# Repository: github.com/mrui1987-prog/ha-rezeptbuch
+name: HA-Rezeptbuch
+url: https://github.com/mrui1987-prog/ha-rezeptbuch
+maintainer: Michael
