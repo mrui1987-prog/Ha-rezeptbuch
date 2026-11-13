@@ -1,6 +1,6 @@
 # Modul 02 – Datenbank & Datenmodell (Schritt B: Konzept)
 
-Status: **freigegeben am 13.11.2026 durch Michael** (mit den Antworten zu K1–K6, Abschnitt 10)
+Status: **freigegeben am 13.11.2026 durch Michael** (mit den Antworten zu K1–K6, Abschnitt 10); ergänzt um Stückgewichte und Knetzeit (M02-12, M02-13) am 13.11.2026
 Grundlage: Entscheidungen M02-1 bis M02-11 und K1–K6 vom 13.11.2026 (PROJEKTSTATUS.md, Abschnitt 3), docs/architektur.md, docs/bedienkonzept.md
 
 ## 1. Ziel und Abgrenzung
@@ -44,10 +44,11 @@ Modul 02 liefert: Datenbankverbindung, Migrationsmechanismus, das erste Schema (
 Stammdaten            Rezepte                         Produktion                  System
 ──────────            ───────                         ──────────                  ──────
 raw_material ◄──┐     recipe_group                    production_order            setting
-station         │     recipe ──────────┐              batch (Charge = 1 Teig)     change_log
-                │     recipe_version ◄─┘              batch_item (Soll/Ist)       migration_log
-                │     recipe_version_step             weighing_event
-                └──── recipe_item                     order_item_override
+station         │     recipe ──────────┐              order_piece                 change_log
+                │     recipe_version ◄─┘              order_item_override         migration_log
+                │     recipe_version_step             batch (Charge = 1 Teig)
+                └──── recipe_item                     batch_item (Soll/Ist)
+                      recipe_piece_weight             weighing_event
                       recipe_batch_size
 ```
 
@@ -58,6 +59,8 @@ erDiagram
     recipe_group ||--o{ recipe : gruppiert
     recipe ||--o{ recipe_version : "hat Versionen"
     recipe ||--o{ recipe_batch_size : "Chargengrößen"
+    recipe ||--o{ recipe_piece_weight : "Stückgewichte"
+    production_order ||--o{ order_piece : "Stückzahlen"
     recipe_version ||--o{ recipe_item : "Zeilen"
     recipe_version ||--o{ recipe_version_step : "Schritte"
     raw_material ||--o{ recipe_item : "wird verwendet in"
@@ -140,7 +143,8 @@ Allergene, Nährwerte, Zutatenverzeichnis und Lieferanten-/BÄKO-Artikelnummern 
 | recipe_id | INTEGER | NN, FK → recipe | |
 | version_no | INTEGER | NN, ≥ 1, U zusammen mit recipe_id | fortlaufend 1, 2, 3 … |
 | name | TEXT | NN | Rezeptname dieses Stands |
-| piece_weight_g | INTEGER | > 0 oder leer | Stückgewicht; ohne Wert keine Vorwahl nach Stückzahl |
+| knead_slow_min | INTEGER | ≥ 0 oder leer | Knetzeit langsam in Minuten (z. B. „5+6“ → 5) |
+| knead_fast_min | INTEGER | ≥ 0 oder leer | Knetzeit schnell in Minuten (z. B. „5+6“ → 6) |
 | note | TEXT | | **ein** Hinweistext für das ganze Rezept (z. B. Bestreuung), K3 |
 | note_display | TEXT | NN, `start` / `end`, Standard `end` | Hinweis **zu Beginn** oder **am Ende** der Verwiegung anzeigen (K3) |
 | created_at | TEXT | NN | Datum für die Anzeige „old (n)“ |
@@ -173,12 +177,23 @@ Speichern (M02-4, K4):
 | item_type | TEXT | NN, `raw_material` / `sub_recipe` | Art der Zeile |
 | raw_material_id | INTEGER | FK, nur bei `raw_material` | Rohstoff |
 | sub_recipe_id | INTEGER | FK → recipe, nur bei `sub_recipe` | Unterrezept (Teig in Teig) |
-| amount_g | INTEGER | NN, > 0 | Sollmenge im Grundrezept in ganzen Gramm |
+| amount_g | INTEGER | NN, ≥ 0 | Sollmenge im Grundrezept in ganzen Gramm. **0 = Handzugabe nach Bedarf** (Zutat ohne Menge, z. B. „Vanille/Zitrone“): der Bediener sieht „Handzugabe“, quittiert und entscheidet die Menge selbst (M02-15). Unterrezepte brauchen eine Menge > 0. |
 | tolerance_unit, tolerance_value | TEXT / INTEGER | beide leer oder beide gesetzt | Überschreibt die Rohstoff-Toleranz (R1), ± ein Wert (K1) |
 | step_no | INTEGER | leer erlaubt | Zuordnung zu einem Rezeptschritt |
+| needs_review | INTEGER | NN, 0/1 | Markierung **„*“**: Menge beim Import umgerechnet oder unsicher, vom Betrieb zu prüfen (M02-16) |
 
 Prüfregeln: genau eines von `raw_material_id`, `sub_recipe_id` passend zu `item_type`. **Keine Hinweiszeilen zwischen den Zutaten** – Hinweise stehen im Hinweistext der Rezeptversion (K3). Ein Rezept darf sich nicht selbst als Unterrezept enthalten, auch nicht über Umwege (Prüfung im Rezeptserver, Modul 05).
 Unterrezepte verweisen auf das **Rezept**, nicht auf eine Version. Welche Version des Unterrezepts gilt, wird beim Start des Unterrezept-Auftrags fixiert (R2, R3).
+
+**`recipe_piece_weight`** – mehrere Stückgewichte je Rezept (M02-12), im Admin-Bereich angelegt
+
+| Spalte | Typ | Regeln | Bedeutung |
+|---|---|---|---|
+| id | INTEGER | PK | |
+| recipe_id | INTEGER | NN, FK → recipe | gilt für alle Versionen des Rezepts |
+| label | TEXT | NN, U zusammen mit recipe_id | z. B. „Stück“, „Ballen“, „Ballen Hörnchen“, „Kleines Flitt“ |
+| weight_g | INTEGER | NN, > 0 | Gewicht in Gramm, z. B. 65, 1 550, 2 800, 400 |
+| sort_order | INTEGER | NN | Reihenfolge in der Vorwahl |
 
 **`recipe_batch_size`** – vorkonfigurierte Chargengrößen, nur pro Rezept (M02-1, M02-1c)
 
@@ -189,6 +204,7 @@ Unterrezepte verweisen auf das **Rezept**, nicht auf eine Version. Welche Versio
 | label | TEXT | NN | Tastenbeschriftung, z. B. „Großer Teig“ |
 | kind | TEXT | NN, `weight` / `pieces` | Gesamtgewicht oder Stückzahl |
 | value | INTEGER | NN, > 0 | Gramm bzw. Stück |
+| piece_weight_id | INTEGER | FK → recipe_piece_weight, Pflicht bei `pieces` | welches Stückgewicht gemeint ist (muss zum selben Rezept gehören) |
 | sort_order | INTEGER | NN | Reihenfolge der Tasten |
 
 ### 4.3 Produktion
@@ -219,12 +235,25 @@ Unterrezepte verweisen auf das **Rezept**, nicht auf eine Version. Welche Versio
 | Wert | Bedeutung | basis_value |
 |---|---|---|
 | `total` | Gesamtmenge | Gramm |
-| `pieces` | Stückzahl (braucht Stückgewicht) | Stück |
+| `pieces` | Stückzahlen je Stückgewicht (Tabelle `order_piece`) | Gesamtgewicht in Gramm = Summe Stückzahl × Stückgewicht |
 | `batch_size` | vorkonfigurierte Chargengröße | wird aus `recipe_batch_size` übernommen |
 | `raw_material` | Leitrohstoff, frei gewählte Zutat (z. B. „7 500 g Quark“) | Gramm |
 | `flour_total` | „Mehl gesamt“ (Summe Rohstoffe vom Typ `flour`) | Gramm |
 
 **„Liter gesamt“ (M02-1e):** kein eigener Typ. Der Bediener wählt die Flüssigkeit (z. B. Wasser) als Leitrohstoff und gibt die Menge in Liter ein. Gespeichert wird `basis_type = raw_material`, `basis_value` in Gramm mit **1 l = 1 000 g**, `basis_input_unit = l`.
+
+**`order_piece`** – gewählte Stückzahlen je Stückgewicht (M02-12)
+
+| Spalte | Typ | Regeln | Bedeutung |
+|---|---|---|---|
+| id | INTEGER | PK | |
+| order_id | INTEGER | NN, FK | |
+| piece_weight_id | INTEGER | FK, wird leer, wenn das Stückgewicht im Rezept später gelöscht wird | Herkunft |
+| label | TEXT | NN | Kopie der Bezeichnung |
+| weight_g | INTEGER | NN, > 0 | Kopie des Gewichts |
+| piece_count | INTEGER | NN, > 0 | gewünschte Anzahl |
+
+Beispiel Brötchenteig: 100 × Stück 65 g + 5 × Kleines Flitt 400 g = 8 500 g Gesamtteig.
 
 **`order_item_override`** – Mengenänderung nur für diesen Auftrag (Bedienkonzept Abschnitt 3, z. B. Wasser)
 
@@ -387,9 +416,9 @@ rezeptbuch/
 |---|---|
 | 03 Rohstoffe | `raw_material`, `change_log` |
 | 04 BÄKO-Import | `raw_material` (erweitert per Migration), `change_log` mit Quelle `import` |
-| 05 Rezepte | `recipe*`, `recipe_batch_size`, Versionierung, Trigger |
+| 05 Rezepte | `recipe*`, `recipe_piece_weight`, `recipe_batch_size`, Versionierung, Trigger, Rezeptimport |
 | 06 Berechnung | liest Rezeptversion + Auftrag, schreibt Sollwerte in `batch_item` |
-| 09 Wiegeablauf | `production_order`, `batch`, `batch_item`, `weighing_event` |
+| 09 Wiegeablauf | `production_order`, `order_piece`, `batch`, `batch_item`, `weighing_event` |
 | 11 Chargen | `batch*`, `weighing_event` (nur lesen), `batch_no` |
 | 12 PIN | `setting.pin_hash`, `change_log` |
 | 13 Sicherung | Datei `/data/rezeptbuch.db`, Backup-Funktion aus `migrate.py` |
@@ -411,4 +440,6 @@ rezeptbuch/
 |---|---|
 | 13.11.2026 | Konzept erstellt (Schritt B). |
 | 13.11.2026 | K1–K6 entschieden und eingearbeitet (eine Toleranz, Hinweistext mit Anzeigezeitpunkt statt Textzeilen, Versionsregel); Konzept von Michael freigegeben. |
+| 13.11.2026 | M02-12/M02-13: mehrere Stückgewichte je Rezept (`recipe_piece_weight`), Stückzahlen im Auftrag (`order_piece`), Chargengröße „Stückzahl“ mit Bezug auf ein Stückgewicht, Knetzeit langsam/schnell in der Rezeptversion; Feld `piece_weight_g` entfällt. Eingearbeitet in `0001_initial.sql`, da noch keine Datenbank ausgeliefert ist. Jetzt 18 Tabellen. |
+| 13.11.2026 | M02-15/M02-16: Rezeptzeilen mit 0 g als Handzugabe nach Bedarf; Prüfmarkierung `needs_review` („*“) für beim Import umgerechnete Mengen. Eingearbeitet in `0001_initial.sql`. |
 | 13.11.2026 | Schritt C, Präzisierungen ohne inhaltliche Änderung: `setting` startet leer (Admin-Zeitbegrenzung bleibt in der Add-on-Konfiguration); Mitlöschen der Rezeptbestandteile bei nie verwendeten Rezepten (Abschnitt 5, Punkt 1). Umgesetzt in `0001_initial.sql`. |

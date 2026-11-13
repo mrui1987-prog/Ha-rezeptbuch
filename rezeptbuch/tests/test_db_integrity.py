@@ -170,6 +170,9 @@ def test_closed_order_overrides_locked(conn, started):
     conn.execute("UPDATE production_order SET status = 'done' WHERE id = ?", (order,))
     with raises_db_error("abgeschlossen"):
         conn.execute("UPDATE order_item_override SET amount_g = 650 WHERE order_id = ?", (order,))
+    with raises_db_error("abgeschlossen"):
+        conn.execute("INSERT INTO order_piece (order_id, label, weight_g, piece_count) VALUES (?, 'Stück', 65, 10)",
+                     (order,))
 
 
 def test_used_version_and_order_cannot_be_deleted(conn, started):

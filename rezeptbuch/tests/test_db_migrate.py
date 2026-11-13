@@ -22,7 +22,7 @@ from app.db.migrate import discover, prune_backups
 EXPECTED_TABLES = {
     "station", "raw_material",
     "recipe_group", "recipe", "recipe_version", "recipe_version_step", "recipe_item", "recipe_batch_size",
-    "production_order", "order_item_override", "batch", "batch_item", "weighing_event",
+    "recipe_piece_weight", "production_order", "order_piece", "order_item_override", "batch", "batch_item", "weighing_event",
     "setting", "change_log", "migration_log",
 }
 

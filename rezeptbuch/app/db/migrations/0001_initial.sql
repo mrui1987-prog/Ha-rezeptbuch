@@ -67,7 +67,9 @@ CREATE TABLE recipe_version (
     recipe_id       INTEGER NOT NULL REFERENCES recipe (id) ON DELETE CASCADE,
     version_no      INTEGER NOT NULL CHECK (version_no >= 1),
     name            TEXT    NOT NULL CHECK (length(trim(name)) > 0),
-    piece_weight_g  INTEGER CHECK (piece_weight_g IS NULL OR piece_weight_g > 0),
+    -- Knetzeit in Minuten: langsam + schnell (z. B. „5+6“)
+    knead_slow_min  INTEGER CHECK (knead_slow_min IS NULL OR knead_slow_min >= 0),
+    knead_fast_min  INTEGER CHECK (knead_fast_min IS NULL OR knead_fast_min >= 0),
     note            TEXT,
     note_display    TEXT    NOT NULL DEFAULT 'end' CHECK (note_display IN ('start', 'end')),
     created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -91,12 +93,16 @@ CREATE TABLE recipe_item (
     item_type          TEXT    NOT NULL CHECK (item_type IN ('raw_material', 'sub_recipe')),
     raw_material_id    INTEGER REFERENCES raw_material (id) ON DELETE RESTRICT,
     sub_recipe_id      INTEGER REFERENCES recipe (id) ON DELETE RESTRICT,
-    amount_g           INTEGER NOT NULL CHECK (amount_g > 0),
+    -- 0 = Handzugabe nach Bedarf (Zutat ohne Menge, z. B. „Vanille/Zitrone“); nur bei Rohstoffen
+    amount_g           INTEGER NOT NULL CHECK (amount_g >= 0),
     -- überschreibt die Rohstoff-Toleranz (± ein Wert), beide leer = Rohstoff-Toleranz
     tolerance_unit     TEXT    CHECK (tolerance_unit IS NULL OR tolerance_unit IN ('g', 'percent')),
     tolerance_value    INTEGER CHECK (tolerance_value IS NULL OR tolerance_value >= 0),
     step_no            INTEGER,
+    -- Markierung „*“: Menge beim Import umgerechnet bzw. unsicher, vom Betrieb zu prüfen
+    needs_review       INTEGER NOT NULL DEFAULT 0 CHECK (needs_review IN (0, 1)),
     UNIQUE (recipe_version_id, position),
+    CHECK (item_type = 'raw_material' OR amount_g > 0),
     FOREIGN KEY (recipe_version_id, step_no)
         REFERENCES recipe_version_step (recipe_version_id, step_no) ON DELETE NO ACTION,
     CHECK (
@@ -110,13 +116,26 @@ CREATE TABLE recipe_item (
 CREATE INDEX idx_recipe_item_raw_material ON recipe_item (raw_material_id);
 CREATE INDEX idx_recipe_item_sub_recipe ON recipe_item (sub_recipe_id);
 
-CREATE TABLE recipe_batch_size (
+-- Mehrere Stückgewichte je Rezept (z. B. Stück 65 g, Ballen 1 550 g, Kleines Flitt 400 g)
+CREATE TABLE recipe_piece_weight (
     id          INTEGER PRIMARY KEY,
     recipe_id   INTEGER NOT NULL REFERENCES recipe (id) ON DELETE CASCADE,
     label       TEXT    NOT NULL CHECK (length(trim(label)) > 0),
-    kind        TEXT    NOT NULL CHECK (kind IN ('weight', 'pieces')),
-    value       INTEGER NOT NULL CHECK (value > 0),
-    sort_order  INTEGER NOT NULL DEFAULT 0
+    weight_g    INTEGER NOT NULL CHECK (weight_g > 0),
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (recipe_id, label)
+);
+
+CREATE TABLE recipe_batch_size (
+    id               INTEGER PRIMARY KEY,
+    recipe_id        INTEGER NOT NULL REFERENCES recipe (id) ON DELETE CASCADE,
+    label            TEXT    NOT NULL CHECK (length(trim(label)) > 0),
+    kind             TEXT    NOT NULL CHECK (kind IN ('weight', 'pieces')),
+    value            INTEGER NOT NULL CHECK (value > 0),
+    -- bei Stückzahl: welches Stückgewicht des Rezepts gemeint ist
+    piece_weight_id  INTEGER REFERENCES recipe_piece_weight (id) ON DELETE CASCADE,
+    sort_order       INTEGER NOT NULL DEFAULT 0,
+    CHECK ((kind = 'pieces') = (piece_weight_id IS NOT NULL))
 );
 
 CREATE INDEX idx_recipe_batch_size_recipe ON recipe_batch_size (recipe_id);
@@ -134,6 +153,7 @@ CREATE TABLE production_order (
     parent_item_position   INTEGER,
     basis_type             TEXT    NOT NULL
         CHECK (basis_type IN ('total', 'pieces', 'batch_size', 'raw_material', 'flour_total')),
+    -- Gramm; bei 'pieces' die Summe aus order_piece (Stückzahl × Stückgewicht)
     basis_value            INTEGER NOT NULL CHECK (basis_value > 0),
     basis_raw_material_id  INTEGER REFERENCES raw_material (id) ON DELETE RESTRICT,
     basis_input_unit       TEXT    NOT NULL DEFAULT 'g' CHECK (basis_input_unit IN ('g', 'kg', 'l', 'pcs')),
@@ -156,6 +176,18 @@ CREATE TABLE production_order (
 
 CREATE INDEX idx_production_order_list ON production_order (status, planned_date, list_position);
 CREATE INDEX idx_production_order_parent ON production_order (parent_order_id);
+
+-- Gewählte Stückzahlen je Stückgewicht (Kopie von Bezeichnung und Gewicht)
+CREATE TABLE order_piece (
+    id               INTEGER PRIMARY KEY,
+    order_id         INTEGER NOT NULL REFERENCES production_order (id) ON DELETE CASCADE,
+    piece_weight_id  INTEGER REFERENCES recipe_piece_weight (id) ON DELETE SET NULL,
+    label            TEXT    NOT NULL CHECK (length(trim(label)) > 0),
+    weight_g         INTEGER NOT NULL CHECK (weight_g > 0),
+    piece_count      INTEGER NOT NULL CHECK (piece_count > 0)
+);
+
+CREATE INDEX idx_order_piece_order ON order_piece (order_id);
 
 CREATE TABLE order_item_override (
     id             INTEGER PRIMARY KEY,
@@ -498,4 +530,42 @@ BEFORE DELETE ON order_item_override
 WHEN (SELECT status FROM production_order WHERE id = OLD.order_id) IN ('done', 'cancelled')
 BEGIN
     SELECT RAISE(ABORT, 'Auftrag ist abgeschlossen und kann nicht geändert werden');
+END;
+
+CREATE TRIGGER trg_order_piece_closed_insert
+BEFORE INSERT ON order_piece
+WHEN (SELECT status FROM production_order WHERE id = NEW.order_id) IN ('done', 'cancelled')
+BEGIN
+    SELECT RAISE(ABORT, 'Auftrag ist abgeschlossen und kann nicht geändert werden');
+END;
+
+CREATE TRIGGER trg_order_piece_closed_update
+BEFORE UPDATE ON order_piece
+WHEN (SELECT status FROM production_order WHERE id = OLD.order_id) IN ('done', 'cancelled')
+BEGIN
+    SELECT RAISE(ABORT, 'Auftrag ist abgeschlossen und kann nicht geändert werden');
+END;
+
+CREATE TRIGGER trg_order_piece_closed_delete
+BEFORE DELETE ON order_piece
+WHEN (SELECT status FROM production_order WHERE id = OLD.order_id) IN ('done', 'cancelled')
+BEGIN
+    SELECT RAISE(ABORT, 'Auftrag ist abgeschlossen und kann nicht geändert werden');
+END;
+
+-- Chargengröße „Stückzahl“ muss ein Stückgewicht desselben Rezepts verwenden
+CREATE TRIGGER trg_batch_size_piece_recipe_insert
+BEFORE INSERT ON recipe_batch_size
+WHEN NEW.piece_weight_id IS NOT NULL
+ AND (SELECT recipe_id FROM recipe_piece_weight WHERE id = NEW.piece_weight_id) IS NOT NEW.recipe_id
+BEGIN
+    SELECT RAISE(ABORT, 'Das Stückgewicht gehört nicht zu diesem Rezept');
+END;
+
+CREATE TRIGGER trg_batch_size_piece_recipe_update
+BEFORE UPDATE ON recipe_batch_size
+WHEN NEW.piece_weight_id IS NOT NULL
+ AND (SELECT recipe_id FROM recipe_piece_weight WHERE id = NEW.piece_weight_id) IS NOT NEW.recipe_id
+BEGIN
+    SELECT RAISE(ABORT, 'Das Stückgewicht gehört nicht zu diesem Rezept');
 END;

@@ -48,14 +48,17 @@ Jedes Tablet öffnet fest sein eigenes Dashboard. Ein Wechsel zur anderen Statio
 
 1. Rezeptliste mit Nummer und Name, blättern seitenweise.
 2. Suchfilter über Zahlen-/Buchstabenfeld, umschaltbar Name/Nummer.
-3. Rezept antippen → Menge festlegen. Gespeichert ist immer das **Grundrezept**; das Arbeitsrezept entsteht aus dieser Auswahl:
-   - **Gesamtgewicht** oder **Stückzahl** (das andere rechnet sich mit; Stückzahl nur, wenn ein Stückgewicht hinterlegt ist)
-   - **Chargengröße:** vorkonfigurierte Tasten des Rezepts (z. B. „Großer Teig“)
-   - **Leitrohstoff:** beliebige Zutat wählen und vorhandene Menge eingeben (z. B. „nur noch 7 500 g Quark“). Eingabe in g, kg oder **Liter** (1 l = 1 000 g, für Literrezepte)
-   - **Mehl gesamt:** Summe aller Mehle (Bäckerprozent-Bezug)
+3. Rezept antippen → **Menge festlegen.** Gespeichert ist immer das **Grundrezept**; das Arbeitsrezept entsteht aus dieser Auswahl:
+   - **Stückzahlen je Stückgewicht:** Für jedes im Rezept angelegte Stückgewicht die gewünschte Anzahl eingeben (z. B. Brötchenteig: 100 × Stück 65 g, 5 × Kleines Flitt 400 g). Daraus ergibt sich der Gesamtteig.
+   - oder **Gesamtteig** direkt in g/kg
+   - oder **Chargengröße:** vorkonfigurierte Tasten des Rezepts (z. B. „Großer Teig“)
+   - oder **Mehl gesamt:** Summe aller Mehle (Bäckerprozent-Bezug)
    - dazu **Anzahl Teige** (jeder Teig wird eine eigene Charge)
-4. Optional: Haken **„Fest an dieser Waage“** setzen. Ohne Haken ist das Rezept zwischen den Stationen übergebbar (siehe Abschnitt 4a). Der Haken ist eine einmalige, freiwillige Einstellung – es gibt keine wiederkehrende Abfrage.
-5. OK → Rezept steht im Startbild bereit.
+4. Bestätigen → **Rezeptübersicht** mit allen benötigten Zutaten und Mengen.
+   - Die Übersicht zeigt auch die **Knetzeit**.
+   - Hier kann der Bediener einen **Leitrohstoff** wählen und dessen Menge festsetzen (z. B. „nur noch 7 500 g Quark“, Eingabe in g, kg oder **Liter**, 1 l = 1 000 g für Literrezepte). Die übrigen Zutaten werden entsprechend angepasst.
+5. Optional: Haken **„Fest an dieser Waage“** setzen. Ohne Haken ist das Rezept zwischen den Stationen übergebbar (siehe Abschnitt 4a). Der Haken ist eine einmalige, freiwillige Einstellung – es gibt keine wiederkehrende Abfrage.
+6. Bestätigen → es geht direkt in die **Wiegeansicht** (Abschnitt 4).
 
 Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte und alte Rezeptversionen erscheinen in der Vorwahl nicht.
 
@@ -75,7 +78,7 @@ Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte und alte Rezeptv
 
 ## 4. Wiegeansicht (Kern des Systems)
 
-- **Rezepthinweis:** Je nach Einstellung im Rezept erscheint der Hinweistext **zu Beginn** oder **am Ende** der Verwiegung.
+- **Rezepthinweis:** Ist im Rezept „zu Beginn“ eingestellt, erscheint der Hinweistext zusätzlich vor der ersten Zutat. Am Ende steht er immer in der Abschlussanzeige.
 - Zutatennummer und -name groß oben.
 - Links **Soll**, rechts **Ist** in großen Ziffern.
 - Darunter ein Balken: **gelb** zu wenig, **grün** in Toleranz, **rot** zu viel.
@@ -92,7 +95,9 @@ Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte und alte Rezeptv
 - **Waagenausfall:** Kurze Aussetzer werden ignoriert. Kommen 45 Sekunden lang keine Werte, geht der Auftrag automatisch auf Pause und das Tablet zeigt einen Hinweis.
 - **Sollhandzugabe:** Zutaten mit Toleranz 0 werden nicht gewogen, nur quittiert (z. B. bereits vorbereitetes Quellstück). Anzeige mit gelbem Hinweis „Handzugabe“.
 - **Gebinde und Stück:** Hat der Rohstoff eine Gebinde-/Stückgröße (z. B. Mehlsack 25 kg, Ei 55 g), wird die Sollmenge aufgeteilt: Die **ganzen Einheiten** werden als Anzahl angezeigt und **von Hand quittiert** (z. B. „1 Sack“, „10 Eier“), danach wird der **Rest gewogen** (z. B. 30 kg = 1 Sack + 5 kg wiegen; 580 g Eier = 10 Eier + 30 g wiegen). Es wird nicht auf ganze Stück gerundet. Die volle Toleranz des Rohstoffs gilt für den Rest.
-- Rezept ist fertig, wenn alle Zutaten quittiert sind → Eintrag im Chargenprotokoll, Rückkehr zum Startbild.
+- **Handzugabe nach Bedarf:** Zutaten mit Menge 0 g (z. B. „Vanille/Zitrone“) erscheinen mit dem Hinweis „Handzugabe“. Der Bediener entscheidet als Fachmann selbst, wie viel, und quittiert.
+- Rezept ist fertig, wenn alle Zutaten quittiert sind → Eintrag im Chargenprotokoll.
+- **Abschlussanzeige „Wiegevorgang abgeschlossen“:** erscheint **immer** nach der Verwiegung und zeigt die **Hinweise aus dem Rezept** und die **Knetzeiten** (langsam + schnell). Sie bleibt stehen, bis der Bediener sie **quittiert**; danach Rückkehr zum Startbild.
 - Im Chargenprotokoll steht pro Zutat die **Quittierungsart**: „automatisch (stabil)“, „manuell (nicht stabil)“, „Handzugabe“, „abgehakt, nicht gewogen“, „übergangen“.
 
 ## 4a. Rezept zwischen Stationen übergeben (Pause)
@@ -148,9 +153,11 @@ Die Admin-Sitzung endet automatisch nach einer einstellbaren Zeit ohne Eingabe u
 
 ### Rezept
 
-- Kopf: Nummer (reine Zahl), Name, Stückgewicht, Gesamtgewicht (rechnet sich aus den Zeilen)
+- Kopf: Nummer (reine Zahl), Name, Gesamtgewicht (rechnet sich aus den Zeilen)
+- **Stückgewichte:** beliebig viele je Rezept, jeweils Bezeichnung und Gewicht (z. B. Brötchenteig: Stück 65 g, Ballen 1 550 g, Ballen Hörnchen 2 800 g, Hörnchen 93 g, Kleines Flitt 400 g, Große Flitt 600 g)
+- **Knetzeit:** Minuten langsam + Minuten schnell (z. B. „5+6“)
 - **Hinweistext:** ein Text für das ganze Rezept (z. B. Bestreuung, Deko), mit Einstellung **„zu Beginn“** oder **„am Ende“ der Verwiegung anzeigen**. Keine Hinweiszeilen zwischen den Zutaten.
-- **Chargengrößen:** feste Mengen für die Vorwahl, nur für dieses Rezept (Bezeichnung, Gewicht oder Stückzahl)
+- **Chargengrößen:** feste Mengen für die Vorwahl, nur für dieses Rezept (Bezeichnung, Gewicht oder Stückzahl eines seiner Stückgewichte)
 - Status-Taste **Öffentlich / Gesperrt** (gesperrte Rezepte sind in der Produktion unsichtbar)
 - Zeilen: Rohstoff oder Unterrezept, Sollmenge in Gramm, Toleranz (übernimmt die Toleranz des Rohstoffs, kann pro Zeile überschrieben werden; keine Waagenauswahl pro Zeile – ein Teig läuft immer an der Station, die ihn gerade übernommen hat)
 - Zeilen einfügen, verschieben, löschen
@@ -176,4 +183,6 @@ Diese Funktionen des Vorbilds braucht eine kleine Backstube mit Tischwaagen nich
 |-------|----------|
 | 12.11.2026 | Bedienkonzept mit getrennten Stations-Dashboards, Produktionsliste und Pause-Übergabe festgelegt. |
 | 12.11.2026 | An Review-Entscheidungen R1–R6 angepasst: Toleranz pro Rohstoff (Gramm/Prozent), Versionsfixierung beim Start, Unterrezepte als verknüpfte Aufträge, automatische/manuelle Quittung, automatische Tara, Waagenausfall nach 45 s, Quittierungsart im Protokoll. |
+| 13.11.2026 | Abschlussanzeige „Wiegevorgang abgeschlossen“ mit Rezepthinweisen und Knetzeiten bis zur Quittierung; Knetzeit in der Rezeptübersicht; Handzugabe nach Bedarf für Zutaten mit 0 g. |
+| 13.11.2026 | Vorwahl-Ablauf nach Vorgabe von Michael: Stückzahlen je Stückgewicht oder Gesamtteig → Rezeptübersicht mit optionalem Leitrohstoff → Wiegeansicht. Mehrere Stückgewichte und Knetzeit im Rezept. |
 | 13.11.2026 | An Entscheidungen aus Modul 02 angepasst: Vorwahl mit Chargengrößen, Leitrohstoff (auch in Liter) und „Mehl gesamt“; Gebinde-/Stückgröße mit Handquittierung und Rest wiegen; eine Toleranz ±; Rohstofftyp „Text“ entfällt, stattdessen ein Hinweistext pro Rezept mit Anzeige zu Beginn oder am Ende; Versionsregel beim Speichern; Archivieren statt Löschen; Version gilt für alle Teige eines Auftrags. |

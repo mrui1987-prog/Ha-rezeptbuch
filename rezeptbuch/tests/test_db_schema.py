@@ -100,11 +100,27 @@ def test_item_is_raw_material_or_sub_recipe(conn):
             "VALUES (?, 4, 'text', 100)", (version,))  # keine Textzeilen (K3)
 
 
-def test_item_amount_whole_grams_positive(conn):
-    rm = add_raw_material(conn, 1)
+def test_item_amount_zero_means_hand_addition(conn):
+    """Zutat ohne Menge wird mit 0 g angelegt: Handzugabe nach Bedarf (M02-15)."""
+    vanille = add_raw_material(conn, 1, name="Vanille/Zitrone")
+    sub, _ = add_recipe(conn, 99, "Sauerteig")
     _, version = add_recipe(conn, 10)
+    add_item(conn, version, 1, vanille, amount_g=0)
     with raises_db_error("CHECK"):
-        add_item(conn, version, 1, rm, amount_g=0)
+        add_item(conn, version, 2, vanille, amount_g=-5)
+    with raises_db_error("CHECK"):
+        add_item(conn, version, 3, sub_recipe_id=sub, amount_g=0)  # Unterrezept braucht Menge
+
+
+def test_item_review_marker(conn):
+    """Beim Import umgerechnete Mengen werden mit „*“ markiert (M02-16)."""
+    oil = add_raw_material(conn, 1, name="Öl")
+    _, version = add_recipe(conn, 10)
+    item = add_item(conn, version, 1, oil, amount_g=368)
+    assert conn.execute("SELECT needs_review FROM recipe_item WHERE id = ?", (item,)).fetchone()[0] == 0
+    conn.execute("UPDATE recipe_item SET needs_review = 1 WHERE id = ?", (item,))
+    with raises_db_error("CHECK"):
+        conn.execute("UPDATE recipe_item SET needs_review = 2 WHERE id = ?", (item,))
 
 
 def test_item_tolerance_override_needs_unit_and_value(conn):
@@ -154,8 +170,9 @@ def test_unused_recipe_can_be_deleted_completely(conn):
                  "VALUES (?, 1, 'raw_material', ?, 100, 1)", (version, rm))
     conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value) VALUES (?, 'Groß', 'weight', 25000)",
                  (recipe,))
+    conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Stück', 65)", (recipe,))
     conn.execute("DELETE FROM recipe WHERE id = ?", (recipe,))
-    for table in ("recipe_version", "recipe_item", "recipe_version_step", "recipe_batch_size"):
+    for table in ("recipe_version", "recipe_item", "recipe_version_step", "recipe_batch_size", "recipe_piece_weight"):
         assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
 
 
@@ -167,13 +184,68 @@ def test_recipe_used_as_sub_recipe_cannot_be_deleted(conn):
         conn.execute("DELETE FROM recipe WHERE id = ?", (sub,))
 
 
+def test_several_piece_weights_per_recipe(conn):
+    recipe, _ = add_recipe(conn, 10, "Brötchenteig")
+    for i, (label, weight) in enumerate([("Stück", 65), ("Ballen", 1550), ("Ballen Hörnchen", 2800),
+                                         ("Hörnchen", 93), ("Kleines Flitt", 400), ("Große Flitt", 600)]):
+        conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g, sort_order) VALUES (?, ?, ?, ?)",
+                     (recipe, label, weight, i))
+    assert conn.execute("SELECT count(*) FROM recipe_piece_weight WHERE recipe_id = ?", (recipe,)).fetchone()[0] == 6
+    with raises_db_error("UNIQUE"):
+        conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Stück', 70)", (recipe,))
+    with raises_db_error("CHECK"):
+        conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Null', 0)", (recipe,))
+
+
 def test_batch_sizes_weight_or_pieces(conn):
     recipe, _ = add_recipe(conn, 10)
-    conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value) VALUES (?, '60 Stück', 'pieces', 60)",
+    other, _ = add_recipe(conn, 20)
+    piece = conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Stück', 65)",
+                         (recipe,)).lastrowid
+    foreign = conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Stück', 80)",
+                           (other,)).lastrowid
+    conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value) VALUES (?, 'Großer Teig', 'weight', 25000)",
                  (recipe,))
+    conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id) "
+                 "VALUES (?, '60 Stück', 'pieces', 60, ?)", (recipe, piece))
+    with raises_db_error("CHECK"):  # Stückzahl ohne Stückgewicht
+        conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value) VALUES (?, 'x', 'pieces', 60)",
+                     (recipe,))
+    with raises_db_error("nicht zu diesem Rezept"):
+        conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id) "
+                     "VALUES (?, 'y', 'pieces', 60, ?)", (recipe, foreign))
     with raises_db_error("CHECK"):
         conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value) VALUES (?, 'x', 'liter', 1)",
                      (recipe,))
+
+
+def test_knead_times_slow_and_fast(conn):
+    _, version = add_recipe(conn, 10)
+    conn.execute("UPDATE recipe_version SET knead_slow_min = 5, knead_fast_min = 6 WHERE id = ?", (version,))
+    with raises_db_error("CHECK"):
+        conn.execute("UPDATE recipe_version SET knead_fast_min = -1 WHERE id = ?", (version,))
+
+
+def test_order_with_several_piece_weights(conn):
+    recipe, _ = add_recipe(conn, 10, "Brötchenteig")
+    stueck = conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Stück', 65)",
+                          (recipe,)).lastrowid
+    flitt = conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g) VALUES (?, 'Kleines Flitt', 400)",
+                         (recipe,)).lastrowid
+    # 100 Stück à 65 g + 5 kleine Flitt à 400 g = 8 500 g Gesamtteig
+    order = add_order(conn, recipe, basis_type="pieces", basis_value=8500, basis_input_unit="pcs")
+    conn.execute("INSERT INTO order_piece (order_id, piece_weight_id, label, weight_g, piece_count) "
+                 "VALUES (?, ?, 'Stück', 65, 100)", (order, stueck))
+    conn.execute("INSERT INTO order_piece (order_id, piece_weight_id, label, weight_g, piece_count) "
+                 "VALUES (?, ?, 'Kleines Flitt', 400, 5)", (order, flitt))
+    total = conn.execute("SELECT sum(weight_g * piece_count) FROM order_piece WHERE order_id = ?", (order,)).fetchone()[0]
+    assert total == 8500
+    # Stückgewicht im Rezept später gelöscht: Auftrag behält Bezeichnung und Gewicht
+    conn.execute("DELETE FROM recipe_piece_weight WHERE id = ?", (flitt,))
+    row = conn.execute("SELECT piece_weight_id, label, weight_g FROM order_piece WHERE label = 'Kleines Flitt'").fetchone()
+    assert tuple(row) == (None, "Kleines Flitt", 400)
+    with raises_db_error("CHECK"):
+        conn.execute("INSERT INTO order_piece (order_id, label, weight_g, piece_count) VALUES (?, 'x', 65, 0)", (order,))
 
 
 # --- Aufträge ---------------------------------------------------------------
