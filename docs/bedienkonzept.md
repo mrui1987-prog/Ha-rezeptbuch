@@ -48,11 +48,16 @@ Jedes Tablet öffnet fest sein eigenes Dashboard. Ein Wechsel zur anderen Statio
 
 1. Rezeptliste mit Nummer und Name, blättern seitenweise.
 2. Suchfilter über Zahlen-/Buchstabenfeld, umschaltbar Name/Nummer.
-3. Rezept antippen → Menge eingeben: **Stückzahl** oder **Gesamtgewicht** (das andere rechnet sich mit), dazu Anzahl Teige.
+3. Rezept antippen → Menge festlegen. Gespeichert ist immer das **Grundrezept**; das Arbeitsrezept entsteht aus dieser Auswahl:
+   - **Gesamtgewicht** oder **Stückzahl** (das andere rechnet sich mit; Stückzahl nur, wenn ein Stückgewicht hinterlegt ist)
+   - **Chargengröße:** vorkonfigurierte Tasten des Rezepts (z. B. „Großer Teig“)
+   - **Leitrohstoff:** beliebige Zutat wählen und vorhandene Menge eingeben (z. B. „nur noch 7 500 g Quark“). Eingabe in g, kg oder **Liter** (1 l = 1 000 g, für Literrezepte)
+   - **Mehl gesamt:** Summe aller Mehle (Bäckerprozent-Bezug)
+   - dazu **Anzahl Teige** (jeder Teig wird eine eigene Charge)
 4. Optional: Haken **„Fest an dieser Waage“** setzen. Ohne Haken ist das Rezept zwischen den Stationen übergebbar (siehe Abschnitt 4a). Der Haken ist eine einmalige, freiwillige Einstellung – es gibt keine wiederkehrende Abfrage.
 5. OK → Rezept steht im Startbild bereit.
 
-Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte erscheinen in der Vorwahl nicht.
+Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte und alte Rezeptversionen erscheinen in der Vorwahl nicht.
 
 ## 3. Produktionsliste (Tagesplan) – Teil von Version 1
 
@@ -63,13 +68,14 @@ Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte erscheinen in de
 - Mehrere Aufträge nacheinander anlegen (Rezept, Menge, Anzahl Teige). Anlegen auch im Admin-Bereich, z. B. am Vorabend.
 - Auftrag antippen → Detailansicht mit allen Zutaten.
 - Wasser- oder Mengenänderung im Auftrag gilt **nur für diesen Auftrag**, nicht für das Rezept.
-- Die Rezeptversion wird erst beim **Start der Verwiegung** fixiert. Wird das Rezept nach dem Anlegen des Auftrags geändert, gilt die Änderung noch für den Auftrag.
+- Die Rezeptversion wird erst beim **Start der Verwiegung des ersten Teigs** fixiert und gilt dann für alle Teige des Auftrags. Wird das Rezept nach dem Anlegen des Auftrags, aber vor dem Start geändert, gilt die Änderung noch für den Auftrag.
 - Enthält ein Auftrag ein Unterrezept (Vorteig, Brühstück, Sauerteig), ist das Unterrezept ein **eigener, mit dem Hauptteig verknüpfter Auftrag**. Im Hauptteig ist es mit **+** markiert und muss zuerst abgearbeitet oder abgehakt werden. Danach wird aus dem + ein grüner Haken. Das Unterrezept kann auch an der anderen Station gewogen werden.
 - **Unterrezept abhaken:** Wurde es schon anderweitig hergestellt, wird es als erledigt abgehakt. Alle Ist-Werte werden dann mit den Soll-Werten gefüllt (Protokoll: „abgehakt, nicht gewogen“), und es geht mit dem nächsten Rohstoff weiter.
 - Löschen eines Auftrags mit Sicherheitsabfrage.
 
 ## 4. Wiegeansicht (Kern des Systems)
 
+- **Rezepthinweis:** Je nach Einstellung im Rezept erscheint der Hinweistext **zu Beginn** oder **am Ende** der Verwiegung.
 - Zutatennummer und -name groß oben.
 - Links **Soll**, rechts **Ist** in großen Ziffern.
 - Darunter ein Balken: **gelb** zu wenig, **grün** in Toleranz, **rot** zu viel.
@@ -85,7 +91,7 @@ Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte erscheinen in de
   - **Übersicht** (alle Zutaten des Rezepts mit Haken für erledigte)
 - **Waagenausfall:** Kurze Aussetzer werden ignoriert. Kommen 45 Sekunden lang keine Werte, geht der Auftrag automatisch auf Pause und das Tablet zeigt einen Hinweis.
 - **Sollhandzugabe:** Zutaten mit Toleranz 0 werden nicht gewogen, nur quittiert (z. B. bereits vorbereitetes Quellstück). Anzeige mit gelbem Hinweis „Handzugabe“.
-- **Gebinde:** Bei großen Mengen wird ein ganzer Sack als Handzugabe quittiert, nur der Rest wird gewogen (z. B. 30 kg = 25-kg-Sack + 5 kg wiegen).
+- **Gebinde und Stück:** Hat der Rohstoff eine Gebinde-/Stückgröße (z. B. Mehlsack 25 kg, Ei 55 g), wird die Sollmenge aufgeteilt: Die **ganzen Einheiten** werden als Anzahl angezeigt und **von Hand quittiert** (z. B. „1 Sack“, „10 Eier“), danach wird der **Rest gewogen** (z. B. 30 kg = 1 Sack + 5 kg wiegen; 580 g Eier = 10 Eier + 30 g wiegen). Es wird nicht auf ganze Stück gerundet. Die volle Toleranz des Rohstoffs gilt für den Rest.
 - Rezept ist fertig, wenn alle Zutaten quittiert sind → Eintrag im Chargenprotokoll, Rückkehr zum Startbild.
 - Im Chargenprotokoll steht pro Zutat die **Quittierungsart**: „automatisch (stabil)“, „manuell (nicht stabil)“, „Handzugabe“, „abgehakt, nicht gewogen“, „übergangen“.
 
@@ -119,8 +125,8 @@ Jede Station lässt ihre Waage ohne Rezept als normale Waage benutzen (Tara, Wie
 
 | Bereich | Inhalt |
 |---------|--------|
-| Rohstoffliste | anlegen, bearbeiten, löschen |
-| Rezepturen | anlegen, bearbeiten, kopieren, sperren, löschen |
+| Rohstoffliste | anlegen, bearbeiten, archivieren, löschen |
+| Rezepturen | anlegen, bearbeiten, kopieren, sperren, archivieren, löschen |
 | Produktionsliste | Aufträge anlegen, Station zuweisen, löschen |
 | Waagen | Station 1/2 einrichten, Waage zuordnen, Verbindung prüfen |
 | Export / Druck | Rezepte und Rohstoffe als CSV exportieren oder drucken |
@@ -128,22 +134,27 @@ Jede Station lässt ihre Waage ohne Rezept als normale Waage benutzen (Tara, Wie
 
 Die Admin-Sitzung endet automatisch nach einer einstellbaren Zeit ohne Eingabe und kehrt zum Startbild zurück.
 
+**Archivieren statt Löschen:** Rohstoffe und Rezepte, die schon in einem Rezept, Auftrag oder einer Charge vorkommen, werden archiviert. Endgültig löschen lässt sich nur, was nie verwendet wurde.
+
 ### Rohstoff
 
 - Herkunft: aus **BÄKO Datenlink** übernommen oder **eigener Rohstoff** (die Rohstoffdatenbank ist um eigene Rohstoffe erweiterbar)
-- Nummer (eindeutig, das System arbeitet mit der Nummer, nicht mit dem Namen)
+- Nummer (reine Zahl, eindeutig; das System arbeitet mit der Nummer, nicht mit dem Namen)
 - Name
-- **Toleranz pro Rohstoff** (Plus/Minus), Einheit wählbar: **Gramm** (Standard) oder **Prozent** der Sollmenge. Gilt als Vorgabe für Rezeptzeilen.
-- Typ: Standard, Mehl (für Bäckerprozente), Text (nur Hinweiszeile im Rezept)
-- Gebindemenge (z. B. 25 kg)
-- Löschen nur möglich, wenn der Rohstoff in keinem Rezept mehr steht; sonst Liste der betroffenen Rezepte
+- **Toleranz pro Rohstoff:** ein Wert, gilt nach unten und oben gleich (±). Einheit wählbar: **Gramm** (Standard) oder **Prozent** der Sollmenge (auf Zehntelprozent, z. B. 2,5 %). Gilt als Vorgabe für Rezeptzeilen.
+- Typ: Standard oder Mehl (zählt zu „Mehl gesamt“ und zu den Bäckerprozenten)
+- **Gebinde-/Stückgröße** in Gramm mit Bezeichnung (z. B. „Sack“ 25 000 g, „Ei“ 55 g), optional
+- Allergene, Nährwerte, Zutatenverzeichnis und Lieferanten folgen, sobald klar ist, was BÄKO Datenlink liefert
 
 ### Rezept
 
-- Kopf: Nummer, Name, Stückgewicht, Stückzahl, Gesamtgewicht (rechnet sich aus den Zeilen), Hinweistext
+- Kopf: Nummer (reine Zahl), Name, Stückgewicht, Gesamtgewicht (rechnet sich aus den Zeilen)
+- **Hinweistext:** ein Text für das ganze Rezept (z. B. Bestreuung, Deko), mit Einstellung **„zu Beginn“** oder **„am Ende“ der Verwiegung anzeigen**. Keine Hinweiszeilen zwischen den Zutaten.
+- **Chargengrößen:** feste Mengen für die Vorwahl, nur für dieses Rezept (Bezeichnung, Gewicht oder Stückzahl)
 - Status-Taste **Öffentlich / Gesperrt** (gesperrte Rezepte sind in der Produktion unsichtbar)
-- Zeilen: Rohstoff, Sollmenge, Toleranz (übernimmt die Toleranz des Rohstoffs, kann pro Zeile überschrieben werden; keine Waagenauswahl pro Zeile – ein Teig läuft immer an der Station, die ihn gerade übernommen hat)
+- Zeilen: Rohstoff oder Unterrezept, Sollmenge in Gramm, Toleranz (übernimmt die Toleranz des Rohstoffs, kann pro Zeile überschrieben werden; keine Waagenauswahl pro Zeile – ein Teig läuft immer an der Station, die ihn gerade übernommen hat)
 - Zeilen einfügen, verschieben, löschen
+- **Speichern und Versionen:** Wurde das Rezept seit der letzten Änderung schon gewogen, entsteht beim Speichern automatisch eine neue Version. Sonst fragt das System, ob eine neue Version angelegt oder die aktuelle überschrieben werden soll. Alte Stände erscheinen als „old (1)“, „old (2)“ … mit Datum, nur im Admin-Bereich.
 - **Rezept kopieren:** neue Nummer → Name ändern → entsperren
 - **Unterrezept (Teig in Teig):** ein Rezept kann als Zutat in anderen Rezepten verwendet werden; farblich abgesetzt
 - **Rezeptschritte:** Zeilen können Schritten zugeordnet werden (z. B. erst Vorteig, dann Hauptteig); farblich gruppiert
@@ -165,3 +176,4 @@ Diese Funktionen des Vorbilds braucht eine kleine Backstube mit Tischwaagen nich
 |-------|----------|
 | 12.11.2026 | Bedienkonzept mit getrennten Stations-Dashboards, Produktionsliste und Pause-Übergabe festgelegt. |
 | 12.11.2026 | An Review-Entscheidungen R1–R6 angepasst: Toleranz pro Rohstoff (Gramm/Prozent), Versionsfixierung beim Start, Unterrezepte als verknüpfte Aufträge, automatische/manuelle Quittung, automatische Tara, Waagenausfall nach 45 s, Quittierungsart im Protokoll. |
+| 13.11.2026 | An Entscheidungen aus Modul 02 angepasst: Vorwahl mit Chargengrößen, Leitrohstoff (auch in Liter) und „Mehl gesamt“; Gebinde-/Stückgröße mit Handquittierung und Rest wiegen; eine Toleranz ±; Rohstofftyp „Text“ entfällt, stattdessen ein Hinweistext pro Rezept mit Anzeige zu Beginn oder am Ende; Versionsregel beim Speichern; Archivieren statt Löschen; Version gilt für alle Teige eines Auftrags. |
