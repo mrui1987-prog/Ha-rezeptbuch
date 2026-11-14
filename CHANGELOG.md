@@ -1,6 +1,6 @@
 # Änderungen
 
-## 0.2.0 – in Arbeit (Modul 02: Datenbank & Datenmodell)
+## 0.2.0 – freigegeben am 14.11.2026 (Modul 02: Datenbank & Datenmodell)
 
 - Rezeptserver: SQLite-Datenbank `/data/rezeptbuch.db` mit 18 Tabellen (Rohstoffe, Rezepte mit Versionen, Stückgewichten und Knetzeit, Chargengrößen, Aufträge, Chargen pro Teig, Wiegeprotokoll, Änderungsprotokoll)
 - Mehrere Stückgewichte je Rezept, Knetzeit, Handzugabe nach Bedarf (0 g), Prüfmarkierung „*“ für importierte Mengen
