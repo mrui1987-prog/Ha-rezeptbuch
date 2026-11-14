@@ -1,6 +1,6 @@
 # Modul 02 – Datenbank & Datenmodell (Schritt B: Konzept)
 
-Status: **freigegeben am 13.11.2026 durch Michael** (mit den Antworten zu K1–K6, Abschnitt 10); ergänzt um Stückgewichte und Knetzeit (M02-12, M02-13) am 13.11.2026
+Status: **freigegeben am 13.11.2026 durch Michael** (mit den Antworten zu K1–K6, Abschnitt 10); ergänzt um Stückgewichte und Knetzeit (M02-12, M02-13) am 13.11.2026 und um zwei Sperren für abgeschlossene Aufträge und die Versionsprüfung beim Anlegen (Freigabebericht B1, B3) am 14.11.2026
 Grundlage: Entscheidungen M02-1 bis M02-11 und K1–K6 vom 13.11.2026 (PROJEKTSTATUS.md, Abschnitt 3), docs/architektur.md, docs/bedienkonzept.md
 
 ## 1. Ziel und Abgrenzung
@@ -368,7 +368,9 @@ Damit sind auch Änderungen an Rohstoffen nachvollziehbar, ohne Rohstoffe zu ver
 4. **Unveränderliche Chargen:** Ist eine Charge `done` oder `cancelled`, verhindern Trigger Änderungen an `batch_item` und `weighing_event` dieser Charge.
 5. **Prüfregeln (`CHECK`)** für alle Auswahlfelder, Gewichte ≥ 0, Pflichtfelder je Zeilenart.
 6. **Gramm als Ganzzahl** verhindert Rundungsfehler bei Summen.
-7. **Integritätsprüfung beim Start:** `PRAGMA integrity_check` und `PRAGMA foreign_key_check`. Bei Fehlern startet der Rezeptserver nicht im Produktionsmodus und meldet den Fehler im Log und an der Oberfläche.
+7. **Integritätsprüfung beim Start:** `PRAGMA integrity_check` und `PRAGMA foreign_key_check`. Bei Fehlern startet der Rezeptserver nicht im Produktionsmodus und meldet den Fehler im Log und an der Oberfläche. *Stand 0.2.0:* Log und Health-Status 503 (`/api/v1/health`); die Anzeige an der Oberfläche samt Hinweis auf die Wiederherstellung folgt mit Modul 10 (Freigabebericht B5).
+8. **Abgeschlossene Aufträge (B1):** Hat ein Auftrag den Status `done` oder `cancelled`, kann sein Status nicht mehr geändert werden (kein Wiederöffnen), und es kann keine neue Charge dazu angelegt werden. Mengenänderungen und Stückzahlen sind dort bereits gesperrt.
+9. **Neues Rezept ohne Version (B3):** Beim Anlegen eines Rezepts darf `current_version_id` nicht gesetzt sein. Die aktuelle Version wird erst nach dem Anlegen von Rezept und Version gesetzt; dabei prüft ein Trigger, dass die Version zum Rezept gehört.
 
 ## 6. Migrationen
 
@@ -389,14 +391,16 @@ rezeptbuch/
 │   └── db/
 │       ├── __init__.py
 │       ├── connection.py      Verbindung öffnen, PRAGMAs setzen
+│       ├── errors.py          Fehlerklassen (DatabaseError, MigrationError, DatabaseIntegrityError)
 │       ├── migrate.py         Migrationen + Sicherungskopie
 │       ├── integrity.py       Prüfungen beim Start
 │       └── migrations/
 │           └── 0001_initial.sql
 └── tests/
+    ├── conftest.py            gemeinsame Fixtures und Hilfen zum Anlegen von Testdaten
     ├── test_db_migrate.py     leere DB → aktueller Stand, Sicherung, Abbruch bei Fehler
     ├── test_db_schema.py      Tabellen, Schlüssel, Prüfregeln
-    └── test_db_integrity.py   Trigger (Versionen, Chargen), Löschsperren
+    └── test_db_integrity.py   Trigger (Versionen, Chargen, abgeschlossene Aufträge), Löschsperren
 ```
 
 ## 8. Fehlerbehandlung
@@ -443,3 +447,4 @@ rezeptbuch/
 | 13.11.2026 | M02-12/M02-13: mehrere Stückgewichte je Rezept (`recipe_piece_weight`), Stückzahlen im Auftrag (`order_piece`), Chargengröße „Stückzahl“ mit Bezug auf ein Stückgewicht, Knetzeit langsam/schnell in der Rezeptversion; Feld `piece_weight_g` entfällt. Eingearbeitet in `0001_initial.sql`, da noch keine Datenbank ausgeliefert ist. Jetzt 18 Tabellen. |
 | 13.11.2026 | M02-15/M02-16: Rezeptzeilen mit 0 g als Handzugabe nach Bedarf; Prüfmarkierung `needs_review` („*“) für beim Import umgerechnete Mengen. Eingearbeitet in `0001_initial.sql`. |
 | 13.11.2026 | Schritt C, Präzisierungen ohne inhaltliche Änderung: `setting` startet leer (Admin-Zeitbegrenzung bleibt in der Add-on-Konfiguration); Mitlöschen der Rezeptbestandteile bei nie verwendeten Rezepten (Abschnitt 5, Punkt 1). Umgesetzt in `0001_initial.sql`. |
+| 14.11.2026 | Freigabebericht (docs/freigabebericht-modul02.md): **B1** zwei Trigger (Status abgeschlossener Aufträge unveränderlich, keine neue Charge zu abgeschlossenem Auftrag) und **B3** ein Trigger (neues Rezept ohne aktuelle Version); damit 38 Trigger. Eingearbeitet in `0001_initial.sql`, da noch keine Datenbank ausgeliefert ist. 6 neue Tests, GitHub-Testlauf erfolgreich. Außerdem Verzeichnisstruktur (Abschnitt 7) um `errors.py` und `conftest.py` ergänzt und Stand der Fehleranzeige (Abschnitt 5, Punkt 7) präzisiert. |

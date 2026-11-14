@@ -4,7 +4,7 @@
 
 - Rezeptserver: SQLite-Datenbank `/data/rezeptbuch.db` mit 18 Tabellen (Rohstoffe, Rezepte mit Versionen, Stückgewichten und Knetzeit, Chargengrößen, Aufträge, Chargen pro Teig, Wiegeprotokoll, Änderungsprotokoll)
 - Mehrere Stückgewichte je Rezept, Knetzeit, Handzugabe nach Bedarf (0 g), Prüfmarkierung „*“ für importierte Mengen
-- Datenintegrität über Fremdschlüssel, Prüfregeln und Trigger (fixierte Rezeptversionen und abgeschlossene Chargen unveränderlich, Protokolle nur anhängbar)
+- Datenintegrität über Fremdschlüssel, Prüfregeln und Trigger (fixierte Rezeptversionen, abgeschlossene Chargen und abgeschlossene Aufträge unveränderlich, Protokolle nur anhängbar; 38 Trigger)
 - Nummerierte Migrationen mit automatischer Sicherungskopie und Rückrollen bei Fehlern
 - Integritätsprüfung beim Start; bei Fehlern meldet `/api/v1/health` Status 503
 - Doku: `docs/datenmodell.md` neu, `docs/bedienkonzept.md` an die Entscheidungen aus Modul 02 angepasst
