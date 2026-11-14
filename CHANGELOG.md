@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.3.1 – Korrektur nach Praxisprüfung
+
+- Startseite war im dunklen Home-Assistant-Design weiß auf weiß (Text unsichtbar); jetzt fester heller Hintergrund mit gut sichtbarer Taste „Admin-Bereich“, ebenso für die Admin-Seite
+
 ## 0.3.0 – in Prüfung (Modul 03: Rohstoff- & Zutatenverwaltung)
 
 - Rohstoffverwaltung unter `/admin`: anlegen, bearbeiten, archivieren, wiederherstellen, löschen (nur wenn unbenutzt), Suche, CSV-Export

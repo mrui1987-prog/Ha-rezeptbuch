@@ -1,6 +1,6 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.3.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.3.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
@@ -85,10 +85,16 @@ def index() -> str:
     return f"""<!doctype html>
 <html lang="de">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HA-Rezeptbuch</title></head>
-<body style="font-family:sans-serif;padding:2rem">
+<title>HA-Rezeptbuch</title>
+<style>
+  :root {{ color-scheme: light; }}
+  body {{ font-family: sans-serif; padding: 2rem; margin: 0; background: #fafafa; color: #222; }}
+  a.button {{ display: inline-block; padding: .8rem 1.4rem; background: #2563eb; color: #fff;
+             text-decoration: none; border-radius: 6px; font-size: 1.1rem; }}
+</style></head>
+<body>
 <h1>HA-Rezeptbuch</h1>
 <p>Version {__version__} – im Aufbau.</p>
-<p><a href="admin/login">Admin-Bereich (Rohstoffe)</a></p>
+<p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe)</a></p>
 </body>
 </html>"""
