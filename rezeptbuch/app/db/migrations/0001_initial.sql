@@ -309,6 +309,15 @@ BEGIN
     SELECT RAISE(ABORT, 'Die Version gehört nicht zu diesem Rezept');
 END;
 
+-- Ein neues Rezept hat noch keine Version: die aktuelle Version kann erst gesetzt werden,
+-- wenn das Rezept und seine Version existieren (Prüfung beim Ändern siehe oben)
+CREATE TRIGGER trg_recipe_current_version_insert
+BEFORE INSERT ON recipe
+WHEN NEW.current_version_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'Ein neues Rezept hat noch keine Version');
+END;
+
 -- Rezept darf sich nicht direkt selbst als Unterrezept enthalten
 -- (Umwege über andere Rezepte prüft der Rezeptserver, Modul 05)
 CREATE TRIGGER trg_recipe_item_no_self_insert
@@ -404,6 +413,21 @@ BEGIN
     SELECT RAISE(ABORT, 'Die Version gehört nicht zum Rezept des Auftrags')
     WHERE NEW.recipe_version_id IS NOT NULL
       AND (SELECT recipe_id FROM recipe_version WHERE id = NEW.recipe_version_id) IS NOT NEW.recipe_id;
+END;
+
+-- Abgeschlossene Aufträge: Status bleibt, keine neuen Chargen
+CREATE TRIGGER trg_order_closed_status
+BEFORE UPDATE OF status ON production_order
+WHEN OLD.status IN ('done', 'cancelled') AND NEW.status IS NOT OLD.status
+BEGIN
+    SELECT RAISE(ABORT, 'Auftrag ist abgeschlossen und kann nicht wieder geöffnet werden');
+END;
+
+CREATE TRIGGER trg_batch_closed_order_insert
+BEFORE INSERT ON batch
+WHEN (SELECT status FROM production_order WHERE id = NEW.order_id) IN ('done', 'cancelled')
+BEGIN
+    SELECT RAISE(ABORT, 'Auftrag ist abgeschlossen, es kann keine Charge mehr angelegt werden');
 END;
 
 -- Fixieren im Auftrag sperrt die Version automatisch

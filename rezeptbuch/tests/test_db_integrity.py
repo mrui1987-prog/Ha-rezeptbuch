@@ -175,6 +175,54 @@ def test_closed_order_overrides_locked(conn, started):
                      (order,))
 
 
+def test_closed_order_cannot_be_reopened(conn, started):
+    order = started["order"]
+    conn.execute("UPDATE production_order SET status = 'done', finished_at = '2026-11-14T05:00:00Z' WHERE id = ?",
+                 (order,))
+    for status in ("open", "in_progress", "cancelled"):
+        with raises_db_error("nicht wieder geöffnet"):
+            conn.execute("UPDATE production_order SET status = ? WHERE id = ?", (status, order))
+    # gleicher Status bleibt unverändert möglich (kein Wechsel)
+    conn.execute("UPDATE production_order SET status = 'done' WHERE id = ?", (order,))
+    assert conn.execute("SELECT status FROM production_order WHERE id = ?", (order,)).fetchone()[0] == "done"
+
+
+def test_cancelled_order_cannot_be_reopened(conn, started):
+    order = started["order"]
+    conn.execute("UPDATE production_order SET status = 'cancelled' WHERE id = ?", (order,))
+    with raises_db_error("nicht wieder geöffnet"):
+        conn.execute("UPDATE production_order SET status = 'in_progress' WHERE id = ?", (order,))
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_no_new_batch_for_closed_order(conn, started, status):
+    order, version = started["order"], started["version"]
+    conn.execute("UPDATE production_order SET status = ? WHERE id = ?", (status, order))
+    with raises_db_error("keine Charge mehr"):
+        conn.execute(
+            "INSERT INTO batch (batch_no, order_id, dough_index, recipe_version_id, status) "
+            "VALUES ('T-2', ?, 2, ?, 'running')", (order, version))
+
+
+def test_open_order_still_accepts_batches_and_status_changes(conn, started):
+    order, version = started["order"], started["version"]
+    conn.execute(
+        "INSERT INTO batch (batch_no, order_id, dough_index, recipe_version_id, status) "
+        "VALUES ('T-2', ?, 2, ?, 'running')", (order, version))
+    conn.execute("UPDATE production_order SET status = 'open' WHERE id = ?", (order,))
+    conn.execute("UPDATE production_order SET status = 'in_progress' WHERE id = ?", (order,))
+
+
+def test_new_recipe_cannot_start_with_version(conn):
+    _, foreign_version = add_recipe(conn, 10)
+    with raises_db_error("noch keine Version"):
+        conn.execute("INSERT INTO recipe (number, locked, current_version_id) VALUES (11, 0, ?)",
+                     (foreign_version,))
+    # ohne Version anlegen und danach setzen bleibt der normale Weg
+    recipe, version = add_recipe(conn, 12)
+    assert conn.execute("SELECT current_version_id FROM recipe WHERE id = ?", (recipe,)).fetchone()[0] == version
+
+
 def test_used_version_and_order_cannot_be_deleted(conn, started):
     with raises_db_error():
         conn.execute("DELETE FROM recipe WHERE id = ?", (started["recipe"],))
