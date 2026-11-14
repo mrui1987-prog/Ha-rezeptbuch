@@ -1,0 +1,161 @@
+"""Eingabeprüfung für Rohstoffe (Modul 03, Regeln R03-2 bis R03-6).
+
+Reine Python-Prüfung ohne Webserver-Bibliothek, damit Modul 05 (Rezeptimport)
+und Modul 04 (BÄKO-Import) dieselben Regeln nutzen können.
+
+Die Eingabe kommt mit Anzeigewerten (``tolerance`` in Gramm oder Prozent);
+das Ergebnis enthält die Spaltenwerte der Tabelle ``raw_material``
+(``tolerance_value`` in Gramm bzw. Zehntelprozent, K2).
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
+
+from ..errors import ValidationError
+
+TYPES = ("standard", "flour")
+TOLERANCE_UNITS = ("g", "percent")
+
+MAX_NAME = 100
+MAX_DISPLAY_NAME = 60
+MAX_UNIT_LABEL = 30
+MAX_GRAMS = 1_000_000          # Obergrenze für Toleranz und Gebindegröße in Gramm
+MAX_PERCENT_TENTHS = 1000      # 100,0 %
+
+
+def normalize_text(value: str) -> str:
+    """Entfernt Leerzeichen am Rand und zieht doppelte Leerzeichen zusammen."""
+    return " ".join(value.split())
+
+
+def _text(value, field: str, label: str, *, required: bool, max_len: int) -> str | None:
+    if value is None:
+        text = ""
+    elif isinstance(value, str):
+        text = normalize_text(value)
+    else:
+        raise ValidationError(f"{label} muss ein Text sein.", field=field)
+    if not text:
+        if required:
+            raise ValidationError(f"{label} ist ein Pflichtfeld.", field=field)
+        return None
+    if len(text) > max_len:
+        raise ValidationError(f"{label} darf höchstens {max_len} Zeichen lang sein.", field=field)
+    return text
+
+
+def _whole_number(value, field: str, label: str) -> int | None:
+    """Ganze Zahl aus Zahl oder Ziffern-Text; leer ergibt None."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, bool):
+        raise ValidationError(f"{label} muss eine ganze Zahl sein.", field=field)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    raise ValidationError(f"{label} muss eine ganze Zahl sein.", field=field)
+
+
+def parse_tolerance(value, unit: str) -> int:
+    """Wandelt die eingegebene Toleranz in den Spaltenwert um (g oder Zehntelprozent).
+
+    Gramm: ganze Zahl ≥ 0. Prozent: auf Zehntel genau (Komma oder Punkt), 0 bis 100,0.
+    0 bedeutet „Sollhandzugabe“ (nur quittieren, nicht wiegen).
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise ValidationError("Toleranz ist ein Pflichtfeld.", field="tolerance")
+    if isinstance(value, bool):
+        raise ValidationError("Toleranz muss eine Zahl sein.", field="tolerance")
+    try:
+        number = Decimal(str(value).strip().replace(",", "."))
+    except InvalidOperation:
+        raise ValidationError("Toleranz muss eine Zahl sein.", field="tolerance") from None
+    if not number.is_finite():
+        raise ValidationError("Toleranz muss eine Zahl sein.", field="tolerance")
+    if number < 0:
+        raise ValidationError("Toleranz darf nicht negativ sein.", field="tolerance")
+
+    if unit == "g":
+        if number != number.to_integral_value():
+            raise ValidationError("Toleranz in Gramm muss eine ganze Zahl sein.", field="tolerance")
+        grams = int(number)
+        if grams > MAX_GRAMS:
+            raise ValidationError(f"Toleranz darf höchstens {MAX_GRAMS} g betragen.", field="tolerance")
+        return grams
+
+    tenths = number * 10
+    if tenths != tenths.to_integral_value():
+        raise ValidationError("Toleranz in Prozent muss auf Zehntelprozent genau sein (z. B. 2,5).", field="tolerance")
+    tenths_int = int(tenths)
+    if tenths_int > MAX_PERCENT_TENTHS:
+        raise ValidationError("Toleranz in Prozent darf höchstens 100 betragen.", field="tolerance")
+    return tenths_int
+
+
+def tolerance_display(unit: str, value: int) -> int | float:
+    """Spaltenwert → Anzeigewert (Gramm ganz, Prozent mit einer Nachkommastelle)."""
+    return value if unit == "g" else value / 10
+
+
+def validate(data: dict, *, base: dict | None = None) -> dict:
+    """Prüft Eingabe und liefert die Spaltenwerte.
+
+    ``base`` sind die bisherigen Anzeigewerte beim Bearbeiten; die Eingabe überschreibt sie.
+    Ohne ``base`` (Anlegen) sind Name und Toleranz Pflicht; die Nummer darf fehlen
+    (dann vergibt der Dienst die nächste freie).
+    """
+    if not isinstance(data, dict):
+        raise ValidationError("Ungültige Eingabe.")
+    merged = dict(base) if base else {}
+    for key in ("number", "name", "display_name", "type", "tolerance_unit", "tolerance",
+                "unit_size_g", "unit_label"):
+        if key in data:
+            merged[key] = data[key]
+
+    if base is not None and "tolerance_unit" in data and "tolerance" not in data \
+            and data["tolerance_unit"] != base.get("tolerance_unit"):
+        raise ValidationError(
+            "Bei geänderter Toleranzeinheit bitte auch den Toleranzwert angeben.", field="tolerance")
+
+    number = _whole_number(merged.get("number"), "number", "Nummer")
+    if number is not None and number <= 0:
+        raise ValidationError("Nummer muss eine ganze Zahl größer 0 sein.", field="number")
+    if number is not None and number > 2_000_000_000:
+        raise ValidationError("Nummer ist zu groß.", field="number")
+
+    name = _text(merged.get("name"), "name", "Name", required=True, max_len=MAX_NAME)
+    display_name = _text(merged.get("display_name"), "display_name", "Kurzname", required=False,
+                         max_len=MAX_DISPLAY_NAME)
+
+    type_ = merged.get("type") or "standard"
+    if type_ not in TYPES:
+        raise ValidationError("Typ muss „standard“ oder „flour“ (Mehl) sein.", field="type")
+
+    unit = merged.get("tolerance_unit") or "g"
+    if unit not in TOLERANCE_UNITS:
+        raise ValidationError("Toleranzeinheit muss „g“ oder „percent“ sein.", field="tolerance_unit")
+    tolerance_value = parse_tolerance(merged.get("tolerance"), unit)
+
+    unit_size = _whole_number(merged.get("unit_size_g"), "unit_size_g", "Gebindegröße")
+    unit_label = _text(merged.get("unit_label"), "unit_label", "Gebindebezeichnung", required=False,
+                       max_len=MAX_UNIT_LABEL)
+    if unit_size is not None and not 0 < unit_size <= MAX_GRAMS:
+        raise ValidationError(f"Gebindegröße muss zwischen 1 und {MAX_GRAMS} g liegen.", field="unit_size_g")
+    if (unit_size is None) != (unit_label is None):
+        raise ValidationError("Gebindegröße und Gebindebezeichnung gehören zusammen (z. B. 55 g „Ei“).",
+                              field="unit_label" if unit_size is not None else "unit_size_g")
+
+    return {
+        "number": number,
+        "name": name,
+        "display_name": display_name,
+        "type": type_,
+        "tolerance_unit": unit,
+        "tolerance_value": tolerance_value,
+        "unit_size_g": unit_size,
+        "unit_label": unit_label,
+    }

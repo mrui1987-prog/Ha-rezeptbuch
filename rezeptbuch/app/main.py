@@ -1,28 +1,41 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.2.0: Statusseite, Health-Endpunkt und Datenbank (Modul 02).
-Beim Start wird die Datenbank geöffnet, geprüft und migriert.
+Stand 0.3.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+und PIN-Schutz (Modul 03). Beim Start wird die Datenbank geöffnet, geprüft und
+migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
 import logging
+import sqlite3
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import __version__
-from .db import DatabaseError, init_database
+from .auth.pin import ensure_default_pin
+from .auth.router import router as auth_router
+from .auth.sessions import AdminSessions
+from .db import DatabaseError, default_db_path, init_database
+from .errors import ServiceError
+from .raw_materials.router import router as raw_materials_router
+from .settings import admin_timeout_minutes, load_options
+from .web.router import router as web_router
 
 logger = logging.getLogger("rezeptbuch")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.db = None
+    app.state.db = None          # Verbindung nur für Start und Tests; Anfragen nutzen deps.get_db
+    app.state.db_path = None
     app.state.db_error = None
+    app.state.sessions = AdminSessions(timeout_minutes=admin_timeout_minutes(load_options()))
     try:
         app.state.db = init_database()
-    except DatabaseError as exc:
+        app.state.db_path = default_db_path()
+        ensure_default_pin(app.state.db)       # Probebetrieb mit PIN 1234, solange keine PIN gesetzt ist
+    except (DatabaseError, sqlite3.DatabaseError) as exc:
         # Kein Produktionsbetrieb mit fehlerhafter Datenbank (docs/datenmodell.md, Abschnitt 8)
         logger.error("Datenbank nicht betriebsbereit: %s", exc)
         app.state.db_error = str(exc)
@@ -32,6 +45,27 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HA-Rezeptbuch", version=__version__, lifespan=lifespan)
+
+
+@app.exception_handler(ServiceError)
+async def service_error_handler(request: Request, exc: ServiceError):
+    return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def database_busy_handler(request: Request, exc: sqlite3.OperationalError):
+    text = str(exc).lower()
+    if "locked" in text or "busy" in text:
+        return JSONResponse(status_code=503, content={
+            "detail": "Die Datenbank ist gerade beschäftigt. Bitte noch einmal versuchen.",
+            "code": "database_busy"})
+    logger.exception("Datenbankfehler bei %s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Interner Datenbankfehler.", "code": "database_error"})
+
+
+app.include_router(auth_router)
+app.include_router(raw_materials_router)
+app.include_router(web_router)
 
 
 @app.get("/api/v1/health")
@@ -55,5 +89,6 @@ def index() -> str:
 <body style="font-family:sans-serif;padding:2rem">
 <h1>HA-Rezeptbuch</h1>
 <p>Version {__version__} – im Aufbau.</p>
+<p><a href="admin/login">Admin-Bereich (Rohstoffe)</a></p>
 </body>
 </html>"""

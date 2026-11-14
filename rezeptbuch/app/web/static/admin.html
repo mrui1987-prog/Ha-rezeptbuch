@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch – Admin</title>
+<style>
+  /* Bewusst schlicht: Gestaltung folgt in Modul 10 */
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; }
+  main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
+  button { font-size: 1rem; padding: .5rem .9rem; margin: .15rem; cursor: pointer; }
+  input, select { font-size: 1rem; padding: .4rem; box-sizing: border-box; }
+  label { display: block; margin: .5rem 0 .15rem; font-weight: bold; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #ccc; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  tr.archived td { color: #888; background: #f3f3f3; }
+  .hidden { display: none; }
+  #probe { background: #c62828; color: #fff; font-weight: bold; text-align: center; padding: .6rem; }
+  .msg { margin: .6rem 0; padding: .5rem .7rem; border-radius: 4px; }
+  .msg.error { background: #fdecea; color: #8a1c13; border: 1px solid #f5c2bd; }
+  .msg.info { background: #e8f1fb; color: #14406b; border: 1px solid #b9d3ee; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .5rem 0; }
+  .toolbar .grow { flex: 1 1 12rem; }
+  #keypad { display: grid; grid-template-columns: repeat(3, 5rem); gap: .4rem; margin: 1rem 0; }
+  #keypad button { height: 3.5rem; font-size: 1.4rem; margin: 0; }
+  #pin { font-size: 1.6rem; letter-spacing: .4rem; width: 16rem; text-align: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .5rem 1rem; }
+  .panel { background: #fff; border: 1px solid #ccc; padding: .8rem 1rem; margin: .8rem 0; }
+  .small { font-size: .9rem; color: #555; }
+</style>
+</head>
+<body>
+<div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<main>
+
+  <!-- Ansicht 1: PIN-Eingabe -->
+  <section id="view-login">
+    <h1>Admin-Bereich</h1>
+    <p>Bitte PIN eingeben.</p>
+    <form id="login-form" autocomplete="off">
+      <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="16" aria-label="PIN">
+      <div id="keypad"></div>
+      <button type="submit" id="login-submit">Anmelden</button>
+    </form>
+    <div id="login-msg" class="msg error hidden" role="alert"></div>
+  </section>
+
+  <!-- Ansicht 2: Rohstoffliste -->
+  <section id="view-list" class="hidden">
+    <h1>Rohstoffe</h1>
+    <div class="toolbar">
+      <button id="btn-new">Neuer Rohstoff</button>
+      <input id="search" class="grow" type="search" placeholder="Suchen (Nummer, Name, Kurzname)" aria-label="Suchen">
+      <label style="margin:0;font-weight:normal"><input id="show-archived" type="checkbox"> archivierte zeigen</label>
+      <button id="btn-export">CSV-Export</button>
+      <button id="btn-logout">Abmelden</button>
+    </div>
+    <div id="list-msg" class="msg hidden" role="alert"></div>
+
+    <div id="form-panel" class="panel hidden">
+      <h2 id="form-title" style="font-size:1.1rem;margin:.2rem 0">Rohstoff</h2>
+      <form id="form" autocomplete="off">
+        <div class="grid">
+          <div><label for="f-number">Nummer</label><input id="f-number" inputmode="numeric" style="width:100%"></div>
+          <div><label for="f-name">Name</label><input id="f-name" maxlength="100" style="width:100%"></div>
+          <div><label for="f-display">Kurzname (Anzeige an der Station, optional)</label>
+               <input id="f-display" maxlength="60" style="width:100%"></div>
+          <div><label for="f-type">Typ</label>
+               <select id="f-type" style="width:100%"><option value="standard">Standard</option><option value="flour">Mehl</option></select></div>
+          <div><label for="f-tol">Toleranz (±, Pflichtfeld)</label>
+               <div style="display:flex;gap:.4rem">
+                 <input id="f-tol" inputmode="decimal" style="flex:1;min-width:0">
+                 <select id="f-tol-unit"><option value="g">g</option><option value="percent">%</option></select>
+               </div></div>
+          <div><label for="f-unit-size">Gebinde-/Stückgröße in g (optional)</label>
+               <input id="f-unit-size" inputmode="numeric" style="width:100%"></div>
+          <div><label for="f-unit-label">Gebinde-/Stückbezeichnung (z. B. Ei, Sack)</label>
+               <input id="f-unit-label" maxlength="30" style="width:100%"></div>
+        </div>
+        <p class="small">Toleranz 0 = Handzugabe (nur quittieren, nicht wiegen). Bei der Verwiegung wird nie enger als 1 g gerechnet.</p>
+        <div id="similar-msg" class="msg info hidden"></div>
+        <div id="form-msg" class="msg error hidden" role="alert"></div>
+        <button type="submit" id="form-save">Speichern</button>
+        <button type="button" id="form-cancel">Abbrechen</button>
+      </form>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Nr.</th><th>Name</th><th>Kurzname</th><th>Typ</th><th>Toleranz</th><th>Gebinde/Stück</th><th>Herkunft</th><th>Status</th><th>Aktionen</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p id="empty" class="small hidden">Keine Rohstoffe gefunden.</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// Adresse der Schnittstelle aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
+const API = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/") + "api/v1/";
+const SESSION_KEY = "rezeptbuch_admin_session";
+const $ = (id) => document.getElementById(id);
+
+let token = null;
+try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+let editingId = null;        // null = neuer Rohstoff
+let searchTimer = null;
+let similarTimer = null;
+
+function setToken(value) {
+  token = value;
+  try {
+    if (value) sessionStorage.setItem(SESSION_KEY, value); else sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) { /* Speicher nicht verfügbar: Sitzung gilt nur bis zum Neuladen */ }
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (token) headers["X-Rezeptbuch-Session"] = token;
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch (e) {
+    const err = new Error("Keine Verbindung zum Rezeptserver.");
+    err.status = 0; err.data = {};
+    throw err;
+  }
+  if (opts.raw && res.ok) return res;
+  let data = null;
+  if (res.status !== 204) { try { data = await res.json(); } catch (e) { data = null; } }
+  if (!res.ok) {
+    let text = data && data.detail;
+    if (typeof text !== "string") text = "Ungültige Eingabe (Fehler " + res.status + ").";
+    const err = new Error(text);
+    err.status = res.status; err.data = data || {};
+    throw err;
+  }
+  return data;
+}
+
+function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
+function showMsg(id, text) { const el = $(id); el.textContent = text || ""; el.classList.toggle("hidden", !text); }
+
+function showView(name) {
+  show("view-login", name === "login");
+  show("view-list", name === "list");
+}
+
+function backToLogin(message) {
+  setToken(null);
+  closeForm();
+  showView("login");
+  showMsg("login-msg", message || "");
+  $("pin").value = "";
+  $("pin").focus();
+}
+
+// Fehler einer Aktion: abgelaufene Sitzung führt zurück zur PIN-Eingabe
+function handleError(err, target) {
+  if (err.status === 401) { backToLogin("Sitzung abgelaufen. Bitte neu anmelden."); return; }
+  showMsg(target || "list-msg", err.message);
+}
+
+// ---- Probebetrieb-Balken --------------------------------------------------------
+
+async function loadInfo() {
+  try {
+    const info = await api("system/info");
+    show("probe", info.pin_is_default === true);
+  } catch (e) {
+    show("probe", false);
+    if (!token) showMsg("login-msg", e.message);
+  }
+}
+
+// ---- Anmeldung ------------------------------------------------------------------
+
+function buildKeypad() {
+  const pad = $("keypad");
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "←"].forEach((key) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = key;
+    b.addEventListener("click", () => {
+      const field = $("pin");
+      if (key === "C") field.value = "";
+      else if (key === "←") field.value = field.value.slice(0, -1);
+      else if (field.value.length < 16) field.value += key;
+    });
+    pad.appendChild(b);
+  });
+}
+
+$("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showMsg("login-msg", "");
+  const pin = $("pin").value;
+  if (!pin) { showMsg("login-msg", "Bitte die PIN eingeben."); return; }
+  $("login-submit").disabled = true;
+  try {
+    const result = await api("admin/login", { method: "POST", body: { pin: pin } });
+    setToken(result.session);
+    show("probe", result.pin_is_default === true);
+    $("pin").value = "";
+    showView("list");
+    await loadList();
+  } catch (err) {
+    $("pin").value = "";
+    showMsg("login-msg", err.message);
+  } finally {
+    $("login-submit").disabled = false;
+  }
+});
+
+$("btn-logout").addEventListener("click", async () => {
+  try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
+  backToLogin("");
+});
+
+// ---- Liste ----------------------------------------------------------------------
+
+function cell(row, text) {
+  const td = document.createElement("td");
+  td.textContent = text;
+  row.appendChild(td);
+  return td;
+}
+
+function toleranceText(item) {
+  if (item.tolerance_unit === "percent") return item.tolerance.toFixed(1).replace(".", ",") + " %";
+  return item.tolerance === 0 ? "0 g (Handzugabe)" : item.tolerance + " g";
+}
+
+function actionButton(label, handler) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = label;
+  b.addEventListener("click", handler);
+  return b;
+}
+
+async function loadList() {
+  showMsg("list-msg", "");
+  const query = new URLSearchParams();
+  if ($("search").value.trim()) query.set("search", $("search").value.trim());
+  if ($("show-archived").checked) query.set("include_archived", "true");
+  try {
+    const items = await api("raw-materials" + (query.toString() ? "?" + query.toString() : ""));
+    renderRows(items);
+  } catch (err) { handleError(err); }
+}
+
+function renderRows(items) {
+  const body = $("rows");
+  body.textContent = "";
+  items.forEach((item) => {
+    const tr = document.createElement("tr");
+    if (item.archived) tr.className = "archived";
+    cell(tr, String(item.number));
+    cell(tr, item.name);
+    cell(tr, item.display_name || "");
+    cell(tr, item.type === "flour" ? "Mehl" : "Standard");
+    cell(tr, toleranceText(item));
+    cell(tr, item.unit_size_g ? item.unit_size_g + " g " + item.unit_label : "");
+    cell(tr, item.source === "baeko" ? "BÄKO" : "eigen");
+    cell(tr, item.archived ? "archiviert" : "aktiv");
+    const actions = document.createElement("td");
+    actions.appendChild(actionButton("Bearbeiten", () => openForm(item)));
+    if (item.archived) actions.appendChild(actionButton("Wiederherstellen", () => act(item, "restore")));
+    else actions.appendChild(actionButton("Archivieren", () => act(item, "archive")));
+    actions.appendChild(actionButton("Löschen", () => remove(item)));
+    tr.appendChild(actions);
+    body.appendChild(tr);
+  });
+  show("empty", items.length === 0);
+}
+
+async function act(item, action) {
+  showMsg("list-msg", "");
+  try {
+    await api("admin/raw-materials/" + item.id + "/" + action, { method: "POST" });
+    await loadList();
+  } catch (err) { handleError(err); }
+}
+
+async function remove(item) {
+  if (!confirm("„" + item.name + "“ endgültig löschen?")) return;
+  showMsg("list-msg", "");
+  try {
+    await api("admin/raw-materials/" + item.id, { method: "DELETE" });
+    await loadList();
+  } catch (err) { handleError(err); }
+}
+
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadList, 300);
+});
+$("show-archived").addEventListener("change", loadList);
+
+$("btn-export").addEventListener("click", async () => {
+  showMsg("list-msg", "");
+  try {
+    const res = await api("admin/raw-materials/export.csv", { raw: true });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "rohstoffe.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (err) { handleError(err); }
+});
+
+// ---- Formular -------------------------------------------------------------------
+
+function closeForm() {
+  show("form-panel", false);
+  showMsg("form-msg", "");
+  showMsg("similar-msg", "");
+  editingId = null;
+}
+
+async function openForm(item) {
+  showMsg("form-msg", "");
+  showMsg("similar-msg", "");
+  editingId = item ? item.id : null;
+  $("form-title").textContent = item ? "Rohstoff bearbeiten" : "Neuer Rohstoff";
+  $("f-name").value = item ? item.name : "";
+  $("f-display").value = item && item.display_name ? item.display_name : "";
+  $("f-type").value = item ? item.type : "standard";
+  // Neuer Rohstoff: Toleranz bleibt leer und muss ausgefüllt werden
+  $("f-tol-unit").value = item ? item.tolerance_unit : "g";
+  $("f-tol").value = item ? String(item.tolerance).replace(".", ",") : "";
+  $("f-unit-size").value = item && item.unit_size_g ? String(item.unit_size_g) : "";
+  $("f-unit-label").value = item && item.unit_label ? item.unit_label : "";
+  show("form-panel", true);
+  if (item) {
+    $("f-number").value = String(item.number);
+  } else {
+    $("f-number").value = "";
+    try {
+      const next = await api("admin/raw-materials/next-number");
+      $("f-number").value = String(next.number);
+    } catch (err) { handleError(err, "form-msg"); }
+  }
+  $("f-name").focus();
+}
+
+$("btn-new").addEventListener("click", () => openForm(null));
+$("form-cancel").addEventListener("click", closeForm);
+
+// Hinweis auf ähnliche Namen beim Tippen (sperrt nichts)
+$("f-name").addEventListener("input", () => {
+  clearTimeout(similarTimer);
+  similarTimer = setTimeout(async () => {
+    const name = $("f-name").value.trim();
+    if (!name) { showMsg("similar-msg", ""); return; }
+    try {
+      let path = "admin/raw-materials/similar?name=" + encodeURIComponent(name);
+      if (editingId !== null) path += "&exclude_id=" + editingId;
+      const found = await api(path);
+      showMsg("similar-msg", found.length
+        ? "Ähnliche Rohstoffe gibt es schon: " + found.map((f) => f.name + " (Nr. " + f.number + ")").join(", ")
+        : "");
+    } catch (err) { showMsg("similar-msg", ""); }
+  }, 400);
+});
+
+function emptyToNull(value) { const t = value.trim(); return t === "" ? null : t; }
+
+function formPayload() {
+  const payload = {
+    name: $("f-name").value,
+    display_name: $("f-display").value,
+    type: $("f-type").value,
+    tolerance_unit: $("f-tol-unit").value,
+    tolerance: emptyToNull($("f-tol").value),
+    unit_size_g: emptyToNull($("f-unit-size").value),
+    unit_label: $("f-unit-label").value,
+  };
+  const number = emptyToNull($("f-number").value);
+  if (number !== null) payload.number = number;
+  return payload;
+}
+
+async function save(confirmTypeChange) {
+  const payload = formPayload();
+  if (confirmTypeChange) payload.confirm_type_change = true;
+  if (editingId === null) await api("admin/raw-materials", { method: "POST", body: payload });
+  else await api("admin/raw-materials/" + editingId, { method: "PATCH", body: payload });
+}
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showMsg("form-msg", "");
+  $("form-save").disabled = true;
+  try {
+    try {
+      await save(false);
+    } catch (err) {
+      // Typwechsel eines verwendeten Rohstoffs: erst nach Bestätigung speichern
+      if (err.status === 409 && err.data.code === "type_change_confirmation_required"
+          && confirm(err.message)) {
+        await save(true);
+      } else {
+        throw err;
+      }
+    }
+    closeForm();
+    await loadList();
+  } catch (err) {
+    handleError(err, "form-msg");
+  } finally {
+    $("form-save").disabled = false;
+  }
+});
+
+// ---- Start ----------------------------------------------------------------------
+
+async function start() {
+  buildKeypad();
+  await loadInfo();
+  if (token) {
+    showView("list");
+    await loadList();       // bei abgelaufener Sitzung führt der Fehler zurück zur PIN-Eingabe
+  } else {
+    showView("login");
+    $("pin").focus();
+  }
+}
+start();
+</script>
+</body>
+</html>
