@@ -1,6 +1,6 @@
 # Modul 05 – Rezeptverwaltung (Schritt B: Konzept)
 
-Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt**, Praxisprüfung offen; Teile C2 und C3 folgen (Abschnitt 12). Umsetzungshinweise und Abweichungen in Abschnitt 16.
+Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt**, Praxisprüfung offen. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), Zusammenführung in `main` nach bestandener Praxisprüfung C1. Teil C3 folgt (Abschnitt 12). Umsetzungshinweise und Abweichungen in Abschnitt 16.
 Grundlage: Code-Stand `main` 807a198 (Add-on `rezeptbuch` 0.3.4), docs/datenmodell.md, docs/rohstoffe.md, docs/bedienkonzept.md, docs/importvorlage-rezepte.md, Entscheidungen M05-1 bis M05-15 und M05-13b vom 15.11.2026 (PROJEKTSTATUS Abschnitt 3).
 Zielversion: Add-on `rezeptbuch` **0.5.x** (Umsetzung in drei Teilen, Abschnitt 12).
 
@@ -267,7 +267,7 @@ Stand 0.5.0 (Teil C1): `text_rules.py`, `imports/` (`raw_materials_csv.py`, `rep
 | Teil | Inhalt | Version | Praxisprüfung durch Michael | Stand |
 |---|---|---|---|---|
 | C1 | Anpassungen Modul 03 (Abschnitt 5), Rohstoff-CSV-Import (6.1), Migration 0003, `text_rules.py` | 0.5.0 | Rohstoffe aus dem Blatt „Rohstoffe“ der Vorlage als CSV importieren, exportieren, in Excel ändern und wieder importieren (Überschreiben mit Warnhinweis) | umgesetzt 15.11.2026, Praxisprüfung offen |
-| C2 | Rezeptpflege, Gruppen, Versionen, Lese-API, Seite `/admin/rezepte` | 0.5.1 | Rezept anlegen, Versionen, Kopie, Archiv | offen |
+| C2 | Rezeptpflege, Gruppen, Versionen, Lese-API, Seite `/admin/rezepte` | 0.5.1 | Rezept anlegen, Versionen, Kopie, Archiv | umgesetzt 15.11.2026 auf Zweig `modul05-c2`, Praxisprüfung nach Zusammenführung |
 | C3 | Vorlagen-Import (6.2), Export (6.3) | 0.5.2 | Import der geprüften Vorlage, danach Prüfung „*“ und Freischalten | offen |
 
 Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 mit Freigabebericht wie bei Modul 03. C3 braucht die von Michael geprüfte Importvorlage nur für die Praxisprüfung, nicht für die Programmierung.
@@ -306,6 +306,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 15.11.2026 | Konzept erstellt (Schritt B). |
 | 15.11.2026 | Konzeptfragen K05-1 bis K05-7 entschieden und eingearbeitet: Export als .xlsx, Rohstoffe beim Import überschreiben (K05-2 mit 2a–2d, Abschnitt 6.1/6.2, Schnittstellen, Tests), übrige wie vorgeschlagen. |
 | 15.11.2026 | Konzept von Michael freigegeben. Teil C1 (0.5.0) umgesetzt; Umsetzungshinweise in Abschnitt 16. |
+| 15.11.2026 | Teil C2 (0.5.1) auf Zweig `modul05-c2` umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 
 ## 16. Umsetzung und Abweichungen
 
@@ -333,3 +334,25 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 - `openpyxl` wird für C1 nicht gebraucht und kommt mit Teil C3 in `requirements.txt`.
 
 **Bekannte Grenze:** Zwei aktive Rohstoffe können ihre Namen nicht in einem Import tauschen (A → B und B → A): Die zweite Zeile meldet „gibt es schon“. Abhilfe: zuerst einen Zwischennamen importieren.
+
+### Teil C2 (0.5.1, 15.11.2026, Zweig `modul05-c2`)
+
+**Vorgehen:** Auf Wunsch von Michael vor der Praxisprüfung von C1 begonnen, auf einem eigenen Zweig. `main` bleibt bei 0.5.0, bis die Praxisprüfung C1 bestanden ist; Korrekturen aus dieser Prüfung kommen auf `main` und werden in den Zweig übernommen. Danach Zusammenführung, GitHub-Testlauf und Praxisprüfung C2.
+
+**Neue Dateien:** `app/recipes/` (`models.py` Eingabeprüfung, `service.py` Regeln/Versionen/Kreisprüfung, `groups.py` Gruppen, `router.py`), `app/web/static/recipes.html` (Seite `/admin/rezepte` mit Reitern Rohstoffe, Rezepte, Gruppen); Tests `test_recipe_service.py`, `test_recipe_versions.py`, `test_recipe_groups.py`, `test_recipe_api.py` (API, nur GitHub-Testlauf). Geändert: `main.py`, `web/router.py`, `admin.html` (Reiter „Rezepte“, Rückkehr nach der Anmeldung über `?next=rezepte`). **Keine Migration**, `0003_recipe.sql` aus C1 reicht. Der Dateiname `groups.py` liegt wie im Konzept in `app/recipes/`.
+
+**Präzisierungen der Umsetzung** (im Rahmen der Regeln, keine neue Regel):
+- **Archivierte Rezepte sind nicht bearbeitbar** (409 `archived`, „bitte zuerst wiederherstellen“). Sperren/Freischalten bleibt möglich.
+- **Bearbeitungsstand (`revision`):** steigt bei jedem Speichern mit Änderung und beim Speichern von Stückgewichten oder Chargengrößen (diese Aufrufe nehmen `revision` optional entgegen). Sperren, Freischalten, Archivieren und Wiederherstellen ändern ihn nicht. Der Konflikt „an einem anderen Gerät geändert“ wird **vor** der Versionsfrage geprüft.
+- **Zeilen mit inzwischen archiviertem Rohstoff oder Unterrezept** bleiben beim Speichern erlaubt, wenn derselbe Rohstoff bzw. dasselbe Rezept schon in der aktuellen Version steht (R05-8).
+- **Prüfmarkierung „*“:** Die Seite schickt je Zeile die ID aus der aktuellen Version mit. „*“ bleibt nur, wenn die Zeile mit gleichem Rohstoff/Unterrezept und gleicher Menge erhalten ist und die Seite es nicht mit „geprüft“ entfernt hat. Die Seite kann „*“ nie setzen; neue Zeilen erhalten es nur beim Import (Teil C3). Werden ausschließlich „*“ bestätigt, wird ohne Rückfrage überschrieben; ist die Version produziert, entsteht eine neue (K05-5).
+- **Freischalten-Warnung 0 %** (K05-3) berücksichtigt die wirksame Toleranz der Zeile, also auch eine eigene Zeilentoleranz von 0 %.
+- **Leere Nummer** beim Speichern = unverändert; Feld `group_id` fehlt = unverändert, `null` = keine Gruppe.
+- **Stückgewichte und Chargengrößen** werden an Ort und Stelle geändert und behalten ihre ID (Verweise aus Aufträgen bleiben gültig). Chargengrößen können ihr Stückgewicht über die ID oder die Bezeichnung angeben (`piece_weight_label`); so speichert die Seite beide Listen nacheinander mit einer Taste.
+- **Summen** zeigt die Seite als „gespeicherter Stand“ vom Server, nicht live beim Tippen (Berechnung nur an einer Stelle).
+- **Versionsliste:** aktuelle Version „aktuell“, ältere „old (n)“; die Einzelansicht liefert `display_name` „<Name> old (n)“.
+- **Kopie:** Ein langer Name wird nach „Kopie von “ auf 100 Zeichen gekürzt.
+- **Grenzen:** höchstens 50 Schritte und 300 Zeilen je Rezept, Menge und Stückgewicht höchstens 1 000 000 g, Knetzeit höchstens 999 min, Chargengröße „Stückzahl“ höchstens 100 000.
+- Der Reiter „Import/Export“ folgt mit Teil C3; der Rohstoff-CSV-Import bleibt auf der Rohstoffseite.
+
+**Tests:** lokal 353 bestanden, 4 übersprungen (API-Tests ohne FastAPI); davon neu 106 (Service 72, Versionen 28, Gruppen 6). Zusätzlich lokaler Oberflächentest der Seite in Chrome (Testserver nur für die Prüfung, nicht im Repo): Anmeldung mit Rückkehr, Gruppe mit B2, Rezept anlegen, Versionsfrage, Stückgewichte/Chargengrößen, Freischalten mit 0-%-Warnung, alte Version ansehen, Kopie, „geprüft“, Unterrezept, Konflikt zweier Geräte, Archivieren als Unterrezept gesperrt; Darstellung am Handy (390 px) geprüft.

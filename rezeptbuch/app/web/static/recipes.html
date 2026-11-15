@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch – Rezepte</title>
+<style>
+  /* Bewusst schlicht: Gestaltung folgt in Modul 10 */
+  :root { color-scheme: light; }
+  html { background: #fafafa; }
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
+  main { padding: 1rem; max-width: 80rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
+  h2 { font-size: 1.1rem; margin: .2rem 0 .5rem; }
+  button { font-size: 1rem; padding: .5rem .9rem; margin: .15rem; cursor: pointer; }
+  button.small { padding: .3rem .55rem; font-size: .95rem; margin: .05rem; }
+  input, select, textarea { font-size: 1rem; padding: .4rem; box-sizing: border-box; font-family: inherit; }
+  label { display: block; margin: .5rem 0 .15rem; font-weight: bold; }
+  label.inline { display: inline; margin: 0; font-weight: normal; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #ccc; padding: .3rem .4rem; text-align: left; vertical-align: middle; }
+  th { background: #eee; }
+  td.num, th.num { text-align: right; }
+  tr.archived td { color: #888; background: #f3f3f3; }
+  tr.sub td { background: #eef5ff; }
+  tr.review td { background: #fff7e0; }
+  .hidden { display: none !important; }
+  #probe { background: #c62828; color: #fff; font-weight: bold; text-align: center; padding: .6rem; }
+  nav { display: flex; flex-wrap: wrap; gap: .3rem; background: #fff; border-bottom: 1px solid #ccc; padding: .4rem 1rem; }
+  nav a, nav button { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; margin: 0; }
+  nav .active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  nav .grow { flex: 1; }
+  .msg { margin: .6rem 0; padding: .5rem .7rem; border-radius: 4px; white-space: pre-line; }
+  .msg.error { background: #fdecea; color: #8a1c13; border: 1px solid #f5c2bd; }
+  .msg.info { background: #e8f1fb; color: #14406b; border: 1px solid #b9d3ee; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .5rem 0; }
+  .toolbar .grow { flex: 1 1 12rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .3rem 1rem; }
+  .panel { background: #fff; border: 1px solid #ccc; padding: .8rem 1rem; margin: .8rem 0; }
+  .small { font-size: .9rem; color: #555; }
+  .warn { color: #8a5a00; font-weight: bold; }
+  .bad { border: 2px solid #c62828 !important; background: #fdecea; }
+  .badge { display: inline-block; padding: .1rem .45rem; border-radius: 4px; font-size: .85rem; background: #ddd; }
+  .badge.public { background: #d7f0dc; color: #145a24; }
+  .badge.locked { background: #fde7c4; color: #7a4a00; }
+  .badge.archived { background: #e0e0e0; color: #555; }
+  .scroll { overflow-x: auto; }
+  .w-num { width: 5.5rem; }
+  .w-tol { width: 4.5rem; }
+  .w-ref { min-width: 14rem; width: 100%; }
+  #ask-box { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000;
+             align-items: center; justify-content: center; padding: 1rem; }
+  #ask-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 30rem; width: 100%; color: #222; max-height: 85vh; overflow-y: auto; }
+  #ask-text { white-space: pre-line; }
+  #ask-box .row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<div id="ask-box"><div class="dlg"><p id="ask-text"></p><div class="row" id="ask-buttons"></div></div></div>
+<div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<nav>
+  <a id="nav-raw" href="#">Rohstoffe</a>
+  <button type="button" id="nav-recipes" class="active">Rezepte</button>
+  <button type="button" id="nav-groups">Gruppen</button>
+  <span class="grow"></span>
+  <button type="button" id="nav-logout">Abmelden</button>
+</nav>
+<main>
+
+  <!-- Ansicht: Rezeptliste -->
+  <section id="view-list">
+    <h1>Rezepte</h1>
+    <div class="toolbar">
+      <button type="button" id="btn-new">Neues Rezept</button>
+      <input id="search" class="grow" type="search" placeholder="Suchen (Nummer, Name)" aria-label="Suchen">
+      <select id="filter-group" aria-label="Gruppe"><option value="">alle Gruppen</option></select>
+      <label class="inline"><input id="show-locked" type="checkbox" checked> gesperrte zeigen</label>
+      <label class="inline"><input id="show-archived" type="checkbox"> archivierte zeigen</label>
+    </div>
+    <div id="list-msg" class="msg hidden" role="alert"></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Nr.</th><th>Name</th><th>Gruppe</th><th>Status</th><th>Version</th><th class="num">Gesamt g</th><th class="num">Zeilen</th><th>„*“</th><th></th></tr></thead>
+        <tbody id="list-rows"></tbody>
+      </table>
+    </div>
+    <p id="list-empty" class="small hidden">Keine Rezepte gefunden.</p>
+  </section>
+
+  <!-- Ansicht: Rezept bearbeiten -->
+  <section id="view-edit" class="hidden">
+    <div class="toolbar">
+      <button type="button" id="edit-back">← Zur Liste</button>
+      <h1 id="edit-title" class="grow" style="margin:0">Rezept</h1>
+    </div>
+    <div id="edit-status" class="toolbar"></div>
+    <div id="edit-msg" class="msg hidden" role="alert"></div>
+
+    <div class="panel">
+      <h2>Rezeptkopf</h2>
+      <div class="grid">
+        <div><label for="f-number">Nummer</label><input id="f-number" inputmode="numeric" style="width:100%"></div>
+        <div><label for="f-name">Name</label><input id="f-name" maxlength="100" style="width:100%"></div>
+        <div><label for="f-group">Gruppe</label><select id="f-group" style="width:100%"></select></div>
+        <div><label>Knetzeit (Minuten langsam + schnell)</label>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <input id="f-knead-slow" inputmode="numeric" class="w-num" aria-label="Knetzeit langsam"> +
+            <input id="f-knead-fast" inputmode="numeric" class="w-num" aria-label="Knetzeit schnell">
+          </div></div>
+      </div>
+      <label for="f-note">Hinweistext (optional)</label>
+      <textarea id="f-note" rows="3" maxlength="2000" style="width:100%"></textarea>
+      <label class="inline">Anzeige des Hinweises:
+        <select id="f-note-display"><option value="end">am Ende der Verwiegung</option><option value="start">zu Beginn der Verwiegung</option></select></label>
+    </div>
+
+    <div class="panel">
+      <h2>Schritte</h2>
+      <p class="small">Optional, z. B. „Vorteig“, „aufschlagen“. Zeilen können einem Schritt zugeordnet werden.</p>
+      <div id="steps"></div>
+      <button type="button" id="step-add">Schritt hinzufügen</button>
+    </div>
+
+    <div class="panel">
+      <h2>Zutaten</h2>
+      <p class="small">Menge in ganzen Gramm. <b>0 g = Handzugabe</b> (nur quittieren, nicht wiegen). Toleranz leer = Toleranz des Rohstoffs;
+        0 % wird gewogen (nie enger als 1 g). Unterrezepte sind blau hinterlegt, Zeilen mit „*“ gelb (bitte prüfen).</p>
+      <datalist id="dl-raw"></datalist>
+      <datalist id="dl-rec"></datalist>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Pos.</th><th>Art</th><th>Rohstoff / Unterrezept (Nummer oder Name)</th><th>Menge g</th><th>Toleranz</th><th>Schritt</th><th>„*“</th><th></th></tr></thead>
+          <tbody id="item-rows"></tbody>
+        </table>
+      </div>
+      <button type="button" id="item-add">Zeile hinzufügen</button>
+      <p id="sums" class="small"></p>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" id="edit-save"><b>Speichern</b></button>
+      <span id="dirty" class="warn hidden">ungespeicherte Änderungen</span>
+    </div>
+
+    <div id="portion-panel" class="panel">
+      <h2>Stückgewichte und Chargengrößen</h2>
+      <p class="small">Gehören zum Rezept (keine neue Version) und werden mit einer eigenen Taste gespeichert.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Stückgewicht (Bezeichnung)</th><th>Gewicht g</th><th></th></tr></thead>
+        <tbody id="piece-rows"></tbody></table></div>
+      <button type="button" id="piece-add">Stückgewicht hinzufügen</button>
+      <div class="scroll" style="margin-top:.8rem"><table>
+        <thead><tr><th>Chargengröße (Bezeichnung)</th><th>Art</th><th>Wert</th><th>Stückgewicht</th><th></th></tr></thead>
+        <tbody id="batch-rows"></tbody></table></div>
+      <button type="button" id="batch-add">Chargengröße hinzufügen</button>
+      <div class="toolbar"><button type="button" id="portion-save">Stückgewichte und Chargengrößen speichern</button>
+        <span id="portion-dirty" class="warn hidden">ungespeicherte Änderungen</span></div>
+      <div id="portion-msg" class="msg hidden" role="alert"></div>
+    </div>
+
+    <div id="version-panel" class="panel">
+      <h2>Versionen</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Version</th><th>Name</th><th>angelegt</th><th>produziert</th><th></th></tr></thead>
+        <tbody id="version-rows"></tbody></table></div>
+      <div id="version-view" class="hidden" style="margin-top:.8rem"></div>
+    </div>
+  </section>
+
+  <!-- Ansicht: Gruppen -->
+  <section id="view-groups" class="hidden">
+    <h1>Rezeptgruppen</h1>
+    <div class="toolbar">
+      <input id="group-new-name" class="grow" maxlength="60" placeholder="Name der neuen Gruppe" aria-label="Neue Gruppe">
+      <button type="button" id="group-add">Gruppe anlegen</button>
+    </div>
+    <div id="group-msg" class="msg hidden" role="alert"></div>
+    <div class="scroll"><table>
+      <thead><tr><th>Reihenfolge</th><th>Name</th><th class="num">Rezepte</th><th></th></tr></thead>
+      <tbody id="group-rows"></tbody></table></div>
+    <p class="small">Löschen geht nur, wenn kein Rezept (auch kein archiviertes) in der Gruppe ist.</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// Adressen aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
+const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
+const API = BASE + "api/v1/";
+const SESSION_KEY = "rezeptbuch_admin_session";
+const $ = (id) => document.getElementById(id);
+
+let token = null;
+try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+
+let groups = [];             // Rezeptgruppen
+let rawMaterials = [];       // alle Rohstoffe (auch archivierte, für vorhandene Zeilen)
+let recipesAll = [];         // alle Rezepte (für Unterrezepte)
+let rec = null;              // Rezept im Editor
+let loaded = null;           // Rezept, wie es vom Server kam
+let dirty = false, portionDirty = false;
+let searchTimer = null;
+
+$("nav-raw").href = BASE + "admin/rohstoffe";
+
+function toLogin() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
+  location.href = BASE + "admin/login?next=rezepte";
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (token) headers["X-Rezeptbuch-Session"] = token;
+  let body;
+  if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+  let res;
+  try {
+    res = await fetch(API + path, { method: opts.method || "GET", headers: headers, body: body });
+  } catch (e) {
+    const err = new Error("Keine Verbindung zum Rezeptserver."); err.status = 0; err.data = {}; throw err;
+  }
+  let data = null;
+  if (res.status !== 204) { try { data = await res.json(); } catch (e) { data = null; } }
+  if (!res.ok) {
+    let text = data && data.detail;
+    if (typeof text !== "string") text = "Ungültige Eingabe (Fehler " + res.status + ").";
+    const err = new Error(text); err.status = res.status; err.data = data || {}; throw err;
+  }
+  return data;
+}
+
+function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
+function showMsg(id, text, kind) {
+  const el = $(id);
+  el.textContent = text || "";
+  el.className = "msg " + (kind || "error") + (text ? "" : " hidden");
+}
+function handleError(err, target) {
+  if (err.status === 401) { toLogin(); return; }
+  showMsg(target, err.message, "error");
+}
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+function button(label, handler, cls) {
+  const b = el("button", label, cls || "small");
+  b.type = "button";
+  b.addEventListener("click", handler);
+  return b;
+}
+function td(row, content, cls) {
+  const cell = el("td", null, cls);
+  if (content instanceof Node) cell.appendChild(content); else if (content !== undefined) cell.textContent = content;
+  row.appendChild(cell);
+  return cell;
+}
+function fmtTol(t) {
+  if (!t) return "";
+  return t.unit === "percent" ? String(t.value.toFixed ? t.value.toFixed(1) : t.value).replace(".", ",") + " %" : t.value + " g";
+}
+function fmtDate(iso) { return iso ? iso.slice(8, 10) + "." + iso.slice(5, 7) + "." + iso.slice(0, 4) : ""; }
+
+// Eigene Rückfrage statt confirm(): In der HA-App (iOS) fehlt dort die Taste „Abbrechen“
+function ask(text, choices) {
+  return new Promise((resolve) => {
+    $("ask-text").textContent = text;
+    const row = $("ask-buttons");
+    row.textContent = "";
+    const all = choices.concat([{ label: "Abbrechen", value: null }]);
+    all.forEach((c) => {
+      const b = el("button", c.label); b.type = "button";
+      b.addEventListener("click", () => { $("ask-box").style.display = "none"; resolve(c.value); });
+      row.appendChild(b);
+    });
+    $("ask-box").style.display = "flex";
+  });
+}
+
+// ---- Ansichten -----------------------------------------------------------------
+
+function showView(name) {
+  show("view-list", name === "list");
+  show("view-edit", name === "edit");
+  show("view-groups", name === "groups");
+  $("nav-recipes").classList.toggle("active", name !== "groups");
+  $("nav-groups").classList.toggle("active", name === "groups");
+  window.scrollTo(0, 0);
+}
+
+async function leaveEditor() {
+  if (!$("view-edit").classList.contains("hidden") && (dirty || portionDirty)) {
+    return (await ask("Ungespeicherte Änderungen verwerfen?", [{ label: "Verwerfen", value: true }])) === true;
+  }
+  return true;
+}
+
+$("nav-recipes").addEventListener("click", async () => { if (await leaveEditor()) { showView("list"); loadList(); } });
+$("nav-groups").addEventListener("click", async () => { if (await leaveEditor()) { showView("groups"); loadGroups(); } });
+$("nav-raw").addEventListener("click", async (ev) => { if (!(await leaveEditor())) ev.preventDefault(); });
+$("nav-logout").addEventListener("click", async () => {
+  try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
+  toLogin();
+});
+$("edit-back").addEventListener("click", async () => { if (await leaveEditor()) { showView("list"); loadList(); } });
+
+// ---- Stammdaten für Auswahllisten ----------------------------------------------------
+
+async function loadGroupsData() {
+  groups = await api("recipe-groups");
+  const filter = $("filter-group"), current = filter.value;
+  filter.textContent = "";
+  filter.appendChild(new Option("alle Gruppen", ""));
+  groups.forEach((g) => filter.appendChild(new Option(g.name, String(g.id))));
+  filter.value = current;
+}
+
+async function loadChoices() {
+  rawMaterials = await api("raw-materials?include_archived=true");
+  recipesAll = await api("recipes?include_locked=true&include_archived=true");
+  const dlRaw = $("dl-raw"); dlRaw.textContent = "";
+  rawMaterials.filter((m) => !m.archived).forEach((m) => dlRaw.appendChild(new Option(m.number + " – " + m.name)));
+  const dlRec = $("dl-rec"); dlRec.textContent = "";
+  recipesAll.filter((r) => !r.archived && (!rec || r.id !== rec.id))
+    .forEach((r) => dlRec.appendChild(new Option(r.number + " – " + r.name)));
+}
+
+function rawById(id) { return rawMaterials.find((m) => m.id === id) || null; }
+function recById(id) { return recipesAll.find((r) => r.id === id) || null; }
+
+// Eingabe „12 – Name“, „12“ oder „Name“ → Eintrag
+function resolveRef(type, textValue) {
+  const t = textValue.trim();
+  if (!t) return null;
+  const list = type === "raw_material" ? rawMaterials : recipesAll;
+  const m = t.match(/^(\d+)/);
+  if (m) { const found = list.find((x) => x.number === Number(m[1])); if (found) return found; }
+  const key = t.toLowerCase();
+  return list.find((x) => x.name.toLowerCase() === key) || null;
+}
+
+// ---- Liste ----------------------------------------------------------------------
+
+function statusBadge(r) {
+  if (r.archived) return el("span", "archiviert", "badge archived");
+  return r.locked ? el("span", "gesperrt", "badge locked") : el("span", "öffentlich", "badge public");
+}
+
+async function loadList() {
+  showMsg("list-msg", "");
+  const q = new URLSearchParams();
+  if ($("search").value.trim()) q.set("search", $("search").value.trim());
+  if ($("filter-group").value) q.set("group_id", $("filter-group").value);
+  if ($("show-locked").checked) q.set("include_locked", "true");
+  if ($("show-archived").checked) q.set("include_archived", "true");
+  try {
+    await loadGroupsData();
+    const items = await api("recipes?" + q.toString());
+    const body = $("list-rows"); body.textContent = "";
+    items.forEach((r) => {
+      const tr = el("tr"); if (r.archived) tr.className = "archived";
+      td(tr, String(r.number)); td(tr, r.name); td(tr, r.group_name || ""); td(tr, statusBadge(r));
+      td(tr, String(r.version_no)); td(tr, String(r.total_g), "num"); td(tr, String(r.item_count), "num");
+      td(tr, r.review_count ? r.review_count + " „*“" : "", r.review_count ? "warn" : "");
+      td(tr, button("Bearbeiten", () => openRecipe(r.id)));
+      body.appendChild(tr);
+    });
+    show("list-empty", items.length === 0);
+  } catch (err) { handleError(err, "list-msg"); }
+}
+
+$("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 300); });
+["filter-group", "show-locked", "show-archived"].forEach((id) => $(id).addEventListener("change", loadList));
+
+// ---- Editor: Laden ------------------------------------------------------------------
+
+function fromServer(r) {
+  return {
+    id: r.id, revision: r.revision, number: r.number, numberLocked: r.number_locked,
+    name: r.name, group_id: r.group_id, knead_slow_min: r.knead_slow_min, knead_fast_min: r.knead_fast_min,
+    note: r.note || "", note_display: r.note_display,
+    steps: r.steps.map((s) => ({ name: s.name })),
+    items: r.items.map((i) => ({
+      id: i.id, type: i.type,
+      ref_id: i.type === "raw_material" ? i.raw_material.id : i.sub_recipe.id,
+      ref_text: i.type === "raw_material" ? i.raw_material.number + " – " + i.raw_material.name
+                                          : i.sub_recipe.number + " – " + i.sub_recipe.name,
+      amount_g: String(i.amount_g),
+      tolerance: i.tolerance_override ? String(i.tolerance_override.value).replace(".", ",") : "",
+      tolerance_unit: i.tolerance_override ? i.tolerance_override.unit : "g",
+      step_no: i.step_no, needs_review: i.needs_review,
+    })),
+    pieces: r.piece_weights.map((p) => ({ id: p.id, label: p.label, weight_g: String(p.weight_g) })),
+    batches: r.batch_sizes.map((b) => ({ id: b.id, label: b.label, kind: b.kind, value: String(b.value),
+                                         piece_label: b.piece_weight_label || "" })),
+  };
+}
+
+function emptyRecipe(number) {
+  return { id: null, revision: null, number: number, numberLocked: false, name: "", group_id: null,
+           knead_slow_min: null, knead_fast_min: null, note: "", note_display: "end",
+           steps: [], items: [], pieces: [], batches: [] };
+}
+
+async function openRecipe(id) {
+  showMsg("edit-msg", ""); showMsg("portion-msg", "");
+  try {
+    await loadGroupsData();
+    if (id === null) {
+      const next = await api("admin/recipes/next-number");
+      loaded = null; rec = emptyRecipe(next.number);
+    } else {
+      loaded = await api("recipes/" + id);
+      rec = fromServer(loaded);
+    }
+    await loadChoices();
+    dirty = false; portionDirty = false;
+    renderEditor();
+    showView("edit");
+  } catch (err) { handleError(err, id === null ? "list-msg" : "list-msg"); }
+}
+
+$("btn-new").addEventListener("click", () => openRecipe(null));
+
+// ---- Editor: Darstellung ---------------------------------------------------------------
+
+function markDirty() { dirty = true; show("dirty", true); }
+function markPortionDirty() { portionDirty = true; show("portion-dirty", true); }
+
+function renderEditor() {
+  const isNew = rec.id === null;
+  $("edit-title").textContent = isNew ? "Neues Rezept" : "Rezept " + loaded.number + " – " + loaded.name;
+  $("f-number").value = rec.number === null ? "" : String(rec.number);
+  $("f-number").disabled = rec.numberLocked;
+  $("f-number").title = rec.numberLocked ? "Rezeptnummer ist bereits verwendet und kann nicht mehr geändert werden" : "";
+  $("f-name").value = rec.name;
+  const sel = $("f-group"); sel.textContent = "";
+  sel.appendChild(new Option("– keine Gruppe –", ""));
+  groups.forEach((g) => sel.appendChild(new Option(g.name, String(g.id))));
+  sel.value = rec.group_id ? String(rec.group_id) : "";
+  $("f-knead-slow").value = rec.knead_slow_min === null || rec.knead_slow_min === undefined ? "" : String(rec.knead_slow_min);
+  $("f-knead-fast").value = rec.knead_fast_min === null || rec.knead_fast_min === undefined ? "" : String(rec.knead_fast_min);
+  $("f-note").value = rec.note;
+  $("f-note-display").value = rec.note_display;
+  show("dirty", dirty); show("portion-dirty", portionDirty);
+  renderStatus(); renderSteps(); renderItems(); renderSums(); renderPieces(); renderBatches(); renderVersions();
+  show("portion-panel", !isNew); show("version-panel", !isNew);
+}
+
+function renderStatus() {
+  const box = $("edit-status"); box.textContent = "";
+  if (rec.id === null) { box.appendChild(el("span", "Neue Rezepte starten gesperrt (nicht in der Vorwahl).", "small")); return; }
+  box.appendChild(statusBadge(loaded));
+  box.appendChild(el("span", "Version " + loaded.version_no + (loaded.frozen ? " (bereits produziert)" : ""), "small"));
+  if (!loaded.archived) {
+    if (loaded.locked) box.appendChild(button("Freischalten", unlock, ""));
+    else box.appendChild(button("Sperren", () => simpleAction("lock"), ""));
+  }
+  box.appendChild(button("Kopieren", copyRecipe, ""));
+  if (loaded.archived) box.appendChild(button("Wiederherstellen", () => simpleAction("restore"), ""));
+  else box.appendChild(button("Archivieren", () => simpleAction("archive"), ""));
+  box.appendChild(button("Löschen", removeRecipe, ""));
+}
+
+function renderSteps() {
+  const box = $("steps"); box.textContent = "";
+  rec.steps.forEach((s, idx) => {
+    const row = el("div"); row.className = "toolbar";
+    row.appendChild(el("span", (idx + 1) + "."));
+    const input = el("input"); input.value = s.name; input.maxLength = 60; input.className = "grow";
+    input.setAttribute("aria-label", "Schritt " + (idx + 1));
+    input.addEventListener("input", () => { s.name = input.value; markDirty(); });
+    input.addEventListener("change", renderItems);
+    row.appendChild(input);
+    row.appendChild(button("↑", () => moveStep(idx, -1)));
+    row.appendChild(button("↓", () => moveStep(idx, 1)));
+    row.appendChild(button("✕", () => deleteStep(idx)));
+    box.appendChild(row);
+  });
+}
+
+function moveStep(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= rec.steps.length) return;
+  const a = idx + 1, b = j + 1;
+  [rec.steps[idx], rec.steps[j]] = [rec.steps[j], rec.steps[idx]];
+  rec.items.forEach((it) => { if (it.step_no === a) it.step_no = b; else if (it.step_no === b) it.step_no = a; });
+  markDirty(); renderSteps(); renderItems();
+}
+
+function deleteStep(idx) {
+  const no = idx + 1;
+  const used = rec.items.filter((it) => it.step_no === no).length;
+  if (used) { showMsg("edit-msg", "Dem Schritt „" + rec.steps[idx].name + "“ sind noch " + used + " Zeile(n) zugeordnet. Bitte zuerst die Zeilen umstellen."); return; }
+  rec.steps.splice(idx, 1);
+  rec.items.forEach((it) => { if (it.step_no && it.step_no > no) it.step_no -= 1; });
+  markDirty(); renderSteps(); renderItems();
+}
+
+$("step-add").addEventListener("click", () => { rec.steps.push({ name: "" }); markDirty(); renderSteps(); renderItems(); });
+
+function newItem() {
+  return { id: null, type: "raw_material", ref_id: null, ref_text: "", amount_g: "", tolerance: "", tolerance_unit: "g",
+           step_no: null, needs_review: false };
+}
+
+function renderItems() {
+  const body = $("item-rows"); body.textContent = "";
+  rec.items.forEach((it, idx) => {
+    const tr = el("tr");
+    if (it.type === "sub_recipe") tr.className = "sub";
+    if (it.needs_review) tr.className = "review";
+    td(tr, String(idx + 1), "num");
+
+    const type = el("select");
+    type.appendChild(new Option("Rohstoff", "raw_material")); type.appendChild(new Option("Unterrezept", "sub_recipe"));
+    type.value = it.type;
+    type.addEventListener("change", () => { it.type = type.value; it.ref_id = null; it.ref_text = ""; it.tolerance = ""; markDirty(); renderItems(); });
+    td(tr, type);
+
+    const refCell = el("td");
+    const ref = el("input"); ref.className = "w-ref"; ref.value = it.ref_text;
+    ref.setAttribute("list", it.type === "raw_material" ? "dl-raw" : "dl-rec");
+    ref.setAttribute("aria-label", "Zeile " + (idx + 1));
+    const hint = el("div", "", "small");
+    const updateHint = () => {
+      ref.classList.toggle("bad", it.ref_text.trim() !== "" && it.ref_id === null);
+      hint.textContent = "";
+      if (it.type === "raw_material" && it.ref_id) {
+        const m = rawById(it.ref_id);
+        if (m) {
+          const parts = [];
+          if (m.display_name) parts.push("Station: " + m.display_name);
+          if (m.type === "flour") parts.push("Mehl");
+          if (m.archived) parts.push("Rohstoff archiviert");
+          hint.textContent = parts.join(" · ");
+          if (m.archived) hint.className = "small warn"; else hint.className = "small";
+        }
+      } else if (it.type === "sub_recipe" && it.ref_id) {
+        const r = recById(it.ref_id);
+        if (r) hint.textContent = "Unterrezept" + (r.locked ? " (gesperrt)" : "") + (r.archived ? " – archiviert" : "");
+      }
+    };
+    ref.addEventListener("input", () => { it.ref_text = ref.value; it.ref_id = null; markDirty(); });
+    ref.addEventListener("change", () => {
+      const found = resolveRef(it.type, ref.value);
+      it.ref_id = found ? found.id : null;
+      if (found) { it.ref_text = found.number + " – " + found.name; ref.value = it.ref_text; }
+      updateHint(); updateTolPlaceholder();
+    });
+    refCell.appendChild(ref); refCell.appendChild(hint); tr.appendChild(refCell);
+
+    const amount = el("input"); amount.className = "w-num"; amount.inputMode = "numeric"; amount.value = it.amount_g;
+    amount.setAttribute("aria-label", "Menge Zeile " + (idx + 1));
+    amount.addEventListener("input", () => { it.amount_g = amount.value; markDirty(); });
+    td(tr, amount);
+
+    const tolCell = el("td");
+    const tol = el("input"); tol.className = "w-tol"; tol.inputMode = "decimal"; tol.value = it.tolerance;
+    const tolUnit = el("select"); tolUnit.appendChild(new Option("g", "g")); tolUnit.appendChild(new Option("%", "percent"));
+    tolUnit.value = it.tolerance_unit;
+    const updateTolPlaceholder = () => {
+      const m = it.type === "raw_material" && it.ref_id ? rawById(it.ref_id) : null;
+      tol.placeholder = m ? fmtTol({ unit: m.tolerance_unit, value: m.tolerance }) : "";
+      tol.title = m ? "leer = Toleranz des Rohstoffs (" + tol.placeholder + ")" : "";
+      // Ohne eigene Toleranz zeigt die Einheit die des Rohstoffs (passend zum Platzhalter)
+      if (m && String(it.tolerance).trim() === "") { it.tolerance_unit = m.tolerance_unit; tolUnit.value = m.tolerance_unit; }
+    };
+    tol.addEventListener("input", () => { it.tolerance = tol.value; markDirty(); });
+    tolUnit.addEventListener("change", () => { it.tolerance_unit = tolUnit.value; markDirty(); });
+    if (it.type === "sub_recipe") { tol.disabled = true; tolUnit.disabled = true; }
+    tolCell.appendChild(tol); tolCell.appendChild(tolUnit); tr.appendChild(tolCell);
+
+    const step = el("select");
+    step.appendChild(new Option("–", ""));
+    rec.steps.forEach((s, sIdx) => step.appendChild(new Option((sIdx + 1) + ". " + (s.name || "…"), String(sIdx + 1))));
+    step.value = it.step_no ? String(it.step_no) : "";
+    step.addEventListener("change", () => { it.step_no = step.value ? Number(step.value) : null; markDirty(); });
+    td(tr, step);
+
+    const reviewCell = el("td");
+    if (it.needs_review) {
+      reviewCell.appendChild(el("span", "* ", "warn"));
+      reviewCell.appendChild(button("geprüft", () => { it.needs_review = false; markDirty(); renderItems(); }));
+    }
+    tr.appendChild(reviewCell);
+
+    const actions = el("td");
+    actions.appendChild(button("↑", () => moveItem(idx, -1)));
+    actions.appendChild(button("↓", () => moveItem(idx, 1)));
+    actions.appendChild(button("+", () => { rec.items.splice(idx + 1, 0, newItem()); markDirty(); renderItems(); }));
+    actions.appendChild(button("✕", () => { rec.items.splice(idx, 1); markDirty(); renderItems(); }));
+    tr.appendChild(actions);
+
+    updateHint(); updateTolPlaceholder();
+    body.appendChild(tr);
+  });
+}
+
+function moveItem(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= rec.items.length) return;
+  [rec.items[idx], rec.items[j]] = [rec.items[j], rec.items[idx]];
+  markDirty(); renderItems();
+}
+
+$("item-add").addEventListener("click", () => { rec.items.push(newItem()); markDirty(); renderItems(); });
+
+function renderSums() {
+  if (!loaded || rec.id === null) { $("sums").textContent = ""; return; }
+  const s = loaded.sums;
+  $("sums").textContent = "Gespeicherter Stand: Gesamtgewicht " + s.total_g + " g, davon Mehl (direkte Zeilen) " + s.flour_g +
+    " g" + (loaded.knead ? " · Knetzeit " + loaded.knead : "") + ". Anteile und Bäckerprozent folgen mit Modul 06.";
+}
+
+// Felder des Kopfs
+[["f-number", "number"], ["f-name", "name"], ["f-note", "note"]].forEach(([id, key]) => {
+  $(id).addEventListener("input", () => { rec[key] = $(id).value; markDirty(); });
+});
+$("f-knead-slow").addEventListener("input", () => { rec.knead_slow_min = $("f-knead-slow").value; markDirty(); });
+$("f-knead-fast").addEventListener("input", () => { rec.knead_fast_min = $("f-knead-fast").value; markDirty(); });
+$("f-group").addEventListener("change", () => { rec.group_id = $("f-group").value ? Number($("f-group").value) : null; markDirty(); });
+$("f-note-display").addEventListener("change", () => { rec.note_display = $("f-note-display").value; markDirty(); });
+
+// ---- Editor: Speichern -----------------------------------------------------------------
+
+function blankToNull(v) { if (v === null || v === undefined) return null; const t = String(v).trim(); return t === "" ? null : t; }
+
+function payload() {
+  for (let i = 0; i < rec.items.length; i++) {
+    const it = rec.items[i];
+    if (it.ref_id === null) {
+      const kind = it.type === "raw_material" ? "Rohstoff" : "Unterrezept";
+      throw new Error("Zeile " + (i + 1) + ": Bitte einen " + kind + " aus der Liste wählen (Nummer oder Name).");
+    }
+  }
+  return {
+    number: blankToNull(rec.number),
+    name: rec.name,
+    group_id: rec.group_id,
+    knead_slow_min: blankToNull(rec.knead_slow_min),
+    knead_fast_min: blankToNull(rec.knead_fast_min),
+    note: rec.note,
+    note_display: rec.note_display,
+    steps: rec.steps.map((s) => ({ name: s.name })),
+    items: rec.items.map((it) => {
+      const item = { id: it.id, type: it.type, amount_g: blankToNull(it.amount_g), step_no: it.step_no,
+                     needs_review: it.needs_review };
+      if (it.type === "raw_material") {
+        item.raw_material_id = it.ref_id;
+        if (blankToNull(it.tolerance) !== null) { item.tolerance = it.tolerance; item.tolerance_unit = it.tolerance_unit; }
+      } else {
+        item.sub_recipe_id = it.ref_id;
+      }
+      return item;
+    }),
+  };
+}
+
+async function afterLoad(result, message) {
+  loaded = result;
+  rec = fromServer(result);
+  await loadChoices();
+  dirty = false;
+  renderEditor();
+  if (message) showMsg("edit-msg", message, "info");
+}
+
+$("edit-save").addEventListener("click", async () => {
+  showMsg("edit-msg", "");
+  let body;
+  try { body = payload(); } catch (e) { showMsg("edit-msg", e.message); return; }
+  $("edit-save").disabled = true;
+  try {
+    if (rec.id === null) {
+      const created = await api("admin/recipes", { method: "POST", body: body });
+      await afterLoad(created, "Rezept angelegt (gesperrt). Zum Freischalten die Taste „Freischalten“ nutzen.");
+      return;
+    }
+    body.revision = rec.revision;
+    let result;
+    try {
+      result = await api("admin/recipes/" + rec.id, { method: "PUT", body: body });
+    } catch (err) {
+      if (err.status === 409 && err.data.code === "version_choice_required") {
+        const choice = await ask("Diese Version wurde noch nicht produziert.\nNeue Version anlegen oder die aktuelle Version überschreiben?",
+          [{ label: "Neue Version", value: "new" }, { label: "Überschreiben", value: "overwrite" }]);
+        if (!choice) return;
+        body.version_mode = choice;
+        result = await api("admin/recipes/" + rec.id, { method: "PUT", body: body });
+      } else { throw err; }
+    }
+    await afterLoad(result, result.save_result ? result.save_result.message : "Gespeichert.");
+  } catch (err) {
+    if (err.status === 409 && err.data.code === "changed_elsewhere") {
+      showMsg("edit-msg", err.message + "\nIhre Eingaben sind noch nicht gespeichert. „Neu laden“ verwirft sie.");
+      const reload = button("Neu laden", () => { dirty = false; portionDirty = false; openRecipe(rec.id); }, "");
+      $("edit-msg").appendChild(el("br")); $("edit-msg").appendChild(reload);
+    } else { handleError(err, "edit-msg"); }
+  } finally { $("edit-save").disabled = false; }
+});
+
+// ---- Status, Kopie, Archiv, Löschen ------------------------------------------------------
+
+async function guardDirty() {
+  if (!(dirty || portionDirty)) return true;
+  return (await ask("Es gibt ungespeicherte Änderungen. Trotzdem fortfahren? Die Änderungen gehen verloren.",
+    [{ label: "Fortfahren", value: true }])) === true;
+}
+
+async function simpleAction(action) {
+  showMsg("edit-msg", "");
+  if (!(await guardDirty())) return;
+  try {
+    const r = await api("admin/recipes/" + rec.id + "/" + action, { method: "POST" });
+    portionDirty = false;
+    await afterLoad(r, { lock: "Rezept gesperrt.", archive: "Rezept archiviert.", restore: "Rezept wiederhergestellt." }[action]);
+  } catch (err) { handleError(err, "edit-msg"); }
+}
+
+async function unlock() {
+  showMsg("edit-msg", "");
+  if (!(await guardDirty())) return;
+  try {
+    let r;
+    try {
+      r = await api("admin/recipes/" + rec.id + "/unlock", { method: "POST", body: {} });
+    } catch (err) {
+      if (err.status === 409 && err.data.code === "confirmation_required") {
+        const lines = [err.message];
+        (err.data.review_items || []).forEach((i) => lines.push("„*“ Zeile " + i.position + ": " + i.name));
+        (err.data.zero_percent_items || []).forEach((i) => lines.push("0 % Zeile " + i.position + ": " + i.name));
+        if (!(await ask(lines.join("\n"), [{ label: "Trotzdem freischalten", value: true }]))) return;
+        r = await api("admin/recipes/" + rec.id + "/unlock", { method: "POST", body: { confirm: true } });
+      } else { throw err; }
+    }
+    portionDirty = false;
+    await afterLoad(r, "Rezept freigeschaltet (erscheint in der Vorwahl).");
+  } catch (err) { handleError(err, "edit-msg"); }
+}
+
+async function copyRecipe() {
+  showMsg("edit-msg", "");
+  if (!(await guardDirty())) return;
+  try {
+    const r = await api("admin/recipes/" + rec.id + "/copy", { method: "POST" });
+    portionDirty = false;
+    await afterLoad(r, "Kopie angelegt: Nummer " + r.number + ", gesperrt.");
+  } catch (err) { handleError(err, "edit-msg"); }
+}
+
+async function removeRecipe() {
+  showMsg("edit-msg", "");
+  if (!(await ask("„" + loaded.name + "“ endgültig löschen? Das geht nur, wenn das Rezept nie verwendet wurde.",
+    [{ label: "Löschen", value: true }]))) return;
+  try {
+    await api("admin/recipes/" + rec.id, { method: "DELETE" });
+    dirty = false; portionDirty = false;
+    showView("list"); await loadList();
+    showMsg("list-msg", "Rezept gelöscht.", "info");
+  } catch (err) { handleError(err, "edit-msg"); }
+}
+
+// ---- Stückgewichte und Chargengrößen -------------------------------------------------------
+
+function renderPieces() {
+  const body = $("piece-rows"); body.textContent = "";
+  rec.pieces.forEach((p, idx) => {
+    const tr = el("tr");
+    const label = el("input"); label.maxLength = 30; label.value = p.label; label.style.width = "100%";
+    label.addEventListener("input", () => { p.label = label.value; markPortionDirty(); });
+    label.addEventListener("change", renderBatches);
+    td(tr, label);
+    const w = el("input"); w.className = "w-num"; w.inputMode = "numeric"; w.value = p.weight_g;
+    w.addEventListener("input", () => { p.weight_g = w.value; markPortionDirty(); });
+    td(tr, w);
+    td(tr, button("✕", () => { rec.pieces.splice(idx, 1); markPortionDirty(); renderPieces(); renderBatches(); }));
+    body.appendChild(tr);
+  });
+}
+
+function renderBatches() {
+  const body = $("batch-rows"); body.textContent = "";
+  rec.batches.forEach((b, idx) => {
+    const tr = el("tr");
+    const label = el("input"); label.maxLength = 30; label.value = b.label; label.style.width = "100%";
+    label.addEventListener("input", () => { b.label = label.value; markPortionDirty(); });
+    td(tr, label);
+    const kind = el("select"); kind.appendChild(new Option("Gewicht (g)", "weight")); kind.appendChild(new Option("Stückzahl", "pieces"));
+    kind.value = b.kind;
+    kind.addEventListener("change", () => { b.kind = kind.value; markPortionDirty(); renderBatches(); });
+    td(tr, kind);
+    const v = el("input"); v.className = "w-num"; v.inputMode = "numeric"; v.value = b.value;
+    v.addEventListener("input", () => { b.value = v.value; markPortionDirty(); });
+    td(tr, v);
+    const piece = el("select");
+    if (b.kind === "pieces") {
+      piece.appendChild(new Option("– wählen –", ""));
+      rec.pieces.forEach((p) => { if (p.label.trim()) piece.appendChild(new Option(p.label.trim(), p.label.trim())); });
+      piece.value = b.piece_label;
+      piece.addEventListener("change", () => { b.piece_label = piece.value; markPortionDirty(); });
+    } else { piece.disabled = true; }
+    td(tr, piece);
+    td(tr, button("✕", () => { rec.batches.splice(idx, 1); markPortionDirty(); renderBatches(); }));
+    body.appendChild(tr);
+  });
+}
+
+$("piece-add").addEventListener("click", () => { rec.pieces.push({ id: null, label: "", weight_g: "" }); markPortionDirty(); renderPieces(); });
+$("batch-add").addEventListener("click", () => { rec.batches.push({ id: null, label: "", kind: "weight", value: "", piece_label: "" }); markPortionDirty(); renderBatches(); });
+
+$("portion-save").addEventListener("click", async () => {
+  showMsg("portion-msg", "");
+  $("portion-save").disabled = true;
+  try {
+    const pieceBody = { revision: rec.revision, piece_weights: rec.pieces.map((p) => ({ id: p.id, label: p.label, weight_g: blankToNull(p.weight_g) })) };
+    let r;
+    try {
+      r = await api("admin/recipes/" + rec.id + "/piece-weights", { method: "PUT", body: pieceBody });
+    } catch (err) {
+      if (err.status === 409 && err.data.code === "confirmation_required") {
+        if (!(await ask(err.message, [{ label: "Löschen bestätigen", value: true }]))) return;
+        pieceBody.confirm_delete_batch_sizes = true;
+        r = await api("admin/recipes/" + rec.id + "/piece-weights", { method: "PUT", body: pieceBody });
+      } else { throw err; }
+    }
+    // Chargengrößen, deren Stückgewicht es nicht mehr gibt, sind mit gelöscht
+    const labels = r.piece_weights.map((p) => p.label.toLowerCase());
+    const batches = rec.batches.filter((b) => b.kind !== "pieces" || labels.indexOf(b.piece_label.trim().toLowerCase()) >= 0);
+    const ids = r.batch_sizes.map((b) => b.id);
+    r = await api("admin/recipes/" + rec.id + "/batch-sizes", { method: "PUT", body: {
+      revision: r.revision,
+      batch_sizes: batches.map((b) => ({ id: ids.indexOf(b.id) >= 0 ? b.id : null, label: b.label, kind: b.kind,
+                                         value: blankToNull(b.value), piece_weight_label: b.kind === "pieces" ? b.piece_label : null })),
+    } });
+    // Kopf/Zeilen-Eingaben bleiben erhalten, nur Bearbeitungsstand und Stückgewichte übernehmen
+    loaded = r; rec.revision = r.revision;
+    const fresh = fromServer(r); rec.pieces = fresh.pieces; rec.batches = fresh.batches;
+    portionDirty = false; show("portion-dirty", false);
+    renderPieces(); renderBatches();
+    showMsg("portion-msg", "Stückgewichte und Chargengrößen gespeichert.", "info");
+  } catch (err) {
+    if (err.status === 409 && err.data.code === "changed_elsewhere") showMsg("portion-msg", err.message);
+    else handleError(err, "portion-msg");
+  } finally { $("portion-save").disabled = false; }
+});
+
+// ---- Versionen ---------------------------------------------------------------------------
+
+function renderVersions() {
+  const body = $("version-rows"); body.textContent = ""; show("version-view", false);
+  if (!loaded) return;
+  loaded.versions.forEach((v) => {
+    const tr = el("tr");
+    td(tr, v.label + (v.current ? " (" + v.version_no + ")" : ""));
+    td(tr, v.name); td(tr, fmtDate(v.created_at)); td(tr, v.produced ? "ja" : "nein");
+    td(tr, button("Ansehen", () => viewVersion(v.version_no)));
+    body.appendChild(tr);
+  });
+}
+
+async function viewVersion(no) {
+  const box = $("version-view"); box.textContent = "";
+  try {
+    const v = await api("recipes/" + rec.id + "/versions/" + no);
+    box.appendChild(el("h2", v.display_name + " – nur ansehen"));
+    const facts = [];
+    if (v.knead) facts.push("Knetzeit " + v.knead);
+    facts.push("Gesamtgewicht " + v.sums.total_g + " g, Mehl " + v.sums.flour_g + " g");
+    if (v.note) facts.push("Hinweis (" + (v.note_display === "start" ? "zu Beginn" : "am Ende") + "): " + v.note);
+    box.appendChild(el("p", facts.join(" · "), "small"));
+    const steps = {}; v.steps.forEach((s) => { steps[s.step_no] = s.name; });
+    const table = el("table");
+    const head = el("tr"); ["Pos.", "Rohstoff / Unterrezept", "Menge g", "Toleranz", "Schritt", "„*“"].forEach((h) => head.appendChild(el("th", h)));
+    table.appendChild(head);
+    v.items.forEach((i) => {
+      const tr = el("tr"); if (i.type === "sub_recipe") tr.className = "sub";
+      td(tr, String(i.position), "num");
+      td(tr, i.type === "raw_material" ? i.raw_material.number + " – " + i.raw_material.name : "Unterrezept " + i.sub_recipe.number + " – " + i.sub_recipe.name);
+      td(tr, i.hand_addition ? "0 (Handzugabe)" : String(i.amount_g), "num");
+      td(tr, fmtTol(i.tolerance)); td(tr, i.step_no ? i.step_no + ". " + (steps[i.step_no] || "") : "");
+      td(tr, i.needs_review ? "*" : "");
+      table.appendChild(tr);
+    });
+    box.appendChild(table);
+    box.appendChild(button("Schließen", () => show("version-view", false), ""));
+    show("version-view", true);
+  } catch (err) { handleError(err, "edit-msg"); }
+}
+
+// ---- Gruppen -------------------------------------------------------------------------------
+
+async function loadGroups() {
+  showMsg("group-msg", "");
+  try {
+    await loadGroupsData();
+    const body = $("group-rows"); body.textContent = "";
+    groups.forEach((g, idx) => {
+      const tr = el("tr");
+      const order = el("td");
+      order.appendChild(button("↑", () => moveGroup(idx, -1)));
+      order.appendChild(button("↓", () => moveGroup(idx, 1)));
+      tr.appendChild(order);
+      const name = el("input"); name.value = g.name; name.maxLength = 60; name.style.width = "100%";
+      td(tr, name);
+      td(tr, g.recipe_count + (g.recipe_count_all > g.recipe_count ? " (+" + (g.recipe_count_all - g.recipe_count) + " archiviert)" : ""), "num");
+      const actions = el("td");
+      actions.appendChild(button("Umbenennen", async () => {
+        try { await api("admin/recipe-groups/" + g.id, { method: "PATCH", body: { name: name.value } }); await loadGroups(); showMsg("group-msg", "Gruppe umbenannt.", "info"); }
+        catch (err) { handleError(err, "group-msg"); }
+      }));
+      actions.appendChild(button("Löschen", async () => {
+        if (!(await ask("Gruppe „" + g.name + "“ löschen?", [{ label: "Löschen", value: true }]))) return;
+        try { await api("admin/recipe-groups/" + g.id, { method: "DELETE" }); await loadGroups(); }
+        catch (err) { handleError(err, "group-msg"); }
+      }));
+      tr.appendChild(actions);
+      body.appendChild(tr);
+    });
+  } catch (err) { handleError(err, "group-msg"); }
+}
+
+async function moveGroup(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= groups.length) return;
+  const ids = groups.map((g) => g.id);
+  [ids[idx], ids[j]] = [ids[j], ids[idx]];
+  try { await api("admin/recipe-groups/order", { method: "PUT", body: { group_ids: ids } }); await loadGroups(); }
+  catch (err) { handleError(err, "group-msg"); }
+}
+
+$("group-add").addEventListener("click", async () => {
+  showMsg("group-msg", "");
+  try {
+    await api("admin/recipe-groups", { method: "POST", body: { name: $("group-new-name").value } });
+    $("group-new-name").value = "";
+    await loadGroups();
+  } catch (err) { handleError(err, "group-msg"); }
+});
+
+// ---- Start -------------------------------------------------------------------------------
+
+async function start() {
+  try { const info = await api("system/info"); show("probe", info.pin_is_default === true); } catch (e) { /* egal */ }
+  if (!token) { toLogin(); return; }
+  showView("list");
+  await loadList();       // bei abgelaufener Sitzung führt der Fehler zur PIN-Eingabe
+}
+window.addEventListener("beforeunload", (ev) => { if (dirty || portionDirty) { ev.preventDefault(); ev.returnValue = ""; } });
+start();
+</script>
+<script>
+  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
+  (function () {
+    function repaint() { document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }
+    window.addEventListener('load', function () { repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); });
+    window.addEventListener('pageshow', repaint);
+  })();
+</script>
+</body>
+</html>

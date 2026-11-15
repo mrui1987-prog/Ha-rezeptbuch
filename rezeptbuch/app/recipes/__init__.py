@@ -1,0 +1,43 @@
+"""Rezeptverwaltung (Modul 05): Rezepte, Versionen, Stückgewichte, Chargengrößen, Gruppen."""
+
+from .groups import create_group, delete_group, list_groups, rename_group, reorder_groups
+from .service import (
+    archive_recipe,
+    copy_recipe,
+    create_recipe,
+    delete_recipe,
+    get_recipe,
+    get_version,
+    list_recipes,
+    lock_recipe,
+    next_number,
+    restore_recipe,
+    save_recipe,
+    set_batch_sizes,
+    set_piece_weights,
+    unlock_recipe,
+    usage,
+)
+
+__all__ = [
+    "archive_recipe",
+    "copy_recipe",
+    "create_group",
+    "create_recipe",
+    "delete_group",
+    "delete_recipe",
+    "get_recipe",
+    "get_version",
+    "list_groups",
+    "list_recipes",
+    "lock_recipe",
+    "next_number",
+    "rename_group",
+    "reorder_groups",
+    "restore_recipe",
+    "save_recipe",
+    "set_batch_sizes",
+    "set_piece_weights",
+    "unlock_recipe",
+    "usage",
+]

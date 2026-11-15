@@ -1,5 +1,19 @@
 # Änderungen
 
+## 0.5.1 – Modul 05, Teil C2 (in Entwicklung, Zweig `modul05-c2`)
+
+- **Rezeptverwaltung** unter `/admin/rezepte` (Reiter „Rohstoffe | Rezepte | Gruppen“): Rezepte anlegen, bearbeiten, kopieren, sperren/freischalten, archivieren, wiederherstellen und löschen (nur nie verwendete)
+- Rezeptkopf mit Nummer (Vorschlag, bis zur ersten Verwendung änderbar), Name (eindeutig), Gruppe, Knetzeit langsam + schnell und Hinweistext (Anzeige zu Beginn oder am Ende)
+- Schritte und Zutatenzeilen: Rohstoff oder Unterrezept per Nummer oder Name, Menge in Gramm (0 g = Handzugabe), eigene Toleranz je Zeile (leer = Toleranz des Rohstoffs), Zeilen verschieben, einfügen, löschen; Prüfmarkierung „*“ mit Taste „geprüft“
+- Unterrezepte ohne Kreise (Meldung mit dem Weg, z. B. „Hauptteig → Vorteig → Hauptteig“)
+- **Versionen:** Wurde die Version schon produziert, entsteht beim Speichern automatisch eine neue; sonst Rückfrage „Neue Version / Überschreiben“. Alte Versionen als „old (n)“ nur zum Ansehen
+- Schutz vor gleichzeitigem Bearbeiten an zwei Geräten („bitte neu laden“)
+- Stückgewichte und Chargengrößen je Rezept (eigene Taste, ohne neue Version)
+- Neue Rezepte und Kopien starten **gesperrt**; „Freischalten“ nur mit Zeilen, bei „*“ oder Toleranz 0 % mit Warnung und Bestätigung
+- Rezeptgruppen anlegen, umbenennen, sortieren, löschen (nur leere)
+- Lese-Schnittstelle für die Stationen: `GET /api/v1/recipes`, `/recipes/{id}`, `/recipes/{id}/versions/{n}`, `/recipe-groups`
+- Sperre B2 auch für Rezept-, Gruppen- und Schrittnamen sowie Bezeichnungen von Stückgewichten und Chargengrößen
+
 ## 0.5.0 – Modul 05, Teil C1 (in Entwicklung)
 
 - **Rohstoff-CSV-Import** im Admin-Bereich (Taste „CSV-Import“): Format wie der CSV-Export, erst Probelauf mit Bericht, dann Import; alles oder nichts

@@ -39,6 +39,9 @@
   #import-report ul { margin: .2rem 0; padding-left: 1.3rem; }
   #import-report li { margin: .15rem 0; }
   .warn { color: #8a5a00; font-weight: bold; }
+  .tabs { display: flex; gap: .3rem; margin: 0 0 .6rem; }
+  .tabs a { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; }
+  .tabs a.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 </style>
 </head>
 <body>
@@ -61,6 +64,7 @@
 
   <!-- Ansicht 2: Rohstoffliste -->
   <section id="view-list" class="hidden">
+    <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a></div>
     <h1>Rohstoffe</h1>
     <div class="toolbar">
       <button id="btn-new">Neuer Rohstoff</button>
@@ -132,7 +136,11 @@
 "use strict";
 
 // Adresse der Schnittstelle aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
-const API = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/") + "api/v1/";
+const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
+const API = BASE + "api/v1/";
+// Nach der Anmeldung zurück zur Rezeptseite, wenn sie die Anmeldung verlangt hat (Modul 05)
+const NEXT_RECIPES = new URLSearchParams(location.search).get("next") === "rezepte";
+document.getElementById("tab-recipes").href = BASE + "admin/rezepte";
 const SESSION_KEY = "rezeptbuch_admin_session";
 const $ = (id) => document.getElementById(id);
 
@@ -250,6 +258,7 @@ $("login-form").addEventListener("submit", async (event) => {
     setToken(result.session);
     show("probe", result.pin_is_default === true);
     $("pin").value = "";
+    if (NEXT_RECIPES) { location.href = BASE + "admin/rezepte"; return; }
     showView("list");
     await loadList();
   } catch (err) {
@@ -596,6 +605,7 @@ $("form").addEventListener("submit", async (event) => {
 async function start() {
   buildKeypad();
   await loadInfo();
+  if (token && NEXT_RECIPES) { location.href = BASE + "admin/rezepte"; return; }
   if (token) {
     showView("list");
     await loadList();       // bei abgelaufener Sitzung führt der Fehler zurück zur PIN-Eingabe
