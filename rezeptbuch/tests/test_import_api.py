@@ -107,5 +107,10 @@ def test_admin_page_has_import_and_filter(client):
     assert "0 % wird gewogen" in text
 
 
-def test_version_050(client):
-    assert client.get("/api/v1/health").json()["version"] == "0.5.0"
+def test_version_matches_config(client):
+    """Health meldet dieselbe Version wie config.yaml (nicht mehr fest 0.5.0, ab 0.5.1)."""
+    import re
+    from pathlib import Path
+    config = (Path(__file__).resolve().parents[1] / "config.yaml").read_text(encoding="utf-8")
+    expected = re.search(r'^version: "([^"]+)"', config, re.M).group(1)
+    assert client.get("/api/v1/health").json()["version"] == expected
