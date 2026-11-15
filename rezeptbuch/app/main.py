@@ -1,6 +1,6 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.3.3: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.3.4: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """

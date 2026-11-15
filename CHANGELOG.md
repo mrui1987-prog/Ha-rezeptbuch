@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.3.4 – Korrektur nach Freigabeprüfung
+
+- Ziffern-Sonderzeichen (z. B. „²“) in Rohstoffnummer oder Gebindegröße führten zu einem Serverfehler; jetzt erscheint die normale Meldung „muss eine ganze Zahl sein“
+
 ## 0.3.3 – Korrektur nach Praxisprüfung
 
 - Rückfragen („endgültig löschen?“, Typwechsel) erschienen in der iOS-App nur mit „OK“ und ohne „Abbrechen“; jetzt eigene Rückfrage mit beiden Tasten

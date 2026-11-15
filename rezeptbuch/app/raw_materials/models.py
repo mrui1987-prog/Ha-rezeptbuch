@@ -55,8 +55,11 @@ def _whole_number(value, field: str, label: str) -> int | None:
         return value
     if isinstance(value, float) and value.is_integer():
         return int(value)
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+    if isinstance(value, str):
+        text = value.strip()
+        # nur ASCII-Ziffern 0-9 (isdigit() lässt z. B. „²“ durch -> ValueError/500)
+        if text.isascii() and text.isdigit():
+            return int(text)
     raise ValidationError(f"{label} muss eine ganze Zahl sein.", field=field)
 
 

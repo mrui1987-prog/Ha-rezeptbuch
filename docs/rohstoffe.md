@@ -1,8 +1,8 @@
 # Modul 03 – Rohstoff- & Zutatenverwaltung (Schritt B: Konzept)
 
-Status: **Konzept am 14.11.2026 von Michael freigegeben, Schritt C am 14.11.2026 umgesetzt (lokal, noch nicht auf GitHub); Abweichungen siehe Abschnitt 14**
+Status: **Konzept am 14.11.2026 von Michael freigegeben; Schritt C umgesetzt; Praxisprüfung in Home Assistant am 15.11.2026 bestanden (Add-on 0.3.4); Freigabebericht liegt vor; Abweichungen und Korrekturen siehe Abschnitt 14**
 Grundlage: Code-Stand `main` 43df855 (Add-on `rezeptbuch` 0.2.0), docs/datenmodell.md, docs/bedienkonzept.md, Entscheidungen M03-1 bis M03-8 und K03-1 bis K03-4 (PROJEKTSTATUS Abschnitt 3).
-Zielversion: Add-on `rezeptbuch` **0.3.0**.
+Zielversion: Add-on `rezeptbuch` **0.3.0** (aktueller Stand nach Korrekturen: **0.3.4**).
 
 ## 1. Umfang
 
@@ -179,6 +179,7 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 | 14.11.2026 | Konzept erstellt (Schritt B). |
 | 14.11.2026 | K03-1 bis K03-4 entschieden und eingearbeitet. |
 | 14.11.2026 | Konzept von Michael freigegeben; Schritt C umgesetzt, Abschnitte 5 bis 10 an den Code angepasst (siehe Abschnitt 14). |
+| 15.11.2026 | Praxisprüfung in Home Assistant (iPhone), Korrekturen 0.3.1 bis 0.3.4, Abschnitt 14 ergänzt. |
 
 ## 14. Abweichungen der Umsetzung vom freigegebenen Konzept
 
@@ -186,4 +187,18 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 - **Zusätzliche Module** `errors.py`, `settings.py`, `deps.py`.
 - **Antwort der Liste** ist ein einfaches Array; Prozent-Toleranz wird als Dezimalzahl (z. B. 2,5) angezeigt.
 - **Testdatei `test_db_per_request.py`** entfällt; der Nachweis zur Verbindung je Anfrage steht in `test_raw_material_service.py` (parallele Threads) und im API-Test „503 ohne Datenbank“.
-- **Nicht lokal ausgeführt:** alle Tests mit FastAPI/httpx (`test_raw_material_api.py`, `test_main.py`), da im Arbeitsumfeld ohne Netzwerk kein Paket installierbar war; sie laufen im GitHub-Testlauf. Die Seite wurde noch nicht in einem Browser geprüft (nur Skript-Syntax).
+- **Tests mit FastAPI/httpx** (`test_raw_material_api.py`, `test_main.py`) laufen nur im GitHub-Testlauf (lokal ohne Netzwerk nicht installierbar). Stand 0.3.3: 209 Tests bestanden. Die Seite wurde am 15.11.2026 auf dem iPhone in der Companion-App geprüft.
+
+### Korrekturen nach der Praxisprüfung (15.11.2026)
+
+| Version | Korrektur |
+|---|---|
+| 0.3.1 | Startseite und Admin-Seite im dunklen HA-Design lesbar (fester heller Hintergrund). |
+| 0.3.2 | Start- und Admin-Seite blieben beim ersten Aufruf in der iOS-Companion-App leer; erstes Zeichnen wird erzwungen. |
+| 0.3.3 | Rückfragen („endgültig löschen?“, Typwechsel) mit eigener Abfrage inkl. „Abbrechen“ statt `confirm()` (zeigte in der iOS-App nur „OK“). |
+| 0.3.4 | Ziffern-Sonderzeichen (z. B. „²“) in Nummer/Gebindegröße ergaben HTTP 500; jetzt Fehler 400 mit deutscher Meldung (nur ASCII-Ziffern 0–9 gelten als Zahl). |
+
+### Bewusste Entscheidungen aus dem Freigabebericht
+
+- **B2 (CSV-Formeln):** Namen, die mit `=`, `+`, `-` oder `@` beginnen, werden in Modul 05 (Rezeptverwaltung) gesperrt. Für Rohstoffe wird dies dort mit entschieden.
+- **B3 (sehr große Toleranz):** keine zusätzliche Warnung (Entscheidung Michael, 15.11.2026).

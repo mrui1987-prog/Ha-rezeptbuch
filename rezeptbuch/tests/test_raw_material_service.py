@@ -66,6 +66,17 @@ def test_invalid_number_refused(conn, bad):
     assert exc.value.field == "number"
 
 
+@pytest.mark.parametrize("bad", ["²", "①", "١٢٣", "1²"])
+def test_non_ascii_digits_refused_as_validation_error(conn, bad):
+    """B1: Ziffern-Sonderzeichen dürfen keinen Serverfehler (500) auslösen."""
+    with pytest.raises(ValidationError) as exc:
+        make(conn, "A", number=bad)
+    assert exc.value.field == "number"
+    with pytest.raises(ValidationError) as exc:
+        make(conn, "B", unit_size_g=bad, unit_label="Ei")
+    assert exc.value.field == "unit_size_g"
+
+
 def test_number_change_allowed_while_unused_and_locked_after_use(conn):
     rm = make(conn, "A")
     changed = update_raw_material(conn, rm["id"], {"number": 77})

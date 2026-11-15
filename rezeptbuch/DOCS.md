@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.3.3:** Rohstoffverwaltung (Modul 03) unter `/admin`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.3.4:** Rohstoffverwaltung (Modul 03) unter `/admin`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -21,9 +21,9 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
 | Adresse | Zweck |
 |---------|-------|
-| `/station/1` | Tablet an Waage 1 |
-| `/station/2` | Tablet an Waage 2 |
-| `/admin` | Rezepte, Rohstoffe, Aufträge (PIN) |
+| `/admin` | Rohstoffe (PIN); Rezepte und Aufträge folgen in späteren Modulen |
+
+Die Stationsadressen für die Tablets an den Waagen folgen in Modul 09/10 und sind in dieser Version noch nicht vorhanden.
 
 Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung folgt in Modul 12. Es wird nur ein Hash gespeichert. Nach 5 Fehlversuchen ist die Eingabe 5 Minuten gesperrt. Die Sitzungsdauer stellt die Add-on-Option `admin_timeout_minutes` ein (Standard 5 Minuten).
 
