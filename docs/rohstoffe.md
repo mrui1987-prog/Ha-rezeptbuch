@@ -1,6 +1,6 @@
 # Modul 03 – Rohstoff- & Zutatenverwaltung (Schritt B: Konzept)
 
-Status: **Konzept am 14.11.2026 von Michael freigegeben; Schritt C umgesetzt; Praxisprüfung in Home Assistant am 15.11.2026 bestanden (Add-on 0.3.4); Freigabebericht liegt vor; Abweichungen und Korrekturen siehe Abschnitt 14**
+Status: **Modul 03 am 15.11.2026 von Michael freigegeben (Add-on 0.3.4); Konzept am 14.11.2026 freigegeben, Praxisprüfung in Home Assistant am 15.11.2026 bestanden; Abweichungen und Korrekturen siehe Abschnitt 14**
 Grundlage: Code-Stand `main` 43df855 (Add-on `rezeptbuch` 0.2.0), docs/datenmodell.md, docs/bedienkonzept.md, Entscheidungen M03-1 bis M03-8 und K03-1 bis K03-4 (PROJEKTSTATUS Abschnitt 3).
 Zielversion: Add-on `rezeptbuch` **0.3.0** (aktueller Stand nach Korrekturen: **0.3.4**).
 
