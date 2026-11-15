@@ -54,6 +54,12 @@ class ConflictError(ServiceError):
     status_code = 409
 
 
+class PayloadTooLargeError(ServiceError):
+    """413 – hochgeladene Datei zu groß (Import, Modul 05)."""
+
+    status_code = 413
+
+
 class LockedError(ServiceError):
     """423 – PIN-Eingabe vorübergehend gesperrt."""
 

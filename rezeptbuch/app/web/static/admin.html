@@ -35,6 +35,10 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .5rem 1rem; }
   .panel { background: #fff; border: 1px solid #ccc; padding: .8rem 1rem; margin: .8rem 0; }
   .small { font-size: .9rem; color: #555; }
+  #import-report h3 { font-size: 1rem; margin: .8rem 0 .3rem; }
+  #import-report ul { margin: .2rem 0; padding-left: 1.3rem; }
+  #import-report li { margin: .15rem 0; }
+  .warn { color: #8a5a00; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -62,10 +66,29 @@
       <button id="btn-new">Neuer Rohstoff</button>
       <input id="search" class="grow" type="search" placeholder="Suchen (Nummer, Name, Kurzname)" aria-label="Suchen">
       <label style="margin:0;font-weight:normal"><input id="show-archived" type="checkbox"> archivierte zeigen</label>
+      <label style="margin:0;font-weight:normal"><input id="only-zero" type="checkbox"> nur Toleranz 0 %</label>
       <button id="btn-export">CSV-Export</button>
+      <button id="btn-import">CSV-Import</button>
       <button id="btn-logout">Abmelden</button>
     </div>
     <div id="list-msg" class="msg hidden" role="alert"></div>
+
+    <div id="import-panel" class="panel hidden">
+      <h2 style="font-size:1.1rem;margin:.2rem 0">Rohstoffe aus CSV importieren</h2>
+      <p class="small">Format wie der CSV-Export (Semikolon, Kopfzeile). Zuordnung über die Nummer, ohne Nummer über
+        den Namen; sonst wird der Rohstoff neu angelegt. <b>Vorhandene Rohstoffe werden mit den Werten der Datei
+        überschrieben.</b> Leere Toleranz bleibt beim vorhandenen Rohstoff unverändert, ein neuer Rohstoff erhält 0 %.
+        Rohstoffe, die nicht in der Datei stehen, bleiben unverändert. Zuerst läuft immer ein Probelauf; gespeichert
+        wird erst mit „Importieren“.</p>
+      <input id="import-file" type="file" accept=".csv,text/csv,text/plain">
+      <div class="toolbar">
+        <button type="button" id="import-check">Probelauf</button>
+        <button type="button" id="import-run" disabled>Importieren</button>
+        <button type="button" id="import-close">Schließen</button>
+      </div>
+      <div id="import-msg" class="msg hidden" role="alert"></div>
+      <div id="import-report"></div>
+    </div>
 
     <div id="form-panel" class="panel hidden">
       <h2 id="form-title" style="font-size:1.1rem;margin:.2rem 0">Rohstoff</h2>
@@ -87,7 +110,7 @@
           <div><label for="f-unit-label">Gebinde-/Stückbezeichnung (z. B. Ei, Sack)</label>
                <input id="f-unit-label" maxlength="30" style="width:100%"></div>
         </div>
-        <p class="small">Toleranz 0 = Handzugabe (nur quittieren, nicht wiegen). Bei der Verwiegung wird nie enger als 1 g gerechnet.</p>
+        <p class="small">0 g = Handzugabe (nur quittieren, nicht wiegen). 0 % wird gewogen; bei der Verwiegung nie enger als 1 g.</p>
         <div id="similar-msg" class="msg info hidden"></div>
         <div id="form-msg" class="msg error hidden" role="alert"></div>
         <button type="submit" id="form-save">Speichern</button>
@@ -130,13 +153,20 @@ async function api(path, options) {
   const opts = options || {};
   const headers = {};
   if (token) headers["X-Rezeptbuch-Session"] = token;
-  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  let body;
+  if (opts.file !== undefined) {           // Datei als Rohdaten (Import)
+    headers["Content-Type"] = "application/octet-stream";
+    body = opts.file;
+  } else if (opts.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(opts.body);
+  }
   let res;
   try {
     res = await fetch(API + path, {
       method: opts.method || "GET",
       headers: headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: body,
     });
   } catch (e) {
     const err = new Error("Keine Verbindung zum Rezeptserver.");
@@ -262,6 +292,7 @@ async function loadList() {
   const query = new URLSearchParams();
   if ($("search").value.trim()) query.set("search", $("search").value.trim());
   if ($("show-archived").checked) query.set("include_archived", "true");
+  if ($("only-zero").checked) query.set("zero_percent", "true");
   try {
     const items = await api("raw-materials" + (query.toString() ? "?" + query.toString() : ""));
     renderRows(items);
@@ -333,6 +364,7 @@ $("search").addEventListener("input", () => {
   searchTimer = setTimeout(loadList, 300);
 });
 $("show-archived").addEventListener("change", loadList);
+$("only-zero").addEventListener("change", loadList);
 
 $("btn-export").addEventListener("click", async () => {
   showMsg("list-msg", "");
@@ -348,6 +380,111 @@ $("btn-export").addEventListener("click", async () => {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   } catch (err) { handleError(err); }
+});
+
+// ---- CSV-Import (Modul 05) ---------------------------------------------------------
+
+let importFile = null;      // dieselbe Datei für Probelauf und Import
+let importReport = null;
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+function where(entry) {
+  return entry.line ? "Zeile " + entry.line + (entry.column ? ", " + entry.column : "") + ": " : "";
+}
+
+function addList(box, title, items, render) {
+  if (!items.length) return;
+  box.appendChild(el("h3", title));
+  const ul = el("ul");
+  items.forEach((item) => ul.appendChild(render(item)));
+  box.appendChild(ul);
+}
+
+function renderReport(report) {
+  importReport = report;
+  const box = $("import-report");
+  box.textContent = "";
+  box.appendChild(el("p", report.summary, report.ok ? "" : "warn"));
+  addList(box, "Fehler (Import nicht möglich)", report.errors,
+    (e) => el("li", where(e) + e.message, "warn"));
+  addList(box, "Werden überschrieben (" + report.changes.length + ")", report.changes, (c) => {
+    const li = el("li");
+    li.appendChild(el("b", "Nr. " + c.number + " " + c.name + ": "));
+    li.appendChild(document.createTextNode(c.fields.map((f) => f.field + " " + f.old + " → " + f.new).join("; ")));
+    if (c.type_change_recipes) li.appendChild(el("span", " – Typwechsel betrifft " + c.type_change_recipes + " Rezept(e)", "warn"));
+    return li;
+  });
+  addList(box, "Neu (" + report.created.length + ")", report.created,
+    (c) => el("li", "Nr. " + c.number + " " + c.name));
+  addList(box, "Toleranz 0 % – wird auf ±1 g genau gewogen, bitte prüfen (" + report.zero_percent.length + ")",
+    report.zero_percent, (z) => el("li", "Nr. " + z.number + " " + z.name + " (" + z.reason + ")"));
+  addList(box, "Hinweise", report.hints, (h) => el("li", where(h) + h.message));
+  $("import-run").disabled = !(report.ok && !report.imported);
+}
+
+function resetImport() {
+  importFile = null; importReport = null;
+  $("import-file").value = "";
+  $("import-report").textContent = "";
+  $("import-run").disabled = true;
+  showMsg("import-msg", "");
+}
+
+$("btn-import").addEventListener("click", () => {
+  resetImport();
+  show("import-panel", true);
+});
+$("import-close").addEventListener("click", () => { resetImport(); show("import-panel", false); });
+$("import-file").addEventListener("change", () => {
+  importFile = $("import-file").files[0] || null;
+  importReport = null;
+  $("import-report").textContent = "";
+  $("import-run").disabled = true;
+  showMsg("import-msg", "");
+});
+
+$("import-check").addEventListener("click", async () => {
+  $("import-msg").className = "msg error hidden";
+  if (!importFile) { showMsg("import-msg", "Bitte zuerst eine CSV-Datei wählen."); return; }
+  $("import-check").disabled = true;
+  try {
+    renderReport(await api("admin/import/raw-materials?mode=check", { method: "POST", file: importFile }));
+  } catch (err) {
+    $("import-report").textContent = "";
+    handleError(err, "import-msg");
+  } finally {
+    $("import-check").disabled = false;
+  }
+});
+
+$("import-run").addEventListener("click", async () => {
+  if (!importFile || !importReport || !importReport.ok) return;
+  const n = importReport.counts.overwritten;
+  let path = "admin/import/raw-materials?mode=run";
+  if (n > 0) {
+    const text = n + (n === 1 ? " Rohstoff wird" : " Rohstoffe werden") + " mit den Werten der Datei überschrieben. Importieren?";
+    if (!(await askConfirm(text, "Importieren"))) return;
+    path += "&confirm_overwrite=true";
+  }
+  $("import-run").disabled = true;
+  try {
+    const report = await api(path, { method: "POST", file: importFile });
+    renderReport(report);
+    showMsg("import-msg", "Import abgeschlossen.");
+    $("import-msg").className = "msg info";
+    await loadList();
+  } catch (err) {
+    // Server prüft erneut; geänderter Stand oder Fehler: Bericht neu anzeigen
+    if (err.data && err.data.report) renderReport(err.data.report);
+    $("import-msg").className = "msg error";
+    handleError(err, "import-msg");
+  }
 });
 
 // ---- Formular -------------------------------------------------------------------

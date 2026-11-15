@@ -1,7 +1,7 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.3.4: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
-und PIN-Schutz (Modul 03). Beim Start wird die Datenbank geöffnet, geprüft und
+Stand 0.5.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -18,6 +18,7 @@ from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
 from .db import DatabaseError, default_db_path, init_database
 from .errors import ServiceError
+from .imports.router import router as imports_router
 from .raw_materials.router import router as raw_materials_router
 from .settings import admin_timeout_minutes, load_options
 from .web.router import router as web_router
@@ -65,6 +66,7 @@ async def database_busy_handler(request: Request, exc: sqlite3.OperationalError)
 
 app.include_router(auth_router)
 app.include_router(raw_materials_router)
+app.include_router(imports_router)
 app.include_router(web_router)
 
 

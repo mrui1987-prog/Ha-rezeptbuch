@@ -108,7 +108,7 @@ Technische Waagenparameter (IP, Port, Profil) bleiben in der Konfiguration des A
 | archived | INTEGER | NN, 0/1 | archiviert statt gelöscht (M02-9) |
 | created_at, updated_at | TEXT | NN | Zeitpunkte |
 
-Toleranz 0 bedeutet „Sollhandzugabe“ (Bedienkonzept, Abschnitt 4): nur quittieren, nicht wiegen.
+Toleranz **0 g** bedeutet „Sollhandzugabe“ (Bedienkonzept, Abschnitt 4): nur quittieren, nicht wiegen. **0 %** ist keine Handzugabe und wird gewogen; bei der Verwiegung gilt nie weniger als ±1 g (M03-4, M05-13b, präzisiert am 15.11.2026).
 Allergene, Nährwerte, Zutatenverzeichnis und Lieferanten-/BÄKO-Artikelnummern werden nach Sichtung der Datenlink-Daten per Migration ergänzt (M02-5 bis M02-8).
 
 ### 4.2 Rezepte

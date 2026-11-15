@@ -516,3 +516,51 @@ def test_parallel_creation_of_same_name_allows_only_one(db_path):
     for t in threads:
         t.join()
     assert sorted(outcomes) == ["conflict"] * 4 + ["ok"]
+
+
+# -- Anpassungen aus Modul 05 (M05-14 Sperre B2, M05-13b Filter 0 %) -------------------
+
+@pytest.mark.parametrize("bad", ["=SUMME(A1)", "+Hefe", "-Salz", "@Zucker", "  =x"])
+def test_b2_name_refused_on_create(conn, bad):
+    with pytest.raises(ValidationError) as exc:
+        make(conn, bad)
+    assert exc.value.field == "name"
+    assert exc.value.code == "formula_start"
+
+
+def test_b2_display_name_refused(conn):
+    with pytest.raises(ValidationError) as exc:
+        make(conn, "Margarine A", display_name="=Margarine")
+    assert exc.value.field == "display_name"
+
+
+def test_b2_on_rename(conn):
+    item = make(conn, "Hefe")
+    with pytest.raises(ValidationError):
+        update_raw_material(conn, item["id"], {"name": "-Hefe"})
+    with pytest.raises(ValidationError):
+        update_raw_material(conn, item["id"], {"display_name": "@Hefe"})
+
+
+def test_b2_existing_name_stays_saveable(conn):
+    """Vorhandene Namen bleiben unberührt; andere Felder lassen sich weiter speichern."""
+    rm = add_raw_material(conn, 1, name="-Altbestand")
+    conn.execute("UPDATE raw_material SET display_name = '=alt' WHERE id = ?", (rm,))
+    updated = update_raw_material(conn, rm, {"tolerance": 5, "name": "-Altbestand", "display_name": "=alt"})
+    assert updated["tolerance"] == 5
+    assert updated["name"] == "-Altbestand"
+
+
+def test_b2_allows_sign_inside_name(conn):
+    assert make(conn, "Ei-Gelb")["name"] == "Ei-Gelb"
+
+
+def test_filter_zero_percent(conn):
+    make(conn, "A", tolerance=0, tolerance_unit="percent")
+    make(conn, "B", tolerance=0, tolerance_unit="g")
+    make(conn, "C", tolerance="2,5", tolerance_unit="percent")
+    archived = make(conn, "D", tolerance=0, tolerance_unit="percent")
+    archive_raw_material(conn, archived["id"])
+    assert [r["name"] for r in list_raw_materials(conn, zero_percent=True)] == ["A"]
+    assert [r["name"] for r in list_raw_materials(conn, zero_percent=True, include_archived=True)] == ["A", "D"]
+    assert len(list_raw_materials(conn)) == 3

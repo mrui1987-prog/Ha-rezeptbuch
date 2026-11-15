@@ -24,8 +24,9 @@ admin = [Depends(require_admin)]
 
 @router.get("/raw-materials")
 def list_raw_materials(search: str | None = None, include_archived: bool = False,
-                       db: sqlite3.Connection = Depends(get_db)):
-    return service.list_raw_materials(db, search=search, include_archived=include_archived)
+                       zero_percent: bool = False, db: sqlite3.Connection = Depends(get_db)):
+    return service.list_raw_materials(db, search=search, include_archived=include_archived,
+                                      zero_percent=zero_percent)
 
 
 @router.get("/raw-materials/{raw_material_id}")

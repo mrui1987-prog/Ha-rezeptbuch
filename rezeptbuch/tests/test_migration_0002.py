@@ -67,7 +67,7 @@ def test_other_fields_can_change_when_used(conn):
 
 
 def test_migration_on_database_with_data(tmp_path):
-    """Eine Datenbank im Stand 0001 mit Daten wird ohne Verlust auf 0002 gebracht (mit Sicherung)."""
+    """Eine Datenbank im Stand 0001 mit Daten wird ohne Verlust auf den neuesten Stand gebracht (mit Sicherung)."""
     only_first = tmp_path / "only_first"
     only_first.mkdir()
     shutil.copy(MIGRATIONS_DIR / "0001_initial.sql", only_first / "0001_initial.sql")
@@ -81,7 +81,7 @@ def test_migration_on_database_with_data(tmp_path):
     conn = init_database(db)
     rows = conn.execute("SELECT number, name, display_name FROM raw_material ORDER BY number").fetchall()
     assert [tuple(r) for r in rows] == [(1, "Weizenmehl 550", None), (2, "Ei", None)]
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
     backups = list((tmp_path / "backups").glob("pre_migration_0001_*.db"))
     assert len(backups) == 1
     conn.close()

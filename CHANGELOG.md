@@ -1,5 +1,16 @@
 # Änderungen
 
+## 0.5.0 – Modul 05, Teil C1 (in Entwicklung)
+
+- **Rohstoff-CSV-Import** im Admin-Bereich (Taste „CSV-Import“): Format wie der CSV-Export, erst Probelauf mit Bericht, dann Import; alles oder nichts
+- Vorhandene Rohstoffe werden mit den Werten der Datei **überschrieben** (Zuordnung über die Nummer, ohne Nummer über den Namen); der Bericht zeigt je Feld „alt → neu“, der Import startet erst nach der Bestätigung „n Rohstoffe werden überschrieben“
+- Neue Rohstoffe mit leerer Toleranz erhalten **0 %** (wird gewogen, mindestens ±1 g) und werden im Bericht aufgelistet; leere Toleranz bei vorhandenen Rohstoffen bleibt unverändert
+- Spalte „archiviert“ archiviert bzw. stellt wieder her; Rohstoffe, die nicht in der Datei stehen, bleiben unverändert
+- Dateien aus Excel („CSV UTF-8“ und „CSV (Trennzeichen-getrennt)“) werden gelesen, ebenso Zahlen wie „25.000“
+- Rohstoffliste: Filter **„nur Toleranz 0 %“**; Hinweis unter dem Toleranzfeld: 0 g = Handzugabe, 0 % wird gewogen
+- **Sperre B2:** Namen und Kurznamen, die mit `=`, `+`, `-` oder `@` beginnen, werden beim Anlegen, Umbenennen und Import abgelehnt (vorhandene Namen bleiben)
+- Datenbank-Migration `0003_recipe.sql`: Bearbeitungsstand je Rezept, Sperre der Rezeptnummer nach der ersten Verwendung (Vorbereitung für Teil C2)
+
 ## 0.3.4 – Korrektur nach Freigabeprüfung
 
 - Ziffern-Sonderzeichen (z. B. „²“) in Rohstoffnummer oder Gebindegröße führten zu einem Serverfehler; jetzt erscheint die normale Meldung „muss eine ganze Zahl sein“

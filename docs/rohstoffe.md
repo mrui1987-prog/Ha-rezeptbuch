@@ -61,7 +61,7 @@ Ablauf wie in Modul 02: automatische Sicherungskopie vor der Migration, Rückrol
 | R03-2 | **Name:** Pflicht, eindeutig ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen am Rand. Doppelte Leerzeichen werden zusammengezogen. |
 | R03-3 | **Ähnliche Namen:** Beim Anlegen zeigt das System Hinweise auf ähnliche Namen (z. B. „Marrgarine“ ↔ „Margarine“), sperrt aber nicht. Vergleich mit Python `difflib` (Schwelle 0,8, keine neue Bibliothek). |
 | R03-4 | **Kurzname:** optional, frei wählbar, mehrfach erlaubt (z. B. drei Sorten mit „Margarine“). Leer = Name wird angezeigt. **An der Station überall der Kurzname** (Vorwahl, Rezeptübersicht, Wiegeansicht; K03-4). Admin-Bereich, Export und Chargenprotokoll zeigen immer den vollen Name. Die Anzeige an der Station setzen Modul 09/10 um; die API liefert dafür das Feld `station_name` (Kurzname, sonst Name). |
-| R03-5 | **Toleranz:** Pflichtfeld. **Beim Anlegen ist das Feld leer** und muss ausgefüllt werden (K03-3); ohne Wert wird nicht gespeichert. `0` = Sollhandzugabe (nur quittieren). In Gramm ganze Zahl ≥ 0. In Prozent auf Zehntel genau, höchstens 100,0 %. Einheit vorbelegt mit Gramm (R1). Die **Mindesttoleranz 1 g** (M03-4) wirkt bei der Verwiegung und wird in Modul 06/09 umgesetzt; hier wird sie nur als Hinweis unter dem Eingabefeld angezeigt. |
+| R03-5 | **Toleranz:** Pflichtfeld. **Beim Anlegen ist das Feld leer** und muss ausgefüllt werden (K03-3); ohne Wert wird nicht gespeichert. **Nur `0 g`** = Sollhandzugabe (nur quittieren); **`0 %` wird gewogen** (bei der Verwiegung mindestens ±1 g; M05-13b, ergänzt 15.11.2026). In Gramm ganze Zahl ≥ 0. In Prozent auf Zehntel genau, höchstens 100,0 %. Einheit vorbelegt mit Gramm (R1). Die **Mindesttoleranz 1 g** (M03-4) wirkt bei der Verwiegung und wird in Modul 06/09 umgesetzt; hier wird sie nur als Hinweis unter dem Eingabefeld angezeigt. |
 | R03-6 | **Gebinde/Stück:** Größe in Gramm und Bezeichnung nur zusammen (z. B. 55 g „Ei“). |
 | R03-7 | **Typwechsel Mehl ↔ Standard** (M03-5): erlaubt. Ist der Rohstoff in Rezepten verwendet, antwortet das System zuerst mit einer Warnung „betrifft n Rezepte – ‚Mehl gesamt‘ ändert sich dort“ (Code `type_change_confirmation_required`). Erst nach Bestätigung (`confirm_type_change: true`) wird gespeichert. Fixierte Versionen und Chargen bleiben unverändert. |
 | R03-8 | **Herkunft:** Handanlage immer „eigen“. „BÄKO“ setzt nur der spätere Datenlink-Import (Modul 04). |
@@ -89,7 +89,7 @@ Lesen (ohne PIN, die Stationen brauchen das später):
 
 | Methode | Pfad | Inhalt |
 |---|---|---|
-| GET | `/raw-materials?search=&include_archived=false` | Liste (einfaches Array), Suche in Nummer, Name, Kurzname; jedes Element mit `station_name` |
+| GET | `/raw-materials?search=&include_archived=false&zero_percent=false` | Liste (einfaches Array), Suche in Nummer, Name, Kurzname; jedes Element mit `station_name`; `zero_percent=true` nur Toleranz 0 % (ab 0.5.0, M05-13b) |
 | GET | `/raw-materials/{id}` | ein Rohstoff mit Verwendungszahl |
 | GET | `/system/info` | Version, `pin_is_default` (für den Probebetrieb-Balken), `admin_timeout_minutes` |
 
@@ -108,7 +108,7 @@ Lesen (ohne PIN, die Stationen brauchen das später):
 
 Fehlerantworten (immer mit deutscher Meldung im Feld `detail`, dazu `field` und `code`): 400 ungültige Eingabe, 401 nicht angemeldet, 404 nicht gefunden, 409 Konflikt (Name doppelt, Nummer vergeben oder gesperrt, Löschen verwendet, Typwechsel ohne Bestätigung), 423 PIN gesperrt, 503 Datenbank nicht bereit oder gesperrt.
 
-**CSV-Export:** Semikolon als Trenner, UTF-8 mit BOM (öffnet direkt richtig in Excel), Prozent mit Komma (2,5). Spalten: Nummer; Name; Kurzname; Typ; Toleranz; Toleranzeinheit; Gebindegröße g; Gebindebezeichnung; Herkunft; archiviert; geändert am. Dasselbe Format dient später für den Import (Modul 05).
+**CSV-Export:** Semikolon als Trenner, UTF-8 mit BOM (öffnet direkt richtig in Excel), Prozent mit Komma (2,5). Spalten: Nummer; Name; Kurzname; Typ; Toleranz; Toleranzeinheit; Gebindegröße g; Gebindebezeichnung; Herkunft; archiviert; geändert am. Dasselbe Format liest der CSV-Import (ab 0.5.0, Modul 05, docs/rezepte.md Abschnitt 6.1).
 
 ## 7. Seite (schlicht, ohne Gestaltung)
 
@@ -180,6 +180,7 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 | 14.11.2026 | K03-1 bis K03-4 entschieden und eingearbeitet. |
 | 14.11.2026 | Konzept von Michael freigegeben; Schritt C umgesetzt, Abschnitte 5 bis 10 an den Code angepasst (siehe Abschnitt 14). |
 | 15.11.2026 | Praxisprüfung in Home Assistant (iPhone), Korrekturen 0.3.1 bis 0.3.4, Abschnitt 14 ergänzt. |
+| 15.11.2026 | Änderungen durch Modul 05 (0.5.0): Sperre B2, Bedeutung 0 g / 0 %, Filter 0 %, CSV-Import (Abschnitt 14). |
 
 ## 14. Abweichungen der Umsetzung vom freigegebenen Konzept
 
@@ -202,3 +203,10 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 
 - **B2 (CSV-Formeln):** Namen, die mit `=`, `+`, `-` oder `@` beginnen, werden in Modul 05 (Rezeptverwaltung) gesperrt. Für Rohstoffe wird dies dort mit entschieden.
 - **B3 (sehr große Toleranz):** keine zusätzliche Warnung (Entscheidung Michael, 15.11.2026).
+
+### Änderungen durch Modul 05 (Add-on 0.5.0, abgestimmt mit Michael am 15.11.2026)
+
+- **Sperre B2 (M05-14):** Name und Kurzname dürfen beim Anlegen und Umbenennen nicht mit `=`, `+`, `-` oder `@` beginnen; unveränderte vorhandene Namen bleiben speicherbar (`app/text_rules.py`).
+- **0 g / 0 % (M05-13b):** nur 0 g ist Sollhandzugabe, 0 % wird gewogen; Hinweistext unter dem Toleranzfeld angepasst; Filter „nur Toleranz 0 %“ in der Liste und `zero_percent` in der API.
+- **CSV-Import** der Rohstoffe (aus M03-8 aufgeschoben): docs/rezepte.md Abschnitt 6.1.
+- `service.py` intern aufgeteilt: Funktionen `create_in_tx`, `update_in_tx`, `archive_in_tx`, `restore_in_tx` mit den Regeln für eine bereits offene Transaktion (für den Import „alles oder nichts“); die bisherigen Funktionen verhalten sich unverändert.

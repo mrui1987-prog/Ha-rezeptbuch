@@ -1,4 +1,4 @@
-"""Eingabeprüfung für Rohstoffe (Modul 03, Regeln R03-2 bis R03-6).
+"""Eingabeprüfung für Rohstoffe (Modul 03, Regeln R03-2 bis R03-6; Sperre B2 aus Modul 05).
 
 Reine Python-Prüfung ohne Webserver-Bibliothek, damit Modul 05 (Rezeptimport)
 und Modul 04 (BÄKO-Import) dieselben Regeln nutzen können.
@@ -13,6 +13,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from ..errors import ValidationError
+from ..text_rules import check_no_formula_start
 
 TYPES = ("standard", "flour")
 TOLERANCE_UNITS = ("g", "percent")
@@ -27,6 +28,13 @@ MAX_PERCENT_TENTHS = 1000      # 100,0 %
 def normalize_text(value: str) -> str:
     """Entfernt Leerzeichen am Rand und zieht doppelte Leerzeichen zusammen."""
     return " ".join(value.split())
+
+
+def _plain(value) -> str | None:
+    """Vergleichswert eines bisherigen Textfelds (normalisiert, leer = None)."""
+    if not isinstance(value, str):
+        return None
+    return normalize_text(value) or None
 
 
 def _text(value, field: str, label: str, *, required: bool, max_len: int) -> str | None:
@@ -67,7 +75,8 @@ def parse_tolerance(value, unit: str) -> int:
     """Wandelt die eingegebene Toleranz in den Spaltenwert um (g oder Zehntelprozent).
 
     Gramm: ganze Zahl ≥ 0. Prozent: auf Zehntel genau (Komma oder Punkt), 0 bis 100,0.
-    0 bedeutet „Sollhandzugabe“ (nur quittieren, nicht wiegen).
+    Nur **0 g** bedeutet „Sollhandzugabe“ (nur quittieren, nicht wiegen). **0 %** wird
+    gewogen; bei der Verwiegung gilt nie weniger als ±1 g (M03-4, M05-13b).
     """
     if value is None or (isinstance(value, str) and not value.strip()):
         raise ValidationError("Toleranz ist ein Pflichtfeld.", field="tolerance")
@@ -110,6 +119,10 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
     ``base`` sind die bisherigen Anzeigewerte beim Bearbeiten; die Eingabe überschreibt sie.
     Ohne ``base`` (Anlegen) sind Name und Toleranz Pflicht; die Nummer darf fehlen
     (dann vergibt der Dienst die nächste freie).
+
+    Sperre B2 (M05-14): Name und Kurzname dürfen nicht mit =, +, - oder @ beginnen.
+    Geprüft wird nur ein neuer oder geänderter Wert; ein vorhandener Name bleibt
+    beim Speichern anderer Felder unbeanstandet.
     """
     if not isinstance(data, dict):
         raise ValidationError("Ungültige Eingabe.")
@@ -133,6 +146,10 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
     name = _text(merged.get("name"), "name", "Name", required=True, max_len=MAX_NAME)
     display_name = _text(merged.get("display_name"), "display_name", "Kurzname", required=False,
                          max_len=MAX_DISPLAY_NAME)
+    if base is None or name != _plain(base.get("name")):
+        check_no_formula_start(name, field="name", label="Name")
+    if display_name is not None and (base is None or display_name != _plain(base.get("display_name"))):
+        check_no_formula_start(display_name, field="display_name", label="Kurzname")
 
     type_ = merged.get("type") or "standard"
     if type_ not in TYPES:

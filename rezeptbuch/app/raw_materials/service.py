@@ -89,6 +89,10 @@ def _name_key(name: str) -> str:
     return normalize_text(name).casefold()
 
 
+# öffentlich für den Import (Modul 05): derselbe Namensvergleich wie bei R03-2
+name_key = _name_key
+
+
 def _find_active_with_name(conn: sqlite3.Connection, name: str, exclude_id: int | None = None):
     key = _name_key(name)
     for row in conn.execute("SELECT id, number, name FROM raw_material WHERE archived = 0"):
@@ -133,10 +137,19 @@ def get_raw_material(conn: sqlite3.Connection, raw_material_id: int) -> dict:
 
 
 def list_raw_materials(conn: sqlite3.Connection, search: str | None = None,
-                       include_archived: bool = False) -> list[dict]:
+                       include_archived: bool = False, zero_percent: bool = False) -> list[dict]:
     """Liste nach Nummer sortiert. Die Suche findet Teile von Nummer, Name und Kurzname
-    ohne Rücksicht auf Groß-/Kleinschreibung."""
-    sql = _SELECT + ("" if include_archived else " WHERE archived = 0") + " ORDER BY number"
+    ohne Rücksicht auf Groß-/Kleinschreibung.
+
+    ``zero_percent``: nur Rohstoffe mit Toleranz 0 % (Filter aus M05-13b; diese werden
+    bei der Verwiegung auf ±1 g genau gewogen und sollten geprüft werden).
+    """
+    where = []
+    if not include_archived:
+        where.append("archived = 0")
+    if zero_percent:
+        where.append("tolerance_unit = 'percent' AND tolerance_value = 0")
+    sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY number"
     rows = [_to_dict(r) for r in conn.execute(sql)]
     if search and search.strip():
         needle = normalize_text(search).casefold()
@@ -169,103 +182,138 @@ def similar_names(conn: sqlite3.Connection, name: str, exclude_id: int | None = 
 
 # -- Ändern ---------------------------------------------------------------------
 
-def create_raw_material(conn: sqlite3.Connection, data: dict, source: str = "admin") -> dict:
-    """Legt einen eigenen Rohstoff an (R03-1, R03-2, R03-5, R03-6, R03-8, R03-12)."""
+def _integrity(exc: sqlite3.IntegrityError, what: str = "Der Rohstoff konnte nicht gespeichert werden") -> ConflictError:
+    return ConflictError(f"{what}: {exc}", code="integrity")
+
+
+# Die Funktionen mit ``_in_tx`` erwarten eine bereits offene Transaktion. Sie enthalten
+# die Regeln und werden von den öffentlichen Funktionen unten sowie vom Import
+# (Modul 05, alles in einer Transaktion) benutzt. So gibt es die Regeln nur einmal.
+
+def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin") -> int:
+    """Legt einen eigenen Rohstoff an (R03-1, R03-2, R03-5, R03-6, R03-8, R03-12) und liefert die ID."""
     clean = validate(data)
+    if clean["number"] is None:
+        clean["number"] = next_number(conn)
+    elif conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (clean["number"],)).fetchone():
+        raise ConflictError(f"Die Nummer {clean['number']} ist schon vergeben.",
+                            field="number", code="number_taken")
+    same = _find_active_with_name(conn, clean["name"])
+    if same is not None:
+        raise ConflictError(
+            f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
+            field="name", code="name_taken")
+    cur = conn.execute(
+        "INSERT INTO raw_material (number, name, display_name, type, tolerance_unit, tolerance_value, "
+        "unit_size_g, unit_label, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own')",
+        tuple(clean[c] for c in _COLUMNS))
+    new_id = cur.lastrowid
+    _log(conn, "create", new_id, None, _snapshot(_fetch(conn, new_id)), source)
+    return new_id
+
+
+def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
+                 confirm_type_change: bool = False, source: str = "admin") -> dict:
+    """Ändert einen Rohstoff; nur die mitgeschickten Felder ändern sich.
+
+    Liefert die geänderten Spalten mit ``{"spalte": (alt, neu)}`` (leer = nichts geändert).
+    """
+    row = _fetch(conn, raw_material_id)
+    clean = validate(data, base=_display_values(row))
+    changes = {c: clean[c] for c in _COLUMNS if clean[c] != row[c]}
+    if not changes:
+        return {}
+
+    use = usage(conn, raw_material_id)
+    if "number" in changes:
+        if use["used"]:
+            raise ConflictError(
+                "Die Nummer ist in Rezepten verwendet und kann nicht mehr geändert werden.",
+                field="number", code="number_locked")
+        if conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (changes["number"],)).fetchone():
+            raise ConflictError(f"Die Nummer {changes['number']} ist schon vergeben.",
+                                field="number", code="number_taken")
+    if "name" in changes and not row["archived"]:
+        same = _find_active_with_name(conn, changes["name"], exclude_id=raw_material_id)
+        if same is not None:
+            raise ConflictError(
+                f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
+                field="name", code="name_taken")
+    if "type" in changes and use["recipes"] and not confirm_type_change:
+        n = use["recipes"]
+        raise ConflictError(
+            f"Der Typwechsel betrifft {n} Rezept{'e' if n != 1 else ''}: "
+            "„Mehl gesamt“ ändert sich dort. Bitte bestätigen.",
+            field="type", code="type_change_confirmation_required", affected_recipes=n)
+
+    assignments = ", ".join(f"{c} = ?" for c in changes)
+    conn.execute(
+        f"UPDATE raw_material SET {assignments}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+        "WHERE id = ?", (*changes.values(), raw_material_id))
+    _log(conn, "update", raw_material_id, {c: row[c] for c in changes}, changes, source)
+    return {c: (row[c], changes[c]) for c in changes}
+
+
+def archive_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> None:
+    """Archiviert einen Rohstoff (R03-9). Rezepte, die ihn nutzen, bleiben unverändert."""
+    row = _fetch(conn, raw_material_id)
+    if row["archived"]:
+        raise ConflictError("Der Rohstoff ist bereits archiviert.", code="already_archived")
+    conn.execute("UPDATE raw_material SET archived = 1, "
+                 "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (raw_material_id,))
+    _log(conn, "archive", raw_material_id, {"archived": 0}, {"archived": 1}, source)
+
+
+def restore_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> None:
+    """Holt einen archivierten Rohstoff zurück, sofern kein aktiver Rohstoff denselben Namen hat (R03-10)."""
+    row = _fetch(conn, raw_material_id)
+    if not row["archived"]:
+        raise ConflictError("Der Rohstoff ist nicht archiviert.", code="not_archived")
+    same = _find_active_with_name(conn, row["name"], exclude_id=raw_material_id)
+    if same is not None:
+        raise ConflictError(
+            f"Wiederherstellen nicht möglich: Der aktive Rohstoff „{same['name']}“ "
+            f"(Nummer {same['number']}) hat denselben Namen. Bitte zuerst einen der beiden umbenennen.",
+            field="name", code="name_taken")
+    conn.execute("UPDATE raw_material SET archived = 0, "
+                 "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (raw_material_id,))
+    _log(conn, "restore", raw_material_id, {"archived": 1}, {"archived": 0}, source)
+
+
+def create_raw_material(conn: sqlite3.Connection, data: dict, source: str = "admin") -> dict:
+    """Legt einen eigenen Rohstoff an (eigene Transaktion)."""
+    validate(data)          # Eingabefehler vor dem Sperren der Datenbank melden
     try:
         with transaction(conn):
-            if clean["number"] is None:
-                clean["number"] = next_number(conn)
-            elif conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (clean["number"],)).fetchone():
-                raise ConflictError(f"Die Nummer {clean['number']} ist schon vergeben.",
-                                    field="number", code="number_taken")
-            same = _find_active_with_name(conn, clean["name"])
-            if same is not None:
-                raise ConflictError(
-                    f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
-                    field="name", code="name_taken")
-            cur = conn.execute(
-                "INSERT INTO raw_material (number, name, display_name, type, tolerance_unit, tolerance_value, "
-                "unit_size_g, unit_label, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own')",
-                tuple(clean[c] for c in _COLUMNS))
-            new_id = cur.lastrowid
-            _log(conn, "create", new_id, None, _snapshot(_fetch(conn, new_id)), source)
+            new_id = create_in_tx(conn, data, source)
     except sqlite3.IntegrityError as exc:
-        raise ConflictError(f"Der Rohstoff konnte nicht gespeichert werden: {exc}", code="integrity") from exc
+        raise _integrity(exc) from exc
     return get_raw_material(conn, new_id)
 
 
 def update_raw_material(conn: sqlite3.Connection, raw_material_id: int, data: dict,
                         confirm_type_change: bool = False, source: str = "admin") -> dict:
-    """Ändert einen Rohstoff; nur die mitgeschickten Felder ändern sich."""
+    """Ändert einen Rohstoff (eigene Transaktion); nur die mitgeschickten Felder ändern sich."""
     try:
         with transaction(conn):
-            row = _fetch(conn, raw_material_id)
-            clean = validate(data, base=_display_values(row))
-            changes = {c: clean[c] for c in _COLUMNS if clean[c] != row[c]}
-            if not changes:
-                return get_raw_material(conn, raw_material_id)
-
-            use = usage(conn, raw_material_id)
-            if "number" in changes:
-                if use["used"]:
-                    raise ConflictError(
-                        "Die Nummer ist in Rezepten verwendet und kann nicht mehr geändert werden.",
-                        field="number", code="number_locked")
-                if conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (changes["number"],)).fetchone():
-                    raise ConflictError(f"Die Nummer {changes['number']} ist schon vergeben.",
-                                        field="number", code="number_taken")
-            if "name" in changes and not row["archived"]:
-                same = _find_active_with_name(conn, changes["name"], exclude_id=raw_material_id)
-                if same is not None:
-                    raise ConflictError(
-                        f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
-                        field="name", code="name_taken")
-            if "type" in changes and use["recipes"] and not confirm_type_change:
-                n = use["recipes"]
-                raise ConflictError(
-                    f"Der Typwechsel betrifft {n} Rezept{'e' if n != 1 else ''}: "
-                    "„Mehl gesamt“ ändert sich dort. Bitte bestätigen.",
-                    field="type", code="type_change_confirmation_required", affected_recipes=n)
-
-            assignments = ", ".join(f"{c} = ?" for c in changes)
-            conn.execute(
-                f"UPDATE raw_material SET {assignments}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
-                "WHERE id = ?", (*changes.values(), raw_material_id))
-            _log(conn, "update", raw_material_id, {c: row[c] for c in changes}, changes, source)
+            update_in_tx(conn, raw_material_id, data, confirm_type_change, source)
     except sqlite3.IntegrityError as exc:
         # Auch die Schutz-Trigger der Datenbank (z. B. Nummer gesperrt) landen hier
-        raise ConflictError(f"Der Rohstoff konnte nicht gespeichert werden: {exc}", code="integrity") from exc
+        raise _integrity(exc) from exc
     return get_raw_material(conn, raw_material_id)
 
 
 def archive_raw_material(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> dict:
-    """Archiviert einen Rohstoff (R03-9). Rezepte, die ihn nutzen, bleiben unverändert."""
+    """Archiviert einen Rohstoff (eigene Transaktion)."""
     with transaction(conn):
-        row = _fetch(conn, raw_material_id)
-        if row["archived"]:
-            raise ConflictError("Der Rohstoff ist bereits archiviert.", code="already_archived")
-        conn.execute("UPDATE raw_material SET archived = 1, "
-                     "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (raw_material_id,))
-        _log(conn, "archive", raw_material_id, {"archived": 0}, {"archived": 1}, source)
+        archive_in_tx(conn, raw_material_id, source)
     return get_raw_material(conn, raw_material_id)
 
 
 def restore_raw_material(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> dict:
-    """Holt einen archivierten Rohstoff zurück, sofern kein aktiver Rohstoff denselben Namen hat (R03-10)."""
+    """Holt einen archivierten Rohstoff zurück (eigene Transaktion)."""
     with transaction(conn):
-        row = _fetch(conn, raw_material_id)
-        if not row["archived"]:
-            raise ConflictError("Der Rohstoff ist nicht archiviert.", code="not_archived")
-        same = _find_active_with_name(conn, row["name"], exclude_id=raw_material_id)
-        if same is not None:
-            raise ConflictError(
-                f"Wiederherstellen nicht möglich: Der aktive Rohstoff „{same['name']}“ "
-                f"(Nummer {same['number']}) hat denselben Namen. Bitte zuerst einen der beiden umbenennen.",
-                field="name", code="name_taken")
-        conn.execute("UPDATE raw_material SET archived = 0, "
-                     "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (raw_material_id,))
-        _log(conn, "restore", raw_material_id, {"archived": 1}, {"archived": 0}, source)
+        restore_in_tx(conn, raw_material_id, source)
     return get_raw_material(conn, raw_material_id)
 
 
