@@ -1,6 +1,6 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.3.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.3.2: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
@@ -88,7 +88,9 @@ def index() -> str:
 <title>HA-Rezeptbuch</title>
 <style>
   :root {{ color-scheme: light; }}
-  body {{ font-family: sans-serif; padding: 2rem; margin: 0; background: #fafafa; color: #222; }}
+  html {{ background: #fafafa; }}
+  body {{ font-family: sans-serif; padding: 2rem; margin: 0; background: #fafafa; color: #222;
+         min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }}
   a.button {{ display: inline-block; padding: .8rem 1.4rem; background: #2563eb; color: #fff;
              text-decoration: none; border-radius: 6px; font-size: 1.1rem; }}
 </style></head>
@@ -96,5 +98,11 @@ def index() -> str:
 <h1>HA-Rezeptbuch</h1>
 <p>Version {__version__} – im Aufbau.</p>
 <p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe)</a></p>
+<script>
+  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
+  function repaint() {{ document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }}
+  window.addEventListener('load', function () {{ repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); }});
+  window.addEventListener('pageshow', repaint);
+</script>
 </body>
 </html>"""

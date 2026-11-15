@@ -7,7 +7,8 @@
 <style>
   /* Bewusst schlicht: Gestaltung folgt in Modul 10 */
   :root { color-scheme: light; }
-  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; }
+  html { background: #fafafa; }
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
   main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
   h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
   button { font-size: 1rem; padding: .5rem .9rem; margin: .15rem; cursor: pointer; }
@@ -443,6 +444,14 @@ async function start() {
   }
 }
 start();
+</script>
+<script>
+  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
+  (function () {
+    function repaint() { document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }
+    window.addEventListener('load', function () { repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); });
+    window.addEventListener('pageshow', repaint);
+  })();
 </script>
 </body>
 </html>

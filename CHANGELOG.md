@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.3.2 – Korrektur nach Praxisprüfung
+
+- Startseite und Admin-Seite blieben beim ersten Aufruf in der iOS-Companion-App leer (erst nach Berührung sichtbar); erstes Zeichnen wird jetzt erzwungen
+
 ## 0.3.1 – Korrektur nach Praxisprüfung
 
 - Startseite war im dunklen Home-Assistant-Design weiß auf weiß (Text unsichtbar); jetzt fester heller Hintergrund mit gut sichtbarer Taste „Admin-Bereich“, ebenso für die Admin-Seite
