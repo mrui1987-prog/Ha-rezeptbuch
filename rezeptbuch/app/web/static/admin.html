@@ -7,6 +7,10 @@
 <style>
   /* Bewusst schlicht: Gestaltung folgt in Modul 10 */
   :root { color-scheme: light; }
+  #confirm-box { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000;
+                 align-items: center; justify-content: center; padding: 1rem; }
+  #confirm-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 28rem; width: 100%; color: #222; }
+  #confirm-box .row { display: flex; gap: .6rem; margin-top: 1rem; }
   html { background: #fafafa; }
   body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
   main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
@@ -34,6 +38,8 @@
 </style>
 </head>
 <body>
+<div id="confirm-box"><div class="dlg"><p id="confirm-text"></p>
+  <div class="row"><button type="button" id="confirm-ok">OK</button><button type="button" id="confirm-cancel">Abbrechen</button></div></div></div>
 <div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
 <main>
 
@@ -295,8 +301,26 @@ async function act(item, action) {
   } catch (err) { handleError(err); }
 }
 
+// Eigene Rückfrage statt confirm(): In der HA-App (iOS) fehlt dort die Taste „Abbrechen“
+function askConfirm(text, okLabel) {
+  return new Promise((resolve) => {
+    const box = document.getElementById("confirm-box");
+    document.getElementById("confirm-text").textContent = text;
+    document.getElementById("confirm-ok").textContent = okLabel || "OK";
+    box.style.display = "flex";
+    const done = (value) => {
+      box.style.display = "none";
+      document.getElementById("confirm-ok").onclick = null;
+      document.getElementById("confirm-cancel").onclick = null;
+      resolve(value);
+    };
+    document.getElementById("confirm-ok").onclick = () => done(true);
+    document.getElementById("confirm-cancel").onclick = () => done(false);
+  });
+}
+
 async function remove(item) {
-  if (!confirm("„" + item.name + "“ endgültig löschen?")) return;
+  if (!(await askConfirm("„" + item.name + "“ endgültig löschen?", "Löschen"))) return;
   showMsg("list-msg", "");
   try {
     await api("admin/raw-materials/" + item.id, { method: "DELETE" });
@@ -415,7 +439,7 @@ $("form").addEventListener("submit", async (event) => {
     } catch (err) {
       // Typwechsel eines verwendeten Rohstoffs: erst nach Bestätigung speichern
       if (err.status === 409 && err.data.code === "type_change_confirmation_required"
-          && confirm(err.message)) {
+          && (await askConfirm(err.message, "Trotzdem speichern"))) {
         await save(true);
       } else {
         throw err;

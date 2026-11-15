@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.3.3 – Korrektur nach Praxisprüfung
+
+- Rückfragen („endgültig löschen?“, Typwechsel) erschienen in der iOS-App nur mit „OK“ und ohne „Abbrechen“; jetzt eigene Rückfrage mit beiden Tasten
+
 ## 0.3.2 – Korrektur nach Praxisprüfung
 
 - Startseite und Admin-Seite blieben beim ersten Aufruf in der iOS-Companion-App leer (erst nach Berührung sichtbar); erstes Zeichnen wird jetzt erzwungen
