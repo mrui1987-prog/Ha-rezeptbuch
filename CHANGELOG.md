@@ -16,7 +16,7 @@
 
 - Startseite war im dunklen Home-Assistant-Design weiß auf weiß (Text unsichtbar); jetzt fester heller Hintergrund mit gut sichtbarer Taste „Admin-Bereich“, ebenso für die Admin-Seite
 
-## 0.3.0 – in Prüfung (Modul 03: Rohstoff- & Zutatenverwaltung)
+## 0.3.0 – freigegeben am 15.11.2026 (Modul 03: Rohstoff- & Zutatenverwaltung; Korrekturen 0.3.1 bis 0.3.4)
 
 - Rohstoffverwaltung unter `/admin`: anlegen, bearbeiten, archivieren, wiederherstellen, löschen (nur wenn unbenutzt), Suche, CSV-Export
 - Rohstoffnummer: nächste freie Nummer wird vorgeschlagen, bis zur ersten Verwendung änderbar; keine doppelten Namen (ohne Beachtung von Groß-/Kleinschreibung), Hinweis auf ähnliche Namen
