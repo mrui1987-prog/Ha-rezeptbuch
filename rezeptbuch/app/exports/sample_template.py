@@ -99,7 +99,9 @@ GUIDE = [
      "bei einem Fehler wird nichts gespeichert. Importierte Rezepte sind gesperrt.", False),
     ("", False),
     ("Regeln", True),
-    ("• Rezeptnummer und Rezeptname dürfen noch nicht vorhanden sein. Leere Rezeptnummer = nächste freie Nummer.", False),
+    ("• Rezeptnummer: leer = nächste freie Nummer. Gibt es die Nummer (sonst der Rezeptname) schon, bekommt das "
+     "vorhandene Rezept nach Bestätigung eine neue Version; die bisherige bleibt als „old“ erhalten. Gleicher Inhalt = unverändert. "
+     "Archivierte Rezepte müssen zuerst wiederhergestellt werden.", False),
     ("• Namen dürfen nicht mit =, +, - oder @ beginnen (Hinweistext und Notiz schon).", False),
     ("• Hinweis anzeigen: „Beginn“ = am Anfang und am Ende der Verwiegung, „Ende“ = nur am Ende. "
      "Ein leerer Hinweistext erscheint an der Waage nicht.", False),

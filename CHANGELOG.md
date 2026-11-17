@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.5.7 – Modul 05, Ergänzung C3-E5 (in Entwicklung)
+
+- **Import vorhandener Rezepte erzeugt neue Versionen** (Wunsch Michael, ersetzt „vorhandene Nummer/Name = Fehler“): Ein Rezept der Datei, dessen Nummer (sonst Name) schon vorhanden ist, bekommt nach Bestätigung eine **neue Version**; die bisherige wird zur alten Version „old (n)“. Gleicher Inhalt = unverändert, keine Bestätigung nötig. Nummer, Gruppe und interne Notiz bleiben, wenn sie in der Datei leer sind; Stückgewichte und Chargengrößen werden über die Bezeichnung fortgeführt. Enthält die neue Version „*“, wird das Rezept gesperrt. Archivierte Rezepte und widersprüchliche Nummer/Name-Paare bleiben Fehler
+- Bericht und Rückfrage nennen die Rezepte mit „Version n → neu n+1“
+
 ## 0.5.6 – Modul 05, Ergänzung C3-E4 (in Entwicklung)
 
 - **Suche in der Rezeptliste mit Operatoren:** `R:Sonnenblumen` sucht unter den Rohstoffnamen, `K:Sonnenbl` unter den Kurznamen (jeweils in der aktuellen Version, Teiltreffer, ohne Groß-/Kleinschreibung). Ohne Operator wird wie bisher im Rezeptnamen gesucht (die Nummer geht weiter mit, ist aber nicht mehr im Hinweistext)

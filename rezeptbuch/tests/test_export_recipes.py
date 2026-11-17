@@ -121,9 +121,10 @@ def test_reimport_into_empty_database_is_identical(conn, filled, tmp_path):
     target.close()
 
 
-def test_reimport_into_same_database_fails(conn, filled):
+def test_reimport_into_same_database_is_unchanged(conn, filled):
     report = import_recipe_template(conn, build_workbook(conn), mode="check")
-    assert not report["ok"]
+    assert report["ok"] and not report["needs_confirmation"]       # gleicher Inhalt: keine neue Version
+    assert report["counts"]["recipes_unchanged"] == 2 and report["counts"]["recipes_new_version"] == 0
     assert report["counts"]["unchanged"] == 3                     # Rohstoffe unverändert
 
 

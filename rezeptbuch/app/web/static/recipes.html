@@ -1181,6 +1181,12 @@ function renderIoReport(report) {
   addList(box, "Rezepte neu (" + report.recipes.length + ")", report.recipes, (r) =>
     el("li", "Nr. " + r.number + " " + r.name + " (" + r.import_id + ", " + r.lines + " Zeilen, " + r.total_g + " g"
       + (r.review_count ? ", " + r.review_count + " „*“" : "") + ")"));
+  const changed = (report.recipes_updated || []).filter((r) => r.action === "new_version");
+  const same = (report.recipes_updated || []).filter((r) => r.action !== "new_version");
+  addList(box, "Vorhandene Rezepte bekommen eine neue Version (" + changed.length + ")", changed, (r) =>
+    el("li", "Nr. " + r.number + " " + r.name + ": Version " + r.old_version + " wird zu „old (" + r.old_version + ")“, neu ist Version "
+      + r.new_version + " (" + r.lines + " Zeilen, " + r.total_g + " g" + (r.review_count ? ", " + r.review_count + " „*“" : "") + ")"));
+  addList(box, "Vorhandene Rezepte unverändert (" + same.length + ")", same, (r) => el("li", "Nr. " + r.number + " " + r.name));
   addList(box, "Gruppen neu (" + report.groups_created.length + ")", report.groups_created, (g) => el("li", g));
   addList(box, "Rohstoffe werden überschrieben (" + report.changes.length + ")", report.changes, (c) => {
     const li = el("li");
@@ -1215,7 +1221,13 @@ $("io-run").addEventListener("click", async () => {
   const n = ioReport.counts.overwritten;
   let path = "admin/import/recipes?mode=run";
   const r = ioReport.counts.recipes;
+  const v = ioReport.counts.recipes_new_version || 0;
   let text = r + (r === 1 ? " Rezept wird" : " Rezepte werden") + " angelegt (gesperrt).";
+  if (v > 0) {
+    text += "\n" + v + (v === 1 ? " vorhandenes Rezept bekommt" : " vorhandene Rezepte bekommen")
+      + " eine neue Version; die bisherige Version bleibt als „old“ erhalten.";
+    path += "&confirm_overwrite=true";
+  }
   if (n > 0) {
     text += "\n" + n + (n === 1 ? " Rohstoff wird" : " Rohstoffe werden") + " mit den Werten der Datei überschrieben.";
     path += "&confirm_overwrite=true";

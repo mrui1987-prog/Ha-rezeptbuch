@@ -95,22 +95,94 @@ def test_numbers_given_and_free(conn):
     assert numbers == {"Eins": 50, "Zwei": 51, "Drei": 7}
 
 
-# -- Fehler bei Rezeptnummer / Name (M05-11) ---------------------------------------------
+# -- Vorhandene Rezepte: neue Version auf Bestätigung (C3-E5) ------------------------------
 
-def test_existing_number_is_error(conn):
+def versions(conn, name):
+    return service.get_recipe(conn, recipe_by_name(conn, name)["id"])
+
+
+def test_existing_by_name_gets_new_version_after_confirmation(conn):
     run(conn, simple())
-    data = build([recipe("X", "Anderes Brot", number=1)], [line("X", "Salz", 1)], BASE_RAW)
-    with pytest.raises(ValidationError) as exc:
+    before = recipe_by_name(conn, "Weizenbrot")
+    data = build([recipe("X", "WEIZENBROT")], [line("X", "Salz", 1), line("X", "Wasser", 2)], BASE_RAW)
+    check = run(conn, data, mode="check")
+    assert check["ok"] and check["needs_confirmation"]
+    assert check["counts"]["recipes_new_version"] == 1 and check["counts"]["recipes"] == 0
+    assert check["recipes_updated"][0]["old_version"] == 1 and check["recipes_updated"][0]["new_version"] == 2
+    with pytest.raises(ConflictError):                              # ohne Bestätigung nichts gespeichert
         run(conn, data)
-    errors = exc.value.extra["report"]["errors"]
-    assert errors[0]["sheet"] == "Rezepte" and "Rezeptnummer 1" in errors[0]["message"]
+    assert service.get_recipe(conn, before["id"])["version_no"] == 1
+    run(conn, data, confirm_overwrite=True)
+    rec = service.get_recipe(conn, before["id"])
+    assert rec["version_no"] == 2 and len(rec["items"]) == 2 and rec["number"] == 1
+    assert [v["version_no"] for v in rec["versions"]] == [2, 1] or len(rec["versions"]) == 2
+    old = service.get_version(conn, rec["id"], 1)
+    assert len(old["items"]) == 3                                    # alte Version bleibt erhalten
+    assert len(service.list_recipes(conn, include_locked=True)) == 1  # kein zweites Rezept
 
 
-def test_existing_name_is_error(conn):
+def test_existing_by_number_keeps_number_and_group(conn):
     run(conn, simple())
-    data = build([recipe("X", "WEIZENBROT")], [line("X", "Salz", 1)], BASE_RAW)
+    data = build([recipe("X", "Weizenbrot neu", number=1)], [line("X", "Salz", 5)], BASE_RAW)
+    run(conn, data, confirm_overwrite=True)
+    rec = service.get_recipe(conn, service.list_recipes(conn, include_locked=True)[0]["id"])
+    assert rec["number"] == 1 and rec["name"] == "Weizenbrot neu" and rec["version_no"] == 2
+    assert rec["group_name"] == "Brot"                               # Gruppe leer in der Datei = unverändert
+
+
+def test_same_content_is_unchanged(conn):
+    run(conn, simple())
+    check = run(conn, simple(), mode="check")
+    assert check["ok"] and not check["needs_confirmation"] and check["counts"]["recipes_unchanged"] == 1
+    run(conn, simple())
+    assert service.get_recipe(conn, recipe_by_name(conn, "Weizenbrot")["id"])["version_no"] == 1
+
+
+def test_frozen_version_always_new(conn):
+    run(conn, simple())
+    rid = recipe_by_name(conn, "Weizenbrot")["id"]
+    conn.execute("UPDATE recipe_version SET frozen_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+                 "WHERE id = (SELECT current_version_id FROM recipe WHERE id = ?)", (rid,))   # schon verwogen
+    data = build([recipe("X", "Weizenbrot")], [line("X", "Salz", 9)], BASE_RAW)
+    run(conn, data, confirm_overwrite=True)
+    assert service.get_recipe(conn, rid)["version_no"] == 2
+
+
+def test_number_and_name_of_different_recipes_is_error(conn):
+    run(conn, build([recipe("A", "Brot", number=1), recipe("B", "Kuchen", number=2)],
+                    [line("A", "Salz", 1), line("B", "Salz", 1)], BASE_RAW))
+    data = build([recipe("X", "Kuchen", number=1)], [line("X", "Salz", 1)], BASE_RAW)
     report = run(conn, data, mode="check")
-    assert not report["ok"] and "gibt es schon" in report["errors"][0]["message"]
+    assert not report["ok"] and "Nummer 1 gehört zu" in report["errors"][0]["message"]
+
+
+def test_archived_recipe_is_error(conn):
+    run(conn, simple())
+    rid = recipe_by_name(conn, "Weizenbrot")["id"]
+    service.unlock_recipe(conn, rid, confirm=True)
+    service.archive_recipe(conn, rid)
+    data = build([recipe("X", "Anderes", number=1)], [line("X", "Salz", 1)], BASE_RAW)
+    report = run(conn, data, mode="check")
+    assert not report["ok"] and "archiviert" in report["errors"][0]["message"]
+
+
+def test_update_keeps_internal_note_when_column_empty(conn):
+    run(conn, simple())
+    rid = recipe_by_name(conn, "Weizenbrot")["id"]
+    conn.execute("UPDATE recipe SET internal_note = 'wichtig' WHERE id = ?", (rid,))
+    data = build([recipe("X", "Weizenbrot")], [line("X", "Salz", 7)], BASE_RAW)
+    run(conn, data, confirm_overwrite=True)
+    assert service.get_recipe(conn, rid)["internal_note"] == "wichtig"
+
+
+def test_update_with_review_mark_locks_recipe(conn):
+    run(conn, simple())
+    rid = recipe_by_name(conn, "Weizenbrot")["id"]
+    service.unlock_recipe(conn, rid, confirm=True)
+    data = build([recipe("X", "Weizenbrot")], [line("X", "Salz", 7, flag="*")], BASE_RAW)
+    run(conn, data, confirm_overwrite=True)
+    rec = service.get_recipe(conn, rid)
+    assert rec["locked"] is True and rec["review_count"] == 1
 
 
 def test_duplicates_in_file(conn):

@@ -279,7 +279,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | Nr. | Entscheidung |
 |---|---|
 | K05-1 | **Export als .xlsx** mit denselben Blättern wie die Importvorlage, wieder importierbar (ändert M05-15 „CSV“). |
-| K05-2 | **Rohstoffe werden beim Import immer überschrieben**, nach Warnhinweis und Bestätigung (Vorgabe Michael, ändert M05-11 für Rohstoffe). Bearbeiten: Export → Excel → Re-Import. Für Rezepte bleibt „vorhandene Nummer = Fehler“. |
+| K05-2 | **Rohstoffe werden beim Import immer überschrieben**, nach Warnhinweis und Bestätigung (Vorgabe Michael, ändert M05-11 für Rohstoffe). Bearbeiten: Export → Excel → Re-Import. Für Rezepte galt zunächst „vorhandene Nummer = Fehler“, seit 0.5.7 erzeugt der Import für vorhandene Rezepte nach Bestätigung eine neue Version (C3-E5). |
 | K05-2a | Zuordnung über die Nummer, ohne Nummer über den Namen, sonst neu anlegen. |
 | K05-2b | Leere Toleranz bei vorhandenem Rohstoff bleibt unverändert (0 % nur bei neuen); andere leere Felder werden geleert. |
 | K05-2c | Spalte „archiviert“ wird übernommen; nicht enthaltene Rohstoffe bleiben unverändert. |
@@ -310,6 +310,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 15.11.2026 | Konzept von Michael freigegeben. Teil C1 (0.5.0) umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 | 15.11.2026 | Teil C2 (0.5.1) auf Zweig `modul05-c2` umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 | 17.11.2026 | Ergänzung C3-E1 (0.5.3): Sammelaktionen in der Rezeptliste (Abschnitt 16). |
+| 17.11.2026 | Ergänzung C3-E5 (0.5.7): Import vorhandener Rezepte (Nummer, sonst Name) erzeugt nach Bestätigung eine neue Version, die bisherige wird „old (n)“; gleicher Inhalt = unverändert; archivierte = Fehler. |
 | 17.11.2026 | Ergänzung C3-E4 (0.5.6): Suche mit Operatoren `R:` (Rohstoff) und `K:` (Kurzname) in der Rezeptliste. |
 | 17.11.2026 | Ergänzung C3-E3 (0.5.5): Filter „öffentliche zeigen“, „nie verwogen“, „enthält Unterrezepte“ in der Rezeptliste (`GET /recipes?include_public=&never_weighed=&has_sub_recipes=`). |
 | 17.11.2026 | Ergänzung C3-E2 (0.5.4): Mustervorlage `GET /admin/recipes/template.xlsx` (Musterrezept Schwarzwälder Kirschtorte, Musterrohstoffe mit Präfix „Muster“); Hinweisfenster statt Meldung oben bei fehlendem Rohstoff. |

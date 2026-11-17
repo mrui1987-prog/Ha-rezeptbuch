@@ -25,6 +25,7 @@ class ImportReport:
         self.hints: list[dict] = []
         self.zero_percent: list[dict] = []
         self.recipes: list[dict] = []        # Vorlagen-Import: neu angelegte Rezepte
+        self.recipes_updated: list[dict] = []  # Vorlagen-Import: vorhandene Rezepte, die eine neue Version bekommen
         self.groups_created: list[str] = []  # Vorlagen-Import: neu angelegte Gruppen
         self.imported = False
 
@@ -49,8 +50,8 @@ class ImportReport:
 
     @property
     def needs_confirmation(self) -> bool:
-        """Werden vorhandene Rohstoffe überschrieben, braucht der Import eine Bestätigung (K05-2)."""
-        return self.overwritten > 0
+        """Rohstoffe überschreiben (K05-2) oder vorhandene Rezepte neue Versionen bekommen (C3-E5): Bestätigung nötig."""
+        return self.overwritten > 0 or any(r["action"] == "new_version" for r in self.recipes_updated)
 
     def summary(self) -> str:
         if self.errors:
@@ -60,7 +61,12 @@ class ImportReport:
         verb = "importiert" if self.imported else "Probelauf"
         if self.kind == "recipes":
             n = len(self.recipes)
-            return (f"{verb}: {n} Rezept{'e' if n != 1 else ''} neu; Rohstoffe " + ", ".join(parts) + ".")
+            versions = sum(1 for r in self.recipes_updated if r["action"] == "new_version")
+            same = len(self.recipes_updated) - versions
+            text = f"{verb}: {n} Rezept{'e' if n != 1 else ''} neu"
+            if self.recipes_updated:
+                text += f", {versions} neue Version{'en' if versions != 1 else ''}, {same} unverändert"
+            return text + "; Rohstoffe " + ", ".join(parts) + "."
         return f"{verb}: " + ", ".join(parts) + "."
 
     def to_dict(self) -> dict:
@@ -68,10 +74,13 @@ class ImportReport:
         if self.kind == "recipes":
             result["counts"].update({
                 "recipes": len(self.recipes),
+                "recipes_new_version": sum(1 for r in self.recipes_updated if r["action"] == "new_version"),
+                "recipes_unchanged": sum(1 for r in self.recipes_updated if r["action"] != "new_version"),
                 "groups": len(self.groups_created),
                 "review_lines": sum(r.get("review_count", 0) for r in self.recipes),
             })
             result["recipes"] = self.recipes
+            result["recipes_updated"] = self.recipes_updated
             result["groups_created"] = self.groups_created
         return result
 

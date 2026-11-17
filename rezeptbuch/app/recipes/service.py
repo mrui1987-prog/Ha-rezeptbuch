@@ -650,7 +650,8 @@ def save_in_tx(conn: sqlite3.Connection, recipe_id: int, data: dict, *, revision
         check_no_formula_start(clean["name"], field="name", label="Name")
     _check_name_free(conn, clean["name"], exclude_id=recipe_id)
     _check_step_names(clean, set(stored["steps"]))
-    _apply_review_rule(clean["items"], current_items)
+    if source != "import":                  # „*“ setzt nur der Import (aus der Datei), die Seite nur bestätigen
+        _apply_review_rule(clean["items"], current_items)
     _check_references(conn, recipe_id, clean, current_items)
     _check_cycle(conn, recipe_id, clean["name"],
                  [i["sub_recipe_id"] for i in clean["items"] if i["sub_recipe_id"] is not None])

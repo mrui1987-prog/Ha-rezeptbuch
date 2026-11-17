@@ -11,8 +11,10 @@ Ablauf (alles oder nichts, M05-11):
 1. **Rohstoffe** genau wie der CSV-Import (``raw_materials_csv.apply_rows``): Zuordnung über
    Nummer, sonst Name; vorhandene werden überschrieben (Bestätigung), neue mit leerer
    Toleranz erhalten 0 % (K05-2, M05-13).
-2. **Rezepte** je Import-ID; vorhandene Nummer oder vorhandener Name = Fehler (M05-11, M05-3).
-   Gruppe: vorhandene verwenden, sonst anlegen (M05-9). Status gesperrt (M05-12).
+2. **Rezepte** je Import-ID. Neue Rezepte starten gesperrt (M05-12). Ein **vorhandenes Rezept**
+   (gleiche Nummer, sonst gleicher Name) bekommt auf Bestätigung eine **neue Version**; die bisherige
+   wird zur alten Version „old (n)“ (C3-E5, Wunsch Michael 17.11.2026). Gleicher Inhalt = unverändert.
+   Archivierte Rezepte werden nicht verändert (Fehler). Gruppe: vorhandene verwenden, sonst anlegen (M05-9).
 3. **Rezeptzeilen:** Rohstoff über „Zutat“ (Name), Unterrezept über „Unterrezept Import-ID“
    (nur innerhalb der Datei). **Menge g rechnet der Import selbst** aus Menge Original ×
    Faktor (g = 1, kg = 1 000, sonst Blatt „Umrechnung“ nach „Einheit + Zutat“), kaufmännisch
@@ -344,6 +346,7 @@ class PlannedRecipe:
     pieces: list[dict] = field(default_factory=list)
     batches: list[dict] = field(default_factory=list)
     broken: bool = False
+    existing_id: int | None = None            # vorhandenes Rezept → neue Version statt Anlegen
     # beim Anlegen gefüllt (Reihenfolge wie an die Service-Schicht übergeben, für Fundstellen)
     sorted_lines: list[dict] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
@@ -695,7 +698,7 @@ def _group_id(conn: sqlite3.Connection, name: str | None, report: ImportReport) 
     return group_id
 
 
-def _create(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, int], report: ImportReport) -> None:
+def _prepare(recipe: PlannedRecipe) -> None:
     recipe.sorted_lines = sorted(recipe.lines, key=lambda ln: (ln["position"] if ln["position"] is not None
                                                                 else 10**9, ln["order"]))
     recipe.steps = []
@@ -705,6 +708,8 @@ def _create(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, 
     recipe.sorted_pieces = sorted(recipe.pieces, key=lambda p: p["sort"])
     recipe.sorted_batches = sorted(recipe.batches, key=lambda b: b["sort"])
 
+
+def _items(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, int]) -> list[dict]:
     items = []
     for index, line in enumerate(recipe.sorted_lines, start=1):
         item = {"type": line["kind"], "amount_g": line["amount_g"], "needs_review": line["review"],
@@ -721,24 +726,46 @@ def _create(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, 
         else:
             item["sub_recipe_id"] = created[line["sub_id"].casefold()]
         items.append(item)
+    return items
 
-    data = dict(recipe.data)
-    data["group_id"] = _group_id(conn, recipe.group, report)
-    data["steps"] = recipe.steps
-    data["items"] = items
-    recipe_id = recipe_service.create_in_tx(conn, data, source="import")
 
+def _portions(conn: sqlite3.Connection, recipe: PlannedRecipe, recipe_id: int, items: list[dict]) -> None:
+    """Stückgewichte und Chargengrößen aus der Datei. Bei einem vorhandenen Rezept werden gleich bezeichnete
+    Einträge fortgeführt (Bezeichnung = Schlüssel); Rezepte ohne Einträge in der Datei bleiben unverändert."""
     if recipe.sorted_pieces:
         pieces = validate_piece_weights([{"label": p["label"], "weight_g": p["weight_g"]}
                                          for p in recipe.sorted_pieces])
-        recipe_service.set_piece_weights_in_tx(conn, recipe_id, pieces, source="import")
+        if recipe.existing_id is not None:
+            old = {r["label"].casefold(): r["id"] for r in conn.execute(
+                "SELECT id, label FROM recipe_piece_weight WHERE recipe_id = ?", (recipe_id,))}
+            for p in pieces:
+                p["id"] = old.get(p["label"].casefold())
+        recipe_service.set_piece_weights_in_tx(conn, recipe_id, pieces, confirm_delete_batch_sizes=True,
+                                               source="import")
     if recipe.sorted_batches:
         total = sum(i["amount_g"] for i in items)
         batches = validate_batch_sizes([{
             "label": b["label"], "kind": b["kind"],
             "value": b["value"] if b["value"] is not None or b["kind"] == "pieces" else total,
             "piece_weight_label": b["piece_label"]} for b in recipe.sorted_batches])
+        if recipe.existing_id is not None:
+            old = {r["label"].casefold(): r["id"] for r in conn.execute(
+                "SELECT id, label FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,))}
+            for b in batches:
+                b["id"] = old.get(b["label"].casefold())
         recipe_service.set_batch_sizes_in_tx(conn, recipe_id, batches, source="import")
+
+
+def _create(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, int], report: ImportReport) -> None:
+    _prepare(recipe)
+    items = _items(conn, recipe, created)
+
+    data = dict(recipe.data)
+    data["group_id"] = _group_id(conn, recipe.group, report)
+    data["steps"] = recipe.steps
+    data["items"] = items
+    recipe_id = recipe_service.create_in_tx(conn, data, source="import")
+    _portions(conn, recipe, recipe_id, items)
 
     created[recipe.import_id.casefold()] = recipe_id
     info = recipe_service.get_recipe(conn, recipe_id)
@@ -750,12 +777,79 @@ def _create(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, 
         report.hint(f"Rezept „{info['name']}“ hat keine Zeilen (Entwurf).", line=recipe.line, sheet=SHEET_RECIPES)
 
 
+def _update(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, int], report: ImportReport) -> None:
+    """Vorhandenes Rezept: neue Version mit dem Inhalt der Datei; die bisherige bleibt als „old (n)“ (C3-E5)."""
+    _prepare(recipe)
+    recipe_id = recipe.existing_id
+    before = recipe_service.get_recipe(conn, recipe_id)
+    items = _items(conn, recipe, created)
+
+    data = dict(recipe.data)
+    data["number"] = before["number"]                    # Nummer ändert der Import nie
+    data["group_id"] = _group_id(conn, recipe.group, report) if recipe.group else before["group_id"]
+    if not (recipe.data.get("internal_note") or "").strip():
+        data.pop("internal_note", None)                  # leere Notiz in der Datei löscht die vorhandene nicht
+    data["steps"] = recipe.steps
+    data["items"] = items
+    row = conn.execute("SELECT revision FROM recipe WHERE id = ?", (recipe_id,)).fetchone()
+    outcome = recipe_service.save_in_tx(conn, recipe_id, data, revision=row["revision"], version_mode="new",
+                                        source="import")
+    _portions(conn, recipe, recipe_id, items)
+
+    created[recipe.import_id.casefold()] = recipe_id
+    info = recipe_service.get_recipe(conn, recipe_id)
+    action = "new_version" if outcome["result"] == "new_version" else "unchanged"
+    entry = {"sheet": SHEET_RECIPES, "line": recipe.line, "import_id": recipe.import_id, "number": info["number"],
+             "name": info["name"], "lines": len(items), "total_g": info["sums"]["total_g"],
+             "review_count": info["review_count"], "action": action,
+             "old_version": before["version_no"], "new_version": info["version_no"]}
+    report.recipes_updated.append(entry)
+    if action == "new_version" and info["review_count"] and not info["locked"]:
+        recipe_service.lock_in_tx(conn, recipe_id, source="import")     # zu prüfende Zeilen: wie beim Anlegen sperren
+        report.hint(f"Rezept „{info['name']}“ ist wegen „*“ gesperrt worden (bitte prüfen und freischalten).",
+                    line=recipe.line, sheet=SHEET_RECIPES)
+    if not items:
+        report.hint(f"Rezept „{info['name']}“ hat keine Zeilen.", line=recipe.line, sheet=SHEET_RECIPES)
+
+
+def _match_existing(conn: sqlite3.Connection, planned: dict[str, PlannedRecipe], err: _Errors,
+                    report: ImportReport) -> None:
+    """Ordnet Rezepte der Datei vorhandenen zu: Nummer, sonst Name (nicht archiviert)."""
+    for recipe in planned.values():
+        by_number = None
+        if recipe.number is not None:
+            by_number = conn.execute(
+                "SELECT r.id, r.number, r.archived, v.name FROM recipe r JOIN recipe_version v "
+                "ON v.id = r.current_version_id WHERE r.number = ?", (recipe.number,)).fetchone()
+        by_name = recipe_service._find_active_with_name(conn, recipe.name) if recipe.name else None
+        if by_number is not None:
+            if by_number["archived"]:
+                err.add(SHEET_RECIPES, recipe.line, "number",
+                        f"Das Rezept Nr. {by_number['number']} „{by_number['name']}“ ist archiviert. "
+                        "Bitte zuerst wiederherstellen.")
+                recipe.broken = True
+                continue
+            if by_name is not None and by_name["id"] != by_number["id"]:
+                err.add(SHEET_RECIPES, recipe.line, "name",
+                        f"Nummer {recipe.number} gehört zu „{by_number['name']}“, der Name „{recipe.name}“ aber zu "
+                        f"Rezept Nr. {by_name['number']}. Bitte eindeutig machen.")
+                recipe.broken = True
+                continue
+            recipe.existing_id = by_number["id"]
+        elif by_name is not None:
+            recipe.existing_id = by_name["id"]
+            if recipe.number is not None:
+                report.hint(f"Rezept „{recipe.name}“: Nummer {recipe.number} aus der Datei wird nicht übernommen "
+                            f"(vorhandenes Rezept hat Nummer {by_name['number']}).", line=recipe.line,
+                            sheet=SHEET_RECIPES)
+
+
 def _assign_numbers(conn: sqlite3.Connection, planned: dict) -> None:
     """Leere Rezeptnummern: nach der höchsten vorhandenen bzw. in der Datei genannten Nummer vergeben."""
     highest = conn.execute("SELECT COALESCE(MAX(number), 0) FROM recipe").fetchone()[0]
     highest = max([highest, *(r.number for r in planned.values() if r.number is not None)])
     for recipe in sorted(planned.values(), key=lambda r: r.line):
-        if recipe.number is None:
+        if recipe.number is None and recipe.existing_id is None:
             highest += 1
             recipe.data["number"] = highest
 
@@ -789,6 +883,7 @@ def apply_template(conn: sqlite3.Connection, values_wb, formulas_wb, report: Imp
     _plan_pieces(pieces_sheet, planned, err)
     _plan_batches(batches_sheet, planned, err)
     ordered = _order(planned, err)
+    _match_existing(conn, planned, err, report)
     _assign_numbers(conn, planned)
     report.rows += len(recipes_sheet.rows)
 
@@ -807,7 +902,10 @@ def apply_template(conn: sqlite3.Connection, values_wb, formulas_wb, report: Imp
             continue
         conn.execute("SAVEPOINT import_recipe")
         try:
-            _create(conn, recipe, created, report)
+            if recipe.existing_id is not None:
+                _update(conn, recipe, created, report)
+            else:
+                _create(conn, recipe, created, report)
         except ServiceError as exc:
             conn.execute("ROLLBACK TO import_recipe")
             failed.add(key)
@@ -862,7 +960,13 @@ def import_recipe_template(conn: sqlite3.Connection, data: bytes, *, mode: str =
         raise ValidationError(report.summary(), code="import_failed", report=report.to_dict())
     if mode == "run" and not report.imported:
         n = report.overwritten
+        v = sum(1 for r in report.recipes_updated if r["action"] == "new_version")
+        parts = []
+        if n:
+            parts.append(f"{n} Rohstoff{'e' if n != 1 else ''} werden überschrieben")
+        if v:
+            parts.append(f"{v} vorhandene{'s Rezept bekommt' if v == 1 else ' Rezepte bekommen'} eine neue Version")
         raise ConflictError(
-            f"{n} Rohstoff{'e' if n != 1 else ''} werden überschrieben. Bitte bestätigen.",
+            "; ".join(parts) + ". Bitte bestätigen.",
             code="overwrite_confirmation_required", report=report.to_dict())
     return report.to_dict()
