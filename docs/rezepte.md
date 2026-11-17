@@ -183,7 +183,7 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 |---|---|---|
 | GET | `/recipes?search=&group_id=&include_locked=false&include_archived=false` | Liste: Nummer, Name, Gruppe, gesperrt, archiviert, Versionsnummer, Gesamtgewicht, Zeilen, Anzahl „*“. Vorgabe = was die Vorwahl zeigt (öffentlich, nicht archiviert). |
 | GET | `/recipes/{id}` | (ohne interne Notiz) aktuelle Version mit Kopf, Schritten, Zeilen (je Rohstoffzeile `station_name`, Name, Nummer, Typ, wirksame Toleranz, Gebinde, archiviert; je Unterrezept Nummer, Name, gesperrt), Stückgewichte, Chargengrößen, Summen, `revision`, Versionsliste |
-| GET | `/recipes/{id}/versions/{version_no}` | alte Version, nur lesen |
+| GET | `/recipes/{id}/versions/{version_no}` | alte Version, nur lesen; bei alten Versionen je Zeile `current` (Menge der aktuellen Version) und `current_only` (0.5.9, C3-E10) |
 | GET | `/recipe-groups` | Gruppen in Reihenfolge |
 
 Ändern (mit PIN-Sitzung, `X-Rezeptbuch-Session`):
@@ -201,6 +201,7 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 | POST, PATCH, DELETE | `/admin/recipe-groups`, `/admin/recipe-groups/{id}` | Gruppen; `PUT /admin/recipe-groups/order` für die Reihenfolge |
 | POST | `/admin/import/raw-materials?mode=check` bzw. `mode=run&confirm_overwrite=true` | CSV-Import (6.1) – **umgesetzt in 0.5.0** |
 | GET | `/admin/recipes/{id}` | wie `/recipes/{id}`, zusätzlich `internal_note` (0.5.2, KC2-2) |
+| POST | `/admin/recipes/replace-raw-material` | Rohstoff austauschen `{old_raw_material_id, new_raw_material_id, factor, extras: [{raw_material_id, factor}], mark_review, archive_old, mode: check\|run, confirm, recipes: [{id, revision}]}` (0.5.9, C3-E9) |
 | POST | `/admin/recipes/bulk` | Sammelaktion `{action: unlock\|lock\|archive\|restore\|delete, ids, mode: check\|run, confirm}` (0.5.3, C3-E1; `restore` seit 0.5.8, C3-E8); Export der Auswahl über `export.xlsx?ids=1,2,3` |
 | POST | `/admin/import/recipes?mode=check` bzw. `mode=run&confirm_overwrite=true`, optional `include_samples=true` | Vorlagen-Import (6.2) – **umgesetzt in 0.5.2**; Bericht seit 0.5.8 mit `conversions`, `nothing_to_import`, `counts.samples_*` |
 | GET | `/admin/recipes/template.xlsx` | Mustervorlage (0.5.4, C3-E2) |
@@ -316,6 +317,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 17.11.2026 | Ergänzung C3-E3 (0.5.5): Filter „öffentliche zeigen“, „nie verwogen“, „enthält Unterrezepte“ in der Rezeptliste (`GET /recipes?include_public=&never_weighed=&has_sub_recipes=`). |
 | 17.11.2026 | Ergänzung C3-E2 (0.5.4): Mustervorlage `GET /admin/recipes/template.xlsx` (Musterrezept Schwarzwälder Kirschtorte, Musterrohstoffe mit Präfix „Muster“); Hinweisfenster statt Meldung oben bei fehlendem Rohstoff. |
 | 17.11.2026 | Teil C3 (0.5.2) umgesetzt: Vorlagen-Import, Export, KC2-1 bis KC2-6, interne Notiz (Migration 0004); Umsetzungshinweise in Abschnitt 16. |
+| 18.11.2026 | Ergänzungen C3-E9, C3-E10 (0.5.9): Rohstoff in Rezepten austauschen (jedes geänderte Rezept neue Version); alte Versionen zeigen die aktuelle Menge kursiv daneben (Abschnitt 16). |
 | 18.11.2026 | Ergänzungen C3-E7, C3-E8, C3-E11 (0.5.8): Umrechnung im Blatt Rohstoffe mit automatischem „*“ und Übersicht vorab, Blatt Umrechnung veraltet; Sammelaktion Wiederherstellen; Musterdaten beim Import übersprungen (Abschnitt 16). |
 
 ## 16. Umsetzung und Abweichungen
@@ -434,4 +436,19 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 - **Präzisierung (zur Kenntnis):** Damit die Mustervorlage weiter zum Ausprobieren taugt (C3-E2: „ohne Änderung importierbar“), gibt es den Haken **„Musterdaten der Mustervorlage mit importieren“** (`include_samples=true`, Standard aus).
 
 **Tests:** neu 26 Import-Tests (Umrechnung, E7a/E7b/E7c, Fehler, Musterdaten), 4 Sammelaktions-Tests (Wiederherstellen), 3 Tests der Mustervorlage, 1 Export-Test; `test_amount_conversion_and_rounding` erwartet jetzt „*“ bei der Stück-Zeile.
+
+### Ergänzungen C3-E9, C3-E10 (0.5.9, 18.11.2026)
+
+**C3-E9 Rohstoff in Rezepten austauschen** (Wunsch Michael 18.11.2026, E9-1 bis E9-8 wie vorgeschlagen entschieden): `app/recipes/replace.py` (`replace_raw_material`), Endpunkt `POST /api/v1/admin/recipes/replace-raw-material`, eigene Ansicht „Rohstoff austauschen“ auf der Rezeptseite (Taste über der Liste). Keine Migration, Modul 03 unverändert.
+- Ablauf wie die Sammelaktionen: Vorschau (alles in einer Transaktion, danach zurückgerollt) mit allen Kandidaten, Änderung je Zeile „alt → neu“, Zusatzzeilen und Hinweisen; Ausführen mit `confirm` und der Auswahl `recipes: [{id, revision}]` (sonst 409 `confirmation_required`). Kein „alles oder nichts“: nicht mögliche Rezepte werden übersprungen und genannt.
+- Kandidaten: nicht archivierte Rezepte, deren aktuelle Version den alten Rohstoff direkt enthält (öffentliche und gesperrte). Der alte Rohstoff darf archiviert sein (typischer Fall: Rezepte „mit archivierten Rohstoffen“); neuer Rohstoff und Zusatzzutaten nicht.
+- Menge: alte Menge × Faktor, kaufmännisch gerundet; 0 g bleibt 0 g (auch die Zusatzzeilen einer Handzugabe), ein Ergebnis von 0 g bei Menge > 0 wird 1 g. Faktor > 0, höchstens 1 000, höchstens 3 Nachkommastellen, Komma oder Punkt. Leere Zusatzzeilen werden ignoriert; Faktor ohne Zusatzzutat meldet die Seite.
+- Speichern über `save_in_tx` mit `version_mode="new"` → **immer neue Version** (auch nicht gewogene, Abweichung von der Rückfrage nach K4 nur hier, E9-4). Neuer Schalter `keep_review` in `save_in_tx`: „*“ werden so übernommen wie übergeben (bestehende „*“ anderer Zeilen bleiben, getauschte und Zusatzzeilen bekommen „*“ nur mit dem Haken). Protokoll `new_version` im `change_log` (Quelle `admin`).
+- Bearbeitungsstand: Weicht die `revision` aus der Vorschau ab (anderes Gerät, KC2-6), wird das Rezept übersprungen. Eine Menge über der Höchstgrenze (1 000 000 g) → übersprungen mit der Meldung der Eingabeprüfung.
+- Haken „alten Rohstoff archivieren“: erst nach den Änderungen geprüft; steht er noch in einer aktuellen Version eines aktiven Rezepts (z. B. abgewählte), bleibt er aktiv (Meldung).
+- Unterrezept-Zeilen bleiben unverändert; ein Unterrezept mit dem Rohstoff erscheint als eigenes Rezept.
+
+**C3-E10 Versionsvergleich** (Wunsch Michael 18.11.2026, E10-1 bis E10-6 wie vorgeschlagen): `get_version` liefert bei alten Versionen je Zeile `current` (`amount_g`, `same`, `missing`) und `current_only` (Zeilen nur in der aktuellen Version) sowie `current_version_no`. Zuordnung über Rohstoff bzw. Unterrezept, mehrfach vorkommende der Reihe nach. Die Seite zeigt „aktuell: … g“ kursiv neben der Menge (gleich = grau, abweichend oder „entfällt“ = gelb), Zeilen nur in der aktuellen Version kursiv am Ende; unter 700 px Breite steht der Wert unter der Menge. Die aktuelle Version selbst zeigt keinen Vergleich. Die Tabelle liegt jetzt in einem seitlich schiebbaren Rahmen.
+
+**Tests:** `test_recipe_replace.py` (38: Rechnen, Eingaben, Vorschau, Ausführen, Versionen, Toleranz, Handzugabe, „*“, Unterrezepte, Archivieren, Konflikt, Höchstgrenze, Versionsvergleich), 1 API-Test (nur GitHub). Oberflächentest in Chrome mit Prüfserver: Austausch mit Zusatzzutat, Abwahl, Rückfrage, Ergebnis mit Archiv-Hinweis, alte Version mit „aktuell“-Werten am Tablet und Handy (390 px).
 

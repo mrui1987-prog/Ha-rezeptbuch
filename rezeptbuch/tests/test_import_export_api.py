@@ -196,3 +196,27 @@ def test_bulk_restore(client, auth):
     r = client.post("/api/v1/admin/recipes/bulk", json=body, headers=auth)
     assert r.status_code == 200, r.text
     assert [e["id"] for e in r.json()["done"]] == [rid]
+
+
+def test_replace_raw_material_api(client, auth):
+    """C3-E9: Vorschau, Bestätigung nötig, Ausführen; C3-E10: alte Version mit aktueller Menge."""
+    assert post(client, auth, template(), mode="run").status_code == 200
+    rms = {m["name"]: m["id"] for m in client.get("/api/v1/raw-materials").json()}
+    milch = client.post("/api/v1/admin/raw-materials", headers=auth, json={"name": "Milch", "tolerance": "5"}).json()
+    url = "/api/v1/admin/recipes/replace-raw-material"
+    body = {"old_raw_material_id": rms["Wasser"], "new_raw_material_id": milch["id"], "factor": "0,5"}
+    assert client.post(url, json=body).status_code == 401
+    r = client.post(url, json=body, headers=auth)
+    assert r.status_code == 200, r.text
+    recipe = r.json()["recipes"][0]
+    assert recipe["changes"][0]["old_g"] == 600 and recipe["changes"][0]["new_g"] == 300
+    body.update(mode="run", recipes=[{"id": recipe["id"], "revision": recipe["revision"]}])
+    r = client.post(url, json=body, headers=auth)
+    assert r.status_code == 409 and r.json()["code"] == "confirmation_required"
+    body["confirm"] = True
+    r = client.post(url, json=body, headers=auth)
+    assert r.status_code == 200 and r.json()["done"][0]["new_version"] == 2
+    old = client.get(f"/api/v1/recipes/{recipe['id']}/versions/1").json()
+    assert old["items"][1]["current"]["missing"] is True and old["current_only"][0]["name"] == "Milch"
+    r = client.post(url, json={**body, "factor": "0"}, headers=auth)
+    assert r.status_code == 400

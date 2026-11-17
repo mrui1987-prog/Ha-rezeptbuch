@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.5.9 – Modul 05, Ergänzungen C3-E9, C3-E10 (in Entwicklung)
+
+- **Rohstoff austauschen** (C3-E9, Taste über der Rezeptliste): alten und neuen Rohstoff mit Faktor wählen, dazu bis zu zwei Zusatzzutaten mit Faktor auf die alte Menge (direkt unter der getauschten Zeile, im selben Schritt). Angezeigt werden alle Rezepte, deren aktuelle Version den Rohstoff enthält, mit „alt → neu“; einzelne lassen sich abwählen. Jedes geänderte Rezept bekommt eine neue Version, Status und eigene Zeilentoleranz bleiben. Wahlweise „*“ an geänderten Zeilen und Archivieren des alten Rohstoffs, wenn er nirgends mehr vorkommt
+- **Alte Versionen ansehen** (C3-E10): neben jeder Menge kursiv die Menge der aktuellen Version (gelb = abweichend, „entfällt“), neue Zeilen der aktuellen Version am Ende; am Handy unter der Menge
+
 ## 0.5.8 – Modul 05, Ergänzungen C3-E7, C3-E8, C3-E11 (in Entwicklung)
 
 - **Umrechnung im Blatt „Rohstoffe“** (C3-E7, ersetzt das Blatt „Umrechnung“): Spalten „Umrechnung Einheit“ und „Gramm je Einheit“ beim Rohstoff, z. B. Eier: Stück, 65 – in der Rezeptzeile reicht dann „20“ „Stück“ „Eier“. Für ml gilt der Wert auch für l (× 1 000) und umgekehrt. Der Wert wird nicht gespeichert, er dient nur dem Import

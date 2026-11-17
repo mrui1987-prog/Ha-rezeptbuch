@@ -61,6 +61,15 @@
   #io-report h3 { font-size: 1rem; margin: .8rem 0 .3rem; }
   #io-report ul { margin: .2rem 0; padding-left: 1.3rem; }
   #io-report li { margin: .15rem 0; }
+  /* Versionsvergleich (C3-E10): aktuelle Menge kursiv daneben, am Handy darunter */
+  .cur { font-style: italic; font-size: .9rem; margin-left: .5rem; color: #777; white-space: nowrap; }
+  .cur.diff { background: #fff3a8; color: #222; padding: 0 .25rem; border-radius: 3px; }
+  tr.curonly td { font-style: italic; background: #fffbe0; }
+  @media (max-width: 700px) { .cur { display: block; margin-left: 0; } }
+  /* Rohstoff austauschen (C3-E9) */
+  #rep-rows td { vertical-align: top; }
+  #rep-rows .chg { white-space: nowrap; }
+  #rep-rows tr.off td { color: #888; background: #f6f6f6; }
 </style>
 </head>
 <body>
@@ -81,6 +90,7 @@
     <h1>Rezepte</h1>
     <div class="toolbar">
       <button type="button" id="btn-new">Neues Rezept</button>
+      <button type="button" id="btn-replace" title="einen Rohstoff in allen Rezepten durch einen anderen ersetzen">Rohstoff austauschen</button>
       <input id="search" class="grow" type="search" placeholder="Suchen: Name · R:Rohstoff · K:Kurzname" title="Name oder Nummer; mit R: nach Rohstoff (z. B. R:Sonnenblumen), mit K: nach Kurzname (z. B. K:Sonnenbl)" aria-label="Suchen">
       <select id="filter-group" aria-label="Gruppe"><option value="">alle Gruppen</option></select>
       <label class="inline"><input id="show-public" type="checkbox" checked> öffentliche zeigen</label>
@@ -153,6 +163,7 @@
       <p class="small">Menge in ganzen Gramm. <b>0 g = Handzugabe</b> (nur quittieren, nicht wiegen). Toleranz leer = Toleranz des Rohstoffs;
         0 % wird gewogen (nie enger als 1 g). Unterrezepte sind blau hinterlegt, Zeilen mit „*“ gelb (bitte prüfen).</p>
       <datalist id="dl-raw"></datalist>
+      <datalist id="dl-raw-all"></datalist>
       <datalist id="dl-rec"></datalist>
       <div class="scroll">
         <table>
@@ -193,6 +204,43 @@
         <thead><tr><th>Version</th><th>Name</th><th>angelegt</th><th>produziert</th><th></th></tr></thead>
         <tbody id="version-rows"></tbody></table></div>
       <div id="version-view" class="hidden" style="margin-top:.8rem"></div>
+    </div>
+  </section>
+
+  <!-- Ansicht: Rohstoff austauschen (C3-E9) -->
+  <section id="view-replace" class="hidden">
+    <div class="toolbar">
+      <button type="button" id="rep-back">← Zur Liste</button>
+      <h1 class="grow" style="margin:0">Rohstoff austauschen</h1>
+    </div>
+    <div class="panel">
+      <p class="small">Ersetzt einen Rohstoff in allen Rezepten, die ihn direkt enthalten (Unterrezepte erscheinen als eigene Rezepte).
+        <b>Jedes geänderte Rezept bekommt eine neue Version</b>; die bisherige bleibt als „old (n)“ ansehbar. Öffentlich/gesperrt bleibt unverändert.
+        Neue Menge = alte Menge × Faktor, auf ganze Gramm gerundet; 0 g (Handzugabe) bleibt 0 g.</p>
+      <div class="grid">
+        <div><label for="rep-old">Auszutauschender Rohstoff</label><input id="rep-old" list="dl-raw-all" class="w-ref" autocomplete="off" placeholder="Nummer oder Name"></div>
+        <div><label for="rep-new">Neuer Rohstoff</label><input id="rep-new" list="dl-raw" class="w-ref" autocomplete="off" placeholder="Nummer oder Name"></div>
+        <div><label for="rep-factor">Faktor</label><input id="rep-factor" inputmode="decimal" value="1" class="w-num"> <span class="small">z. B. 0,82</span></div>
+      </div>
+      <h2 style="margin-top:.8rem">Zusatzzutaten (höchstens 2)</h2>
+      <p class="small">Werden direkt unter der getauschten Zeile im selben Schritt eingefügt. Der Faktor bezieht sich auf die <b>alte</b> Menge (z. B. Butter 1 000 g → Margarine × 0,82 = 820 g und Wasser × 0,16 = 160 g).</p>
+      <div class="grid">
+        <div><label for="rep-x1">Zusatzzutat 1</label><input id="rep-x1" list="dl-raw" class="w-ref" autocomplete="off" placeholder="leer = keine"></div>
+        <div><label for="rep-x1f">Faktor 1</label><input id="rep-x1f" inputmode="decimal" class="w-num"></div>
+        <div><label for="rep-x2">Zusatzzutat 2</label><input id="rep-x2" list="dl-raw" class="w-ref" autocomplete="off" placeholder="leer = keine"></div>
+        <div><label for="rep-x2f">Faktor 2</label><input id="rep-x2f" inputmode="decimal" class="w-num"></div>
+      </div>
+      <p><label class="inline"><input id="rep-review" type="checkbox"> geänderte Zeilen mit „*“ zum Prüfen markieren</label><br>
+        <label class="inline"><input id="rep-archive" type="checkbox"> alten Rohstoff archivieren, wenn er danach in keinem Rezept mehr vorkommt</label></p>
+      <div class="toolbar"><button type="button" id="rep-search"><b>Rezepte anzeigen</b></button></div>
+    </div>
+    <div id="rep-msg" class="msg hidden" role="alert"></div>
+    <div id="rep-result" class="panel hidden">
+      <p id="rep-summary"></p>
+      <div class="scroll"><table>
+        <thead><tr><th class="sel"><input id="rep-all" type="checkbox" checked aria-label="alle auswählen"></th><th>Nr.</th><th>Rezept</th><th>Status</th><th>Änderung</th><th>Hinweise</th></tr></thead>
+        <tbody id="rep-rows"></tbody></table></div>
+      <div class="toolbar"><button type="button" id="rep-run"><b>Austauschen</b></button> <span id="rep-count" class="small"></span></div>
     </div>
   </section>
 
@@ -354,7 +402,8 @@ function showView(name) {
   show("view-edit", name === "edit");
   show("view-groups", name === "groups");
   show("view-io", name === "io");
-  $("nav-recipes").classList.toggle("active", name === "list" || name === "edit");
+  show("view-replace", name === "replace");
+  $("nav-recipes").classList.toggle("active", name === "list" || name === "edit" || name === "replace");
   $("nav-groups").classList.toggle("active", name === "groups");
   $("nav-io").classList.toggle("active", name === "io");
   window.scrollTo(0, 0);
@@ -397,6 +446,8 @@ async function loadChoices() {
   recipesAll = await api("recipes?include_locked=true&include_archived=true");
   const dlRaw = $("dl-raw"); dlRaw.textContent = "";
   rawMaterials.filter((m) => !m.archived).forEach((m) => dlRaw.appendChild(new Option(m.number + " – " + m.name)));
+  const dlAll = $("dl-raw-all"); dlAll.textContent = "";
+  rawMaterials.forEach((m) => dlAll.appendChild(new Option(m.number + " – " + m.name + (m.archived ? " (archiviert)" : ""))));
   const dlRec = $("dl-rec"); dlRec.textContent = "";
   recipesAll.filter((r) => !r.archived && (!rec || r.id !== rec.id))
     .forEach((r) => dlRec.appendChild(new Option(r.number + " – " + r.name)));
@@ -1090,6 +1141,9 @@ async function viewVersion(no) {
     facts.push("Gesamtgewicht " + v.sums.total_g + " g, Mehl " + v.sums.flour_g + " g");
     if (v.note) facts.push("Hinweis (" + (v.note_display === "start" ? "am Anfang und am Ende" : "nur am Ende") + "): " + v.note);
     box.appendChild(el("p", facts.join(" · "), "small"));
+    const compare = Array.isArray(v.current_only);
+    if (compare) box.appendChild(el("p", "Kursiv daneben: Menge in der aktuellen Version (" + v.current_version_no
+      + "); gelb = abweichend.", "small"));
     const steps = {}; v.steps.forEach((s) => { steps[s.step_no] = s.name; });
     const table = el("table");
     const head = el("tr"); ["Pos.", "Rohstoff / Unterrezept", "Menge g", "Toleranz", "Schritt", "„*“"].forEach((h) => head.appendChild(el("th", h)));
@@ -1098,16 +1152,159 @@ async function viewVersion(no) {
       const tr = el("tr"); if (i.type === "sub_recipe") tr.className = "sub";
       td(tr, String(i.position), "num");
       td(tr, i.type === "raw_material" ? i.raw_material.number + " – " + i.raw_material.name : "Unterrezept " + i.sub_recipe.number + " – " + i.sub_recipe.name);
-      td(tr, i.hand_addition ? "0 (Handzugabe)" : String(i.amount_g), "num");
+      const amount = td(tr, i.hand_addition ? "0 (Handzugabe)" : String(i.amount_g), "num");
+      if (compare && i.current) {
+        const c = i.current;
+        const text = c.missing ? "aktuell: entfällt" : "aktuell: " + (c.amount_g === 0 ? "0 (Handzugabe)" : c.amount_g + " g");
+        amount.appendChild(el("span", text, "cur" + (c.same ? "" : " diff")));
+      }
       td(tr, fmtTol(i.tolerance)); td(tr, i.step_no ? i.step_no + ". " + (steps[i.step_no] || "") : "");
       td(tr, i.needs_review ? "*" : "");
       table.appendChild(tr);
     });
-    box.appendChild(table);
+    if (compare) {
+      v.current_only.forEach((c) => {
+        const tr = el("tr"); tr.className = "curonly";
+        td(tr, "–", "num");
+        td(tr, (c.type === "sub_recipe" ? "Unterrezept " : "") + c.number + " – " + c.name);
+        const amount = td(tr, "", "num");
+        amount.appendChild(el("span", "aktuell: " + c.amount_g + " g", "cur diff"));
+        td(tr, "neu in aktueller Version"); td(tr, ""); td(tr, "");
+        table.appendChild(tr);
+      });
+    }
+    const wrap = el("div", null, "scroll"); wrap.appendChild(table); box.appendChild(wrap);
     box.appendChild(button("Schließen", () => show("version-view", false), ""));
     show("version-view", true);
   } catch (err) { handleError(err, "edit-msg"); }
 }
+
+// ---- Rohstoff austauschen (C3-E9) -----------------------------------------------------------
+
+let repPreview = null;
+const repChosen = new Set();
+
+$("btn-replace").addEventListener("click", async () => {
+  try { await loadChoices(); } catch (err) { handleError(err, "list-msg"); return; }
+  showMsg("rep-msg", ""); showView("replace");
+});
+$("rep-back").addEventListener("click", () => { showView("list"); loadList(); });
+["rep-old", "rep-new", "rep-factor", "rep-x1", "rep-x1f", "rep-x2", "rep-x2f", "rep-review", "rep-archive"].forEach((id) =>
+  $(id).addEventListener("input", () => { repPreview = null; show("rep-result", false); }));
+
+function repRef(id, label, required) {
+  const text = $(id).value;
+  if (!text.trim()) {
+    if (required) throw new Error(label + ": bitte einen Rohstoff wählen.");
+    return null;
+  }
+  const found = resolveRef("raw_material", text.replace(/ \(archiviert\)$/, ""));
+  if (!found) throw new Error(label + ": „" + text + "“ nicht gefunden. Bitte aus der Liste wählen.");
+  return found.id;
+}
+
+function repPayload(mode) {
+  const extras = [];
+  [["rep-x1", "rep-x1f", 1], ["rep-x2", "rep-x2f", 2]].forEach(([ref, fac, n]) => {
+    const id = repRef(ref, "Zusatzzutat " + n, false);
+    if (id !== null) extras.push({ raw_material_id: id, factor: $(fac).value });
+    else if ($(fac).value.trim()) throw new Error("Faktor " + n + " ohne Zusatzzutat " + n + ".");
+  });
+  return {
+    mode: mode,
+    old_raw_material_id: repRef("rep-old", "Auszutauschender Rohstoff", true),
+    new_raw_material_id: repRef("rep-new", "Neuer Rohstoff", true),
+    factor: $("rep-factor").value,
+    extras: extras,
+    mark_review: $("rep-review").checked,
+    archive_old: $("rep-archive").checked,
+  };
+}
+
+function repChangeText(change, result) {
+  const lines = ["Zeile " + change.position + (change.step ? " (" + change.step + ")" : "") + ": "
+    + change.old_g + " g " + result.old.name + " → " + change.new_g + " g " + result.new.name];
+  change.extras.forEach((x) => lines.push("  + " + x.amount_g + " g " + x.name));
+  return lines.join("\n");
+}
+
+function renderReplace(result) {
+  repPreview = result;
+  repChosen.clear();
+  result.recipes.forEach((r) => { if (r.status !== "skipped") repChosen.add(r.id); });
+  const body = $("rep-rows"); body.textContent = "";
+  result.recipes.forEach((r) => {
+    const tr = el("tr");
+    const box = el("input"); box.type = "checkbox"; box.checked = repChosen.has(r.id); box.disabled = r.status === "skipped";
+    box.setAttribute("aria-label", "Rezept " + r.number + " auswählen");
+    box.addEventListener("change", () => { if (box.checked) repChosen.add(r.id); else repChosen.delete(r.id); repCount(); });
+    td(tr, box, "sel");
+    td(tr, String(r.number)); td(tr, r.name);
+    td(tr, r.locked ? el("span", "gesperrt", "badge locked") : el("span", "öffentlich", "badge public"));
+    const chg = td(tr, null, "chg"); chg.style.whiteSpace = "pre-line";
+    chg.textContent = r.changes.map((c) => repChangeText(c, result)).join("\n");
+    const hints = td(tr, null, "small"); hints.style.whiteSpace = "pre-line";
+    const notes = r.hints.slice();
+    if (r.status === "skipped") notes.unshift("Nicht möglich: " + r.reason);
+    hints.textContent = notes.join("\n");
+    if (r.status === "skipped") { tr.className = "off"; hints.className = "warn"; }
+    body.appendChild(tr);
+  });
+  const extras = result.extras.map((x) => " + " + x.name + " × " + x.factor).join("");
+  $("rep-summary").textContent = result.recipes.length
+    ? result.recipes.length + (result.recipes.length === 1 ? " Rezept enthält" : " Rezepte enthalten") + " „" + result.old.name
+      + "“. Tausch gegen „" + result.new.name + "“ × " + result.factor + extras + ". Rezepte abwählen, die unverändert bleiben sollen."
+    : "Kein Rezept enthält „" + result.old.name + "“ (aktuelle Version, nicht archiviert).";
+  show("rep-result", true);
+  repCount();
+}
+
+function repCount() {
+  const all = repPreview ? repPreview.recipes.filter((r) => r.status !== "skipped") : [];
+  $("rep-all").checked = all.length > 0 && all.every((r) => repChosen.has(r.id));
+  $("rep-all").indeterminate = repChosen.size > 0 && !$("rep-all").checked;
+  $("rep-count").textContent = repChosen.size + (repChosen.size === 1 ? " Rezept ausgewählt" : " Rezepte ausgewählt");
+  $("rep-run").disabled = repChosen.size === 0;
+}
+
+$("rep-all").addEventListener("change", () => {
+  if (!repPreview) return;
+  repPreview.recipes.forEach((r) => { if (r.status !== "skipped") { if ($("rep-all").checked) repChosen.add(r.id); else repChosen.delete(r.id); } });
+  Array.from(document.querySelectorAll("#rep-rows td.sel input")).forEach((b, i) => { b.checked = repChosen.has(repPreview.recipes[i].id); });
+  repCount();
+});
+
+$("rep-search").addEventListener("click", async () => {
+  showMsg("rep-msg", "");
+  let body;
+  try { body = repPayload("check"); } catch (e) { showMsg("rep-msg", e.message); return; }
+  try { renderReplace(await api("admin/recipes/replace-raw-material", { method: "POST", body: body })); }
+  catch (err) { show("rep-result", false); handleError(err, "rep-msg"); }
+});
+
+$("rep-run").addEventListener("click", async () => {
+  if (!repPreview || !repChosen.size) return;
+  let body;
+  try { body = repPayload("run"); } catch (e) { showMsg("rep-msg", e.message); return; }
+  const chosen = repPreview.recipes.filter((r) => repChosen.has(r.id));
+  body.recipes = chosen.map((r) => ({ id: r.id, revision: r.revision }));
+  body.confirm = true;
+  let text = chosen.length + (chosen.length === 1 ? " Rezept bekommt" : " Rezepte bekommen") + " eine neue Version:\n"
+    + nameList(chosen) + "\n\n„" + repPreview.old.name + "“ → „" + repPreview.new.name + "“ × " + repPreview.factor
+    + repPreview.extras.map((x) => "\n+ " + x.name + " × " + x.factor).join("");
+  if (body.mark_review) text += "\nGeänderte Zeilen bekommen „*“.";
+  if (body.archive_old) text += "\n„" + repPreview.old.name + "“ wird archiviert, wenn er danach in keinem Rezept mehr vorkommt.";
+  if (!(await ask(text, [{ label: "Austauschen", value: true }]))) return;
+  try {
+    const result = await api("admin/recipes/replace-raw-material", { method: "POST", body: body });
+    let msg = result.summary;
+    if (result.skipped.length) msg += "\nÜbersprungen:\n" + nameList(result.skipped, true);
+    if (result.archive_old.requested) msg += "\n" + result.archive_old.reason.replace("wird archiviert", "wurde archiviert");
+    await loadChoices();
+    show("rep-result", false); repPreview = null;
+    showMsg("rep-msg", msg, result.skipped.length ? "" : "info");
+  } catch (err) { handleError(err, "rep-msg"); }
+});
 
 // ---- Gruppen -------------------------------------------------------------------------------
 

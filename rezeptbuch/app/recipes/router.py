@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, Depends, Response
 from ..auth.dependencies import require_admin
 from ..deps import get_db
 from . import bulk as bulk_module
-from . import groups, service
+from . import groups, replace, service
 
 router = APIRouter(prefix="/api/v1", tags=["recipes"])
 admin = [Depends(require_admin)]
@@ -65,6 +65,12 @@ def bulk(body: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
     """Sammelaktion für angehakte Rezepte (C3-E1): Vorschau oder Ausführung."""
     return bulk_module.bulk_action(db, body.get("action"), body.get("ids"), mode=body.get("mode", "check"),
                                    confirm=body.get("confirm") is True)
+
+
+@router.post("/admin/recipes/replace-raw-material", dependencies=admin)
+def replace_raw_material(body: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Rohstoff in Rezepten austauschen (C3-E9): Vorschau oder Ausführung, jedes Rezept neue Version."""
+    return replace.replace_raw_material(db, body)
 
 
 @router.get("/admin/recipes/{recipe_id}", dependencies=admin)

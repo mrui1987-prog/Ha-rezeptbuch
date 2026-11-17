@@ -295,8 +295,45 @@ def get_recipe(conn: sqlite3.Connection, recipe_id: int, include_internal: bool 
     return result
 
 
+def _item_key(item: dict) -> tuple:
+    if item["type"] == "raw_material":
+        return ("raw_material", item["raw_material"]["id"])
+    return ("sub_recipe", item["sub_recipe"]["id"])
+
+
+def _compare_with_current(old_items: list[dict], current_items: list[dict]) -> list[dict]:
+    """Vergleich einer alten Version mit der aktuellen (C3-E10).
+
+    Zuordnung über den Rohstoff bzw. das Unterrezept, nicht über die Position; kommt er mehrfach
+    vor, der Reihe nach. Jede alte Zeile bekommt ``current`` (Menge der aktuellen Version, ``same``)
+    oder ``current = {"missing": True}``. Rückgabe: Zeilen, die es nur in der aktuellen Version gibt.
+    """
+    queues: dict[tuple, list[dict]] = {}
+    for item in current_items:
+        queues.setdefault(_item_key(item), []).append(item)
+    for item in old_items:
+        queue = queues.get(_item_key(item))
+        if queue:
+            match = queue.pop(0)
+            item["current"] = {"amount_g": match["amount_g"], "same": match["amount_g"] == item["amount_g"],
+                               "missing": False}
+        else:
+            item["current"] = {"amount_g": None, "same": False, "missing": True}
+    rest = [i for queue in queues.values() for i in queue]
+    rest.sort(key=lambda i: i["position"])
+    return [{
+        "position": i["position"], "type": i["type"], "amount_g": i["amount_g"],
+        "name": i["raw_material"]["name"] if i["type"] == "raw_material" else i["sub_recipe"]["name"],
+        "number": i["raw_material"]["number"] if i["type"] == "raw_material" else i["sub_recipe"]["number"],
+    } for i in rest]
+
+
 def get_version(conn: sqlite3.Connection, recipe_id: int, version_no: int) -> dict:
-    """Eine (auch alte) Version, nur zum Ansehen (M05-8)."""
+    """Eine (auch alte) Version, nur zum Ansehen (M05-8).
+
+    Bei einer alten Version enthält jede Zeile zusätzlich ``current`` (Menge in der aktuellen
+    Version) und das Ergebnis ``current_only`` (Zeilen nur in der aktuellen Version, C3-E10).
+    """
     row = _fetch(conn, recipe_id)
     version = conn.execute("SELECT * FROM recipe_version WHERE recipe_id = ? AND version_no = ?",
                            (recipe_id, version_no)).fetchone()
@@ -307,6 +344,10 @@ def get_version(conn: sqlite3.Connection, recipe_id: int, version_no: int) -> di
               "label": "aktuell" if current else f"old ({version['version_no']})"}
     result.update(_version_view(conn, recipe_id, version))
     result["display_name"] = result["name"] if current else f"{result['name']} {result['label']}"
+    if not current and row["current_version_id"] is not None:
+        current_items = _items(conn, row["current_version_id"])
+        result["current_only"] = _compare_with_current(result["items"], current_items)
+        result["current_version_no"] = row["version_no"]
     return result
 
 
@@ -614,8 +655,11 @@ def _check_revision(row, revision) -> None:
 
 
 def save_in_tx(conn: sqlite3.Connection, recipe_id: int, data: dict, *, revision, version_mode=None,
-               source: str = "admin") -> dict:
+               source: str = "admin", keep_review: bool = False) -> dict:
     """Speichert Kopf, Schritte und Zeilen (R05-15 bis R05-17, K4, K05-5).
+
+    ``keep_review``: Prüfmarkierungen „*“ so übernehmen, wie sie in ``data`` stehen (nur für
+    Funktionen des Servers, z. B. Rohstoff austauschen C3-E9; die Seite kann „*“ nie setzen).
 
     Liefert ``{"result": "unchanged" | "overwritten" | "new_version", "message": …}``.
     """
@@ -650,7 +694,7 @@ def save_in_tx(conn: sqlite3.Connection, recipe_id: int, data: dict, *, revision
         check_no_formula_start(clean["name"], field="name", label="Name")
     _check_name_free(conn, clean["name"], exclude_id=recipe_id)
     _check_step_names(clean, set(stored["steps"]))
-    if source != "import":                  # „*“ setzt nur der Import (aus der Datei), die Seite nur bestätigen
+    if source != "import" and not keep_review:   # „*“ setzt nur der Server (Import, Austausch), die Seite nur bestätigen
         _apply_review_rule(clean["items"], current_items)
     _check_references(conn, recipe_id, clean, current_items)
     _check_cycle(conn, recipe_id, clean["name"],
