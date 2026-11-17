@@ -360,8 +360,20 @@ def list_recipes(conn: sqlite3.Connection, search: str | None = None, group_id: 
         "archived_raw_material_count": r["archived_rm_count"],
     } for r in conn.execute(sql, params)]
     if search and search.strip():
-        needle = normalize_text(search).casefold()
-        result = [r for r in result if needle in str(r["number"]) or needle in r["name"].casefold()]
+        text = normalize_text(search).strip()
+        prefix = text[:2].upper()
+        if prefix in ("R:", "K:"):
+            # Operatoren: „R:Sonnenblumen“ = Rohstoffname, „K:Sonnenbl“ = Kurzname (nur Zeilen der aktuellen Version)
+            needle = text[2:].strip().casefold()
+            column = "am.name" if prefix == "R:" else "am.display_name"
+            matches = {row["rid"] for row in conn.execute(
+                "SELECT DISTINCT r.id AS rid, " + column + " AS value FROM recipe r "
+                "JOIN recipe_item ai ON ai.recipe_version_id = r.current_version_id "
+                "JOIN raw_material am ON am.id = ai.raw_material_id") if row["value"] and needle in row["value"].casefold()}
+            result = [r for r in result if r["id"] in matches] if needle else result
+        else:
+            needle = text.casefold()
+            result = [r for r in result if needle in r["name"].casefold() or needle in str(r["number"])]
     return result
 
 

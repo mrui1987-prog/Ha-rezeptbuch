@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.5.6 – Modul 05, Ergänzung C3-E4 (in Entwicklung)
+
+- **Suche in der Rezeptliste mit Operatoren:** `R:Sonnenblumen` sucht unter den Rohstoffnamen, `K:Sonnenbl` unter den Kurznamen (jeweils in der aktuellen Version, Teiltreffer, ohne Groß-/Kleinschreibung). Ohne Operator wird wie bisher im Rezeptnamen gesucht (die Nummer geht weiter mit, ist aber nicht mehr im Hinweistext)
+
 ## 0.5.5 – Modul 05, Ergänzung C3-E3 (in Entwicklung)
 
 - **Neue Filter in der Rezeptliste:** „öffentliche zeigen“ (Haken vorausgewählt, zum Ausblenden der öffentlichen Rezepte), „nie verwogen“ (noch nie in einem Auftrag oder einer Charge verwendet – solange es keine Wiegedaten gibt, trifft das auf alle Rezepte zu) und „enthält Unterrezepte“ (aktuelle Version). Lese-API: `include_public`, `never_weighed`, `has_sub_recipes`

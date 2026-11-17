@@ -310,6 +310,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 15.11.2026 | Konzept von Michael freigegeben. Teil C1 (0.5.0) umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 | 15.11.2026 | Teil C2 (0.5.1) auf Zweig `modul05-c2` umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 | 17.11.2026 | Ergänzung C3-E1 (0.5.3): Sammelaktionen in der Rezeptliste (Abschnitt 16). |
+| 17.11.2026 | Ergänzung C3-E4 (0.5.6): Suche mit Operatoren `R:` (Rohstoff) und `K:` (Kurzname) in der Rezeptliste. |
 | 17.11.2026 | Ergänzung C3-E3 (0.5.5): Filter „öffentliche zeigen“, „nie verwogen“, „enthält Unterrezepte“ in der Rezeptliste (`GET /recipes?include_public=&never_weighed=&has_sub_recipes=`). |
 | 17.11.2026 | Ergänzung C3-E2 (0.5.4): Mustervorlage `GET /admin/recipes/template.xlsx` (Musterrezept Schwarzwälder Kirschtorte, Musterrohstoffe mit Präfix „Muster“); Hinweisfenster statt Meldung oben bei fehlendem Rohstoff. |
 | 17.11.2026 | Teil C3 (0.5.2) umgesetzt: Vorlagen-Import, Export, KC2-1 bis KC2-6, interne Notiz (Migration 0004); Umsetzungshinweise in Abschnitt 16. |

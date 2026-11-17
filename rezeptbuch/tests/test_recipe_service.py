@@ -368,6 +368,18 @@ def test_list_new_filters(conn, rm):
     assert names(never_weighed=True) == ["Vorteig"]
 
 
+def test_list_search_operators(conn, rm):
+    make(conn, "Brot", items=[line(rm["mehl"]), line(rm["salz"])])
+    make(conn, "Kuchen", items=[line(rm["mehl"])])
+    names = lambda q: [r["name"] for r in list_recipes(conn, search=q, include_locked=True)]  # noqa: E731
+    assert names("R:salz") == ["Brot"]               # Rohstoffname, ohne Groß-/Kleinschreibung
+    assert names("r: Weizenmehl") == ["Brot", "Kuchen"]
+    assert names("K:salz f") == ["Brot"]             # Kurzname „Salz fein“
+    assert names("K:mehl") == []                     # Weizenmehl hat keinen Kurznamen
+    assert names("Kuch") == ["Kuchen"]               # ohne Operator: Name
+    assert names("R:") == ["Brot", "Kuchen"]
+
+
 def test_list_search_and_group(conn, rm):
     g = create_group(conn, "Kuchen")
     make(conn, "Käsekuchen", number=12, group_id=g["id"])
