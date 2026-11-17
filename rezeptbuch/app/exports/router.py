@@ -14,6 +14,7 @@ from ..auth.dependencies import require_admin
 from ..deps import get_db
 from ..errors import ValidationError
 from .recipe_template import build_workbook, file_name
+from .sample_template import build_sample, file_name as sample_file_name
 
 router = APIRouter(prefix="/api/v1/admin", tags=["export"], dependencies=[Depends(require_admin)])
 
@@ -33,3 +34,10 @@ def export_recipes(include_archived: bool = False, ids: str | None = None, db: s
             raise ValidationError("Bitte 1 bis 1000 Rezepte auswählen.", field="ids")
     return Response(content=build_workbook(db, include_archived=include_archived, ids=selected), media_type=XLSX,
                     headers={"Content-Disposition": f'attachment; filename="{file_name()}"'})
+
+
+@router.get("/recipes/template.xlsx")
+def sample_template():
+    """Mustervorlage mit Musterrohstoff und Musterrezept zum Ausfüllen (C3-E2)."""
+    return Response(content=build_sample(), media_type=XLSX,
+                    headers={"Content-Disposition": f'attachment; filename="{sample_file_name()}"'})

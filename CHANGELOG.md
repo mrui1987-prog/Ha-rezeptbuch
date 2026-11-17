@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.5.4 – Modul 05, Ergänzung C3-E2 (in Entwicklung)
+
+- **Mustervorlage herunterladen** (Reiter „Import/Export“): .xlsx mit Anleitung und allen Blättern der Importvorlage, gefüllt mit einem Musterrezept „Schwarzwälder Kirschtorte (Muster)“ (Unterrezept Schoko-Biskuit, Stück/ml über „Umrechnung“, „*“, Handzugabe, Zeilentoleranz, Stückgewicht, Chargengrößen) und Musterrohstoffen („Muster …“, damit echte Rohstoffe nicht überschrieben werden). Die gelben Musterzeilen vor dem echten Import löschen
+- Hinweis „Bitte einen Rohstoff wählen“ beim Speichern erscheint jetzt als Fenster in der Mitte (wie Speichern/Löschen), nicht nur oben
+
 ## 0.5.3 – Modul 05, Ergänzung C3-E1 (in Entwicklung)
 
 - **Sammelaktionen in der Rezeptliste:** Haken je Rezept und „alle auswählen“; sobald etwas angehakt ist, erscheint eine Leiste mit **Freischalten, Sperren, Archivieren, Löschen, Exportieren** und „Auswahl aufheben“

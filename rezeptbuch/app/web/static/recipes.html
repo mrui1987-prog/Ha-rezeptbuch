@@ -214,7 +214,7 @@
       <p class="small">Alle Rezepte (aktuelle Version) im Format der Importvorlage, mit den verwendeten Rohstoffen.
         Die Datei kann wieder importiert werden, z. B. in eine neue Installation. Kein Ersatz für die Datensicherung.</p>
       <label class="inline"><input id="io-archived" type="checkbox"> archivierte Rezepte mit exportieren</label>
-      <div class="toolbar"><button type="button" id="io-export">Export herunterladen</button></div>
+      <div class="toolbar"><button type="button" id="io-export">Export herunterladen</button> <button type="button" id="io-sample" class="secondary">Mustervorlage herunterladen</button></div>
       <div id="io-export-msg" class="msg hidden" role="alert"></div>
     </div>
     <p class="small">Der CSV-Import und -Export nur der Rohstoffe liegt auf der Seite „Rohstoffe“.</p>
@@ -321,12 +321,12 @@ function fmtTol(t) {
 function fmtDate(iso) { return iso ? iso.slice(8, 10) + "." + iso.slice(5, 7) + "." + iso.slice(0, 4) : ""; }
 
 // Eigene Rückfrage statt confirm(): In der HA-App (iOS) fehlt dort die Taste „Abbrechen“
-function ask(text, choices) {
+function ask(text, choices, cancelLabel) {
   return new Promise((resolve) => {
     $("ask-text").textContent = text;
     const row = $("ask-buttons");
     row.textContent = "";
-    const all = choices.concat([{ label: "Abbrechen", value: null }]);
+    const all = choices.concat([{ label: cancelLabel || "Abbrechen", value: null }]);
     all.forEach((c) => {
       const b = el("button", c.label); b.type = "button";
       b.addEventListener("click", () => { $("ask-box").style.display = "none"; resolve(c.value); });
@@ -335,6 +335,9 @@ function ask(text, choices) {
     $("ask-box").style.display = "flex";
   });
 }
+
+// Hinweisfenster in der Mitte (wie Speichern-/Löschen-Rückfrage), nur mit „OK“
+function notify(text) { return ask(text, [], "OK"); }
 
 // ---- Ansichten -----------------------------------------------------------------
 
@@ -525,7 +528,7 @@ $("bulk-export").addEventListener("click", async () => {
     const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url; link.download = match ? match[1] : "rezepte.xlsx";
+    link.href = url; link.download = match ? match[1] : fallback;
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     showMsg("list-msg", "Export der Auswahl erstellt (Unterrezepte sind mit drin).", "info");
@@ -849,7 +852,7 @@ async function conflictDialog(err) {
 $("edit-save").addEventListener("click", async () => {
   showMsg("edit-msg", "");
   let body;
-  try { body = payload(); } catch (e) { showMsg("edit-msg", e.message); return; }
+  try { body = payload(); } catch (e) { showMsg("edit-msg", e.message); await notify(e.message); return; }
   let alsoPortions = false;
   if (portionDirty && rec.id !== null) {
     // KC2-3: Stückgewichte/Chargengrößen werden mit dieser Taste nicht gespeichert – nicht stillschweigend übergehen
@@ -1222,10 +1225,10 @@ $("io-run").addEventListener("click", async () => {
   }
 });
 
-$("io-export").addEventListener("click", async () => {
+async function downloadFile(path, fallback, okText) {
   showMsg("io-export-msg", "");
   try {
-    const res = await api("admin/recipes/export.xlsx" + ($("io-archived").checked ? "?include_archived=true" : ""), { raw: true });
+    const res = await api(path, { raw: true });
     const blob = await res.blob();
     const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
     const url = URL.createObjectURL(blob);
@@ -1233,9 +1236,14 @@ $("io-export").addEventListener("click", async () => {
     link.href = url; link.download = match ? match[1] : "rezepte.xlsx";
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    showMsg("io-export-msg", "Export erstellt.", "info");
+    showMsg("io-export-msg", okText, "info");
   } catch (err) { handleError(err, "io-export-msg"); }
-});
+}
+$("io-export").addEventListener("click", () => downloadFile(
+  "admin/recipes/export.xlsx" + ($("io-archived").checked ? "?include_archived=true" : ""), "rezepte.xlsx", "Export erstellt."));
+$("io-sample").addEventListener("click", () => downloadFile(
+  "admin/recipes/template.xlsx", "mustervorlage_rezepte.xlsx",
+  "Mustervorlage erstellt. Die gelben Musterzeilen vor dem Import löschen oder überschreiben."));
 
 // ---- Start -------------------------------------------------------------------------------
 
