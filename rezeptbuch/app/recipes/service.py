@@ -317,7 +317,8 @@ _ARCHIVED_RM_COUNT = (
 
 def list_recipes(conn: sqlite3.Connection, search: str | None = None, group_id: int | None = None,
                  include_locked: bool = False, include_archived: bool = False,
-                 archived_raw_materials: bool = False) -> list[dict]:
+                 archived_raw_materials: bool = False, include_public: bool = True,
+                 never_weighed: bool = False, has_sub_recipes: bool = False) -> list[dict]:
     """Liste nach Nummer. Vorgabe = was die Vorwahl zeigt: freigeschaltet, nicht archiviert (M05-5).
 
     ``archived_raw_materials``: nur Rezepte, deren aktuelle Version einen archivierten Rohstoff
@@ -326,6 +327,13 @@ def list_recipes(conn: sqlite3.Connection, search: str | None = None, group_id: 
     where, params = [], []
     if archived_raw_materials:
         where.append(_ARCHIVED_RM_COUNT + " > 0")
+    if not include_public:
+        where.append("r.locked = 1")                      # „öffentlich“ ausblenden
+    if never_weighed:                                      # nie in einem Auftrag oder einer Charge verwendet
+        where.append("NOT EXISTS (SELECT 1 FROM production_order po WHERE po.recipe_id = r.id) AND NOT EXISTS "
+                     "(SELECT 1 FROM batch b JOIN recipe_version bv ON bv.id = b.recipe_version_id WHERE bv.recipe_id = r.id)")
+    if has_sub_recipes:                                    # aktuelle Version enthält Unterrezepte
+        where.append("EXISTS (SELECT 1 FROM recipe_item si WHERE si.recipe_version_id = v.id AND si.sub_recipe_id IS NOT NULL)")
     if not include_locked:
         where.append("r.locked = 0")
     if not include_archived:

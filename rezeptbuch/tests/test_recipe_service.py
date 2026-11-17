@@ -354,6 +354,20 @@ def test_list_default_is_station_view(conn, rm):
     assert b["locked"] is True
 
 
+def test_list_new_filters(conn, rm):
+    vor = make(conn, "Vorteig", items=[line(rm["mehl"])])
+    haupt = make(conn, "Hauptteig", items=[sub(vor["id"]), line(rm["mehl"])])
+    unlock_recipe(conn, vor["id"])
+    names = lambda **kw: [r["name"] for r in list_recipes(conn, include_locked=True, **kw)]  # noqa: E731
+    assert names() == ["Vorteig", "Hauptteig"]
+    assert names(include_public=False) == ["Hauptteig"]          # öffentliche ausgeblendet
+    assert names(has_sub_recipes=True) == ["Hauptteig"]
+    assert names(never_weighed=True) == ["Vorteig", "Hauptteig"]  # noch nie verwogen
+    conn.execute("INSERT INTO production_order (recipe_id, basis_type, basis_value) VALUES (?, 'total', 1000)",
+                 (haupt["id"],))
+    assert names(never_weighed=True) == ["Vorteig"]
+
+
 def test_list_search_and_group(conn, rm):
     g = create_group(conn, "Kuchen")
     make(conn, "Käsekuchen", number=12, group_id=g["id"])

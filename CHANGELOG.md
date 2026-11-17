@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.5.5 – Modul 05, Ergänzung C3-E3 (in Entwicklung)
+
+- **Neue Filter in der Rezeptliste:** „öffentliche zeigen“ (Haken vorausgewählt, zum Ausblenden der öffentlichen Rezepte), „nie verwogen“ (noch nie in einem Auftrag oder einer Charge verwendet – solange es keine Wiegedaten gibt, trifft das auf alle Rezepte zu) und „enthält Unterrezepte“ (aktuelle Version). Lese-API: `include_public`, `never_weighed`, `has_sub_recipes`
+
 ## 0.5.4 – Modul 05, Ergänzung C3-E2 (in Entwicklung)
 
 - **Mustervorlage herunterladen** (Reiter „Import/Export“): .xlsx mit Anleitung und allen Blättern der Importvorlage, gefüllt mit einem Musterrezept „Schwarzwälder Kirschtorte (Muster)“ (Unterrezept Schoko-Biskuit, Stück/ml über „Umrechnung“, „*“, Handzugabe, Zeilentoleranz, Stückgewicht, Chargengrößen) und Musterrohstoffen („Muster …“, damit echte Rohstoffe nicht überschrieben werden). Die gelben Musterzeilen vor dem echten Import löschen

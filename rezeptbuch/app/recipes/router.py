@@ -29,9 +29,12 @@ def _confirm(payload: dict, key: str) -> bool:
 @router.get("/recipes")
 def list_recipes(search: str | None = None, group_id: int | None = None, include_locked: bool = False,
                  include_archived: bool = False, archived_raw_materials: bool = False,
+                 include_public: bool = True, never_weighed: bool = False, has_sub_recipes: bool = False,
                  db: sqlite3.Connection = Depends(get_db)):
     return service.list_recipes(db, search=search, group_id=group_id, include_locked=include_locked,
-                                include_archived=include_archived, archived_raw_materials=archived_raw_materials)
+                                include_archived=include_archived, archived_raw_materials=archived_raw_materials,
+                                include_public=include_public, never_weighed=never_weighed,
+                                has_sub_recipes=has_sub_recipes)
 
 
 @router.get("/recipes/{recipe_id}")

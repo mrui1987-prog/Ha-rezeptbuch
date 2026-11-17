@@ -83,9 +83,12 @@
       <button type="button" id="btn-new">Neues Rezept</button>
       <input id="search" class="grow" type="search" placeholder="Suchen (Nummer, Name)" aria-label="Suchen">
       <select id="filter-group" aria-label="Gruppe"><option value="">alle Gruppen</option></select>
+      <label class="inline"><input id="show-public" type="checkbox" checked> öffentliche zeigen</label>
       <label class="inline"><input id="show-locked" type="checkbox" checked> gesperrte zeigen</label>
       <label class="inline"><input id="show-archived" type="checkbox"> archivierte zeigen</label>
       <label class="inline" title="nur Rezepte, deren aktuelle Version einen archivierten Rohstoff enthält"><input id="only-archived-rm" type="checkbox"> mit archivierten Rohstoffen</label>
+      <label class="inline" title="nur Rezepte, die noch nie in einem Auftrag oder einer Charge verwendet wurden"><input id="only-never-weighed" type="checkbox"> nie verwogen</label>
+      <label class="inline" title="nur Rezepte, deren aktuelle Version Unterrezepte enthält"><input id="only-sub-recipes" type="checkbox"> enthält Unterrezepte</label>
     </div>
     <div id="list-msg" class="msg hidden" role="alert"></div>
     <div id="bulk-bar" class="toolbar hidden">
@@ -421,6 +424,9 @@ async function loadList() {
   if ($("search").value.trim()) q.set("search", $("search").value.trim());
   if ($("filter-group").value) q.set("group_id", $("filter-group").value);
   if ($("show-locked").checked) q.set("include_locked", "true");
+  if (!$("show-public").checked) q.set("include_public", "false");
+  if ($("only-never-weighed").checked) q.set("never_weighed", "true");
+  if ($("only-sub-recipes").checked) q.set("has_sub_recipes", "true");
   if ($("show-archived").checked) q.set("include_archived", "true");
   if ($("only-archived-rm").checked) q.set("archived_raw_materials", "true");
   try {
@@ -536,7 +542,7 @@ $("bulk-export").addEventListener("click", async () => {
 });
 
 $("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 300); });
-["filter-group", "show-locked", "show-archived", "only-archived-rm"].forEach((id) => $(id).addEventListener("change", loadList));
+["filter-group", "show-public", "show-locked", "show-archived", "only-archived-rm", "only-never-weighed", "only-sub-recipes"].forEach((id) => $(id).addEventListener("change", loadList));
 
 // ---- Editor: Laden ------------------------------------------------------------------
 
