@@ -67,10 +67,18 @@ def test_import_check_then_run(client, auth):
 
 
 def test_import_errors_400_with_report(client, auth):
-    post(client, auth, template(), mode="run")
-    r = post(client, auth, template(), mode="run")            # Name und Nummer jetzt vorhanden
+    bad = build([recipe("R1", "Roggenbrot")], [line("R1", "Roggenmehl 1150", 500)])     # Rohstoff fehlt
+    r = post(client, auth, bad, mode="run")
     assert r.status_code == 400
     assert r.json()["code"] == "import_failed" and r.json()["report"]["errors"]
+
+
+def test_reimport_same_file_is_unchanged(client, auth):
+    """Seit 0.5.7 (C3-E5): vorhandene Rezepte sind kein Fehler; gleicher Inhalt = unverändert."""
+    post(client, auth, template(), mode="run")
+    r = post(client, auth, template(), mode="run")
+    assert r.status_code == 200, r.text
+    assert r.json()["counts"]["recipes_unchanged"] == 1 and r.json()["counts"]["recipes_new_version"] == 0
 
 
 def test_import_overwrite_needs_confirmation(client, auth):
