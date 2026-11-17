@@ -126,3 +126,44 @@ def test_page_has_c3_parts(client):
                  "Interne Notiz", "mit archivierten Rohstoffen", "Ist der Hinweistext leer"):
         assert text in html, text
     assert "Station: " not in html
+
+
+# -- Sammelaktionen (C3-E1) --------------------------------------------------------------------
+
+BULK = "/api/v1/admin/recipes/bulk"
+
+
+def test_bulk_needs_session(client):
+    assert client.post(BULK, json={"action": "lock", "ids": [1]}).status_code == 401
+
+
+def test_bulk_unlock_check_run(client, auth):
+    post(client, auth, template(), mode="run")
+    rid = client.get("/api/v1/recipes", params={"include_locked": True}).json()[0]["id"]
+    r = client.post(BULK, headers=auth, json={"action": "unlock", "ids": [rid], "mode": "check"})
+    assert r.status_code == 200 and r.json()["counts"]["done"] == 1 and r.json()["warnings"][0]["review_count"] == 1
+    r = client.post(BULK, headers=auth, json={"action": "unlock", "ids": [rid], "mode": "run"})
+    assert r.status_code == 409 and r.json()["code"] == "confirmation_required"
+    r = client.post(BULK, headers=auth, json={"action": "unlock", "ids": [rid], "mode": "run", "confirm": True})
+    assert r.status_code == 200 and r.json()["executed"]
+    assert client.get("/api/v1/recipes").json()[0]["id"] == rid          # jetzt in der Vorwahl
+
+
+def test_bulk_bad_input(client, auth):
+    assert client.post(BULK, headers=auth, json={"action": "lock", "ids": []}).status_code == 400
+    assert client.post(BULK, headers=auth, json={"action": "kopieren", "ids": [1]}).status_code == 400
+
+
+def test_export_selection(client, auth):
+    post(client, auth, template(), mode="run")
+    rid = client.get("/api/v1/recipes", params={"include_locked": True}).json()[0]["id"]
+    r = client.get(EXPORT, headers=auth, params={"ids": str(rid)})
+    assert r.status_code == 200
+    assert load_workbook(io.BytesIO(r.content))["Rezepte"]["C2"].value == "Weizenbrot"
+    assert client.get(EXPORT, headers=auth, params={"ids": "a,b"}).status_code == 400
+
+
+def test_page_has_bulk_bar(client):
+    html = client.get("/admin/rezepte").text
+    for text in ("sel-all", "Auswahl aufheben", "Endgültig löschen", "admin/recipes/bulk"):
+        assert text in html, text

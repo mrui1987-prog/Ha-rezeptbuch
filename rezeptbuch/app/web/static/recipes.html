@@ -51,7 +51,10 @@
   #ask-box { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000;
              align-items: center; justify-content: center; padding: 1rem; }
   #ask-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 30rem; width: 100%; color: #222; max-height: 85vh; overflow-y: auto; }
-  #ask-text { white-space: pre-line; }
+  #ask-text { white-space: pre-line; max-height: 60vh; overflow-y: auto; }
+  #bulk-bar { background: #e8f0fe; border: 1px solid #9bb7e8; border-radius: 4px; padding: .5rem .6rem; margin: .5rem 0; }
+  td.sel, th.sel { width: 2.2rem; text-align: center; }
+  td.sel input, th.sel input { width: 1.3rem; height: 1.3rem; }
   #ask-box .row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
   .panel.unsaved { border: 2px solid #d48a00; background: #fffaf0; }
   .unsaved-note { background: #fde7c4; color: #7a4a00; padding: .4rem .6rem; border-radius: 4px; margin: .4rem 0; font-weight: bold; }
@@ -85,9 +88,18 @@
       <label class="inline" title="nur Rezepte, deren aktuelle Version einen archivierten Rohstoff enthält"><input id="only-archived-rm" type="checkbox"> mit archivierten Rohstoffen</label>
     </div>
     <div id="list-msg" class="msg hidden" role="alert"></div>
+    <div id="bulk-bar" class="toolbar hidden">
+      <b id="bulk-count"></b>
+      <button type="button" id="bulk-unlock">Freischalten</button>
+      <button type="button" id="bulk-lock">Sperren</button>
+      <button type="button" id="bulk-archive">Archivieren</button>
+      <button type="button" id="bulk-delete">Löschen</button>
+      <button type="button" id="bulk-export">Exportieren</button>
+      <button type="button" id="bulk-clear">Auswahl aufheben</button>
+    </div>
     <div class="scroll">
       <table>
-        <thead><tr><th>Nr.</th><th>Name</th><th>Gruppe</th><th>Status</th><th>Version</th><th class="num">Gesamt g</th><th class="num">Zeilen</th><th>„*“</th><th>Hinweis</th><th></th></tr></thead>
+        <thead><tr><th class="sel"><input id="sel-all" type="checkbox" title="alle angezeigten Rezepte auswählen" aria-label="alle auswählen"></th><th>Nr.</th><th>Name</th><th>Gruppe</th><th>Status</th><th>Version</th><th class="num">Gesamt g</th><th class="num">Zeilen</th><th>„*“</th><th>Hinweis</th><th></th></tr></thead>
         <tbody id="list-rows"></tbody>
       </table>
     </div>
@@ -411,9 +423,16 @@ async function loadList() {
   try {
     await loadGroupsData();
     const items = await api("recipes?" + q.toString());
+    listItems = items;
+    const visible = new Set(items.map((r) => r.id));
+    Array.from(selected).forEach((id) => { if (!visible.has(id)) selected.delete(id); });   // nur Sichtbares bleibt gewählt
     const body = $("list-rows"); body.textContent = "";
     items.forEach((r) => {
       const tr = el("tr"); if (r.archived) tr.className = "archived";
+      const box = el("input"); box.type = "checkbox"; box.checked = selected.has(r.id);
+      box.setAttribute("aria-label", "Rezept " + r.number + " auswählen");
+      box.addEventListener("change", () => { if (box.checked) selected.add(r.id); else selected.delete(r.id); updateBulkBar(); });
+      td(tr, box, "sel");
       td(tr, String(r.number)); td(tr, r.name); td(tr, r.group_name || ""); td(tr, statusBadge(r));
       td(tr, String(r.version_no)); td(tr, String(r.total_g), "num"); td(tr, String(r.item_count), "num");
       td(tr, r.review_count ? r.review_count + " „*“" : "", r.review_count ? "warn" : "");
@@ -423,8 +442,95 @@ async function loadList() {
       body.appendChild(tr);
     });
     show("list-empty", items.length === 0);
+    updateBulkBar();
   } catch (err) { handleError(err, "list-msg"); }
 }
+
+// ---- Sammelaktionen (C3-E1) ---------------------------------------------------------------
+
+let listItems = [];
+const selected = new Set();
+
+function updateBulkBar() {
+  const n = selected.size;
+  show("bulk-bar", n > 0);
+  $("bulk-count").textContent = n + (n === 1 ? " Rezept ausgewählt:" : " Rezepte ausgewählt:");
+  const all = $("sel-all");
+  all.checked = listItems.length > 0 && listItems.every((r) => selected.has(r.id));
+  all.indeterminate = n > 0 && !all.checked;
+}
+
+$("sel-all").addEventListener("change", () => {
+  if ($("sel-all").checked) listItems.forEach((r) => selected.add(r.id));
+  else selected.clear();
+  Array.from(document.querySelectorAll("#list-rows td.sel input")).forEach((b, i) => { b.checked = selected.has(listItems[i].id); });
+  updateBulkBar();
+});
+$("bulk-clear").addEventListener("click", () => { selected.clear(); loadList(); });
+
+function nameList(entries, withReason) {
+  const lines = entries.slice(0, 25).map((e) => "• " + (e.number !== null ? "Nr. " + e.number + " " : "") + (e.name || "")
+    + (withReason ? " – " + e.reason : ""));
+  if (entries.length > 25) lines.push("… und " + (entries.length - 25) + " weitere");
+  return lines.join("\n");
+}
+
+const BULK = {
+  unlock: { verb: "freischalten", button: "Freischalten" },
+  lock: { verb: "sperren", button: "Sperren" },
+  archive: { verb: "archivieren", button: "Archivieren" },
+  delete: { verb: "endgültig löschen", button: "Endgültig löschen" },
+};
+
+async function bulkAction(action) {
+  showMsg("list-msg", "");
+  const ids = Array.from(selected);
+  let preview;
+  try { preview = await api("admin/recipes/bulk", { method: "POST", body: { action, ids, mode: "check" } }); }
+  catch (err) { handleError(err, "list-msg"); return; }
+  const cfg = BULK[action];
+  const parts = [];
+  if (preview.done.length) parts.push(preview.done.length + (preview.done.length === 1 ? " Rezept" : " Rezepte") + " " + cfg.verb + ":\n" + nameList(preview.done));
+  if (preview.unchanged.length) parts.push(preview.unchanged.length + " ohne Änderung (schon so).");
+  if (preview.skipped.length) parts.push("Übersprungen (" + preview.skipped.length + "):\n" + nameList(preview.skipped, true));
+  if (preview.warnings.length) {
+    parts.push("Achtung – " + preview.warnings.length + " davon mit offenen Punkten:\n" + nameList(preview.warnings.map((w) => {
+      const r = []; if (w.review_count) r.push(w.review_count + " „*“"); if (w.zero_percent_count) r.push(w.zero_percent_count + "× Toleranz 0 %");
+      return Object.assign({}, w, { reason: r.join(", ") });
+    }), true));
+  }
+  if (action === "delete" && preview.done.length) parts.push("Löschen kann nicht rückgängig gemacht werden.");
+  if (!preview.done.length) {
+    await ask(parts.join("\n\n") || "Nichts zu tun.", []);
+    return;
+  }
+  const ok = await ask(parts.join("\n\n"), [{ label: cfg.button, value: true }]);
+  if (!ok) return;
+  try {
+    const result = await api("admin/recipes/bulk", { method: "POST", body: { action, ids, mode: "run", confirm: true } });
+    if (action === "delete" || action === "archive") result.done.forEach((e) => selected.delete(e.id));
+    await loadList();                     // leert die Meldung, daher danach anzeigen
+    showMsg("list-msg", result.summary + (result.skipped.length ? "\nÜbersprungen:\n" + nameList(result.skipped, true) : ""),
+      result.skipped.length ? "" : "info");
+  } catch (err) { handleError(err, "list-msg"); }
+}
+
+["unlock", "lock", "archive", "delete"].forEach((a) => $("bulk-" + a).addEventListener("click", () => bulkAction(a)));
+
+$("bulk-export").addEventListener("click", async () => {
+  showMsg("list-msg", "");
+  try {
+    const res = await api("admin/recipes/export.xlsx?ids=" + Array.from(selected).join(","), { raw: true });
+    const blob = await res.blob();
+    const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = match ? match[1] : "rezepte.xlsx";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showMsg("list-msg", "Export der Auswahl erstellt (Unterrezepte sind mit drin).", "info");
+  } catch (err) { handleError(err, "list-msg"); }
+});
 
 $("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 300); });
 ["filter-group", "show-locked", "show-archived", "only-archived-rm"].forEach((id) => $(id).addEventListener("change", loadList));

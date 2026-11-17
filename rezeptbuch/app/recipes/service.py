@@ -832,27 +832,34 @@ def set_batch_sizes_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: list[
 def unlock_recipe(conn: sqlite3.Connection, recipe_id: int, confirm: bool = False, source: str = "admin") -> dict:
     """Freischalten (R05-21, K05-3): nur mit Zeilen; bei „*“ oder 0 % Warnung mit Bestätigung."""
     with transaction(conn):
-        row = _fetch(conn, recipe_id)
-        if not row["locked"]:
-            return get_recipe(conn, recipe_id)
-        items = _items(conn, row["current_version_id"])
-        if not items:
-            raise ConflictError("Ein Rezept ohne Zeilen kann nicht freigeschaltet werden.", code="empty_recipe")
-        review = [{"position": i["position"], "name": _item_name(i)} for i in items if i["needs_review"]]
-        zero = [{"position": i["position"], "name": _item_name(i)} for i in items
-                if i["tolerance"] and i["tolerance"]["unit"] == "percent" and i["tolerance"]["value"] == 0]
-        if (review or zero) and not confirm:
-            parts = []
-            if review:
-                parts.append(f"{len(review)} Zeile{'n' if len(review) != 1 else ''} mit „*“ (noch nicht geprüft)")
-            if zero:
-                parts.append(f"{len(zero)} Zeile{'n' if len(zero) != 1 else ''} mit Toleranz 0 % "
-                             "(wird auf ±1 g genau gewogen)")
-            raise ConflictError("Trotzdem freischalten? " + "; ".join(parts) + ".",
-                                code="confirmation_required", review_items=review, zero_percent_items=zero)
-        conn.execute("UPDATE recipe SET locked = 0 WHERE id = ?", (recipe_id,))
-        _log(conn, "update", recipe_id, {"locked": 1}, {"locked": 0}, source)
+        unlock_in_tx(conn, recipe_id, confirm=confirm, source=source)
     return get_recipe(conn, recipe_id)
+
+
+def unlock_in_tx(conn: sqlite3.Connection, recipe_id: int, *, confirm: bool = False,
+                 source: str = "admin") -> dict | None:
+    """Wie ``unlock_recipe`` in einer offenen Transaktion. Gibt die Warnungen zurück (oder None)."""
+    row = _fetch(conn, recipe_id)
+    if not row["locked"]:
+        return None
+    items = _items(conn, row["current_version_id"])
+    if not items:
+        raise ConflictError("Ein Rezept ohne Zeilen kann nicht freigeschaltet werden.", code="empty_recipe")
+    review = [{"position": i["position"], "name": _item_name(i)} for i in items if i["needs_review"]]
+    zero = [{"position": i["position"], "name": _item_name(i)} for i in items
+            if i["tolerance"] and i["tolerance"]["unit"] == "percent" and i["tolerance"]["value"] == 0]
+    if (review or zero) and not confirm:
+        parts = []
+        if review:
+            parts.append(f"{len(review)} Zeile{'n' if len(review) != 1 else ''} mit „*“ (noch nicht geprüft)")
+        if zero:
+            parts.append(f"{len(zero)} Zeile{'n' if len(zero) != 1 else ''} mit Toleranz 0 % "
+                         "(wird auf ±1 g genau gewogen)")
+        raise ConflictError("Trotzdem freischalten? " + "; ".join(parts) + ".",
+                            code="confirmation_required", review_items=review, zero_percent_items=zero)
+    conn.execute("UPDATE recipe SET locked = 0 WHERE id = ?", (recipe_id,))
+    _log(conn, "update", recipe_id, {"locked": 1}, {"locked": 0}, source)
+    return {"review_items": review, "zero_percent_items": zero} if (review or zero) else None
 
 
 def _item_name(item: dict) -> str:
@@ -864,29 +871,41 @@ def _item_name(item: dict) -> str:
 def lock_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin") -> dict:
     """Sperren: blendet das Rezept in der Vorwahl aus (M05-5). Geht jederzeit."""
     with transaction(conn):
-        row = _fetch(conn, recipe_id)
-        if not row["locked"]:
-            conn.execute("UPDATE recipe SET locked = 1 WHERE id = ?", (recipe_id,))
-            _log(conn, "update", recipe_id, {"locked": 0}, {"locked": 1}, source)
+        lock_in_tx(conn, recipe_id, source=source)
     return get_recipe(conn, recipe_id)
+
+
+def lock_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "admin") -> bool:
+    """Sperren in einer offenen Transaktion; True, wenn sich etwas geändert hat."""
+    row = _fetch(conn, recipe_id)
+    if row["locked"]:
+        return False
+    conn.execute("UPDATE recipe SET locked = 1 WHERE id = ?", (recipe_id,))
+    _log(conn, "update", recipe_id, {"locked": 0}, {"locked": 1}, source)
+    return True
 
 
 def archive_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin") -> dict:
     """Archivieren (R05-22, M05-6): nicht, solange es als Unterrezept in einem aktiven Rezept steckt."""
     with transaction(conn):
-        row = _fetch(conn, recipe_id)
-        if row["archived"]:
-            raise ConflictError("Das Rezept ist bereits archiviert.", code="already_archived")
-        parents = usage(conn, recipe_id)["parents"]
-        if parents:
-            n = len(parents)
-            names = ", ".join(f"„{p['name']}“ (Nr. {p['number']})" for p in parents)
-            raise ConflictError(f"Das Rezept wird in {n} Rezept{'en' if n != 1 else ''} als Unterrezept verwendet "
-                                f"und kann nicht archiviert werden: {names}.", code="in_use_as_sub_recipe",
-                                parents=parents)
-        conn.execute("UPDATE recipe SET archived = 1 WHERE id = ?", (recipe_id,))
-        _log(conn, "archive", recipe_id, {"archived": 0}, {"archived": 1}, source)
+        archive_in_tx(conn, recipe_id, source=source)
     return get_recipe(conn, recipe_id)
+
+
+def archive_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "admin") -> None:
+    """Archivieren in einer offenen Transaktion (Regeln wie ``archive_recipe``)."""
+    row = _fetch(conn, recipe_id)
+    if row["archived"]:
+        raise ConflictError("Das Rezept ist bereits archiviert.", code="already_archived")
+    parents = usage(conn, recipe_id)["parents"]
+    if parents:
+        n = len(parents)
+        names = ", ".join(f"„{p['name']}“ (Nr. {p['number']})" for p in parents)
+        raise ConflictError(f"Das Rezept wird in {n} Rezept{'en' if n != 1 else ''} als Unterrezept verwendet "
+                            f"und kann nicht archiviert werden: {names}.", code="in_use_as_sub_recipe",
+                            parents=parents)
+    conn.execute("UPDATE recipe SET archived = 1 WHERE id = ?", (recipe_id,))
+    _log(conn, "archive", recipe_id, {"archived": 0}, {"archived": 1}, source)
 
 
 def restore_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin") -> dict:
@@ -952,16 +971,21 @@ def delete_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin
     """Löscht ein nie verwendetes Rezept samt Versionen, Stückgewichten, Chargengrößen (R05-25)."""
     try:
         with transaction(conn):
-            row = _fetch(conn, recipe_id)
-            use = usage(conn, recipe_id)
-            if use["used"]:
-                what = "in Aufträgen" if use["orders"] else "als Unterrezept"
-                raise ConflictError(f"Das Rezept wird {what} verwendet – bitte archivieren.",
-                                    code="in_use", usage=use)
-            snapshot = {"number": row["number"], "name": row["name"], "group_id": row["group_id"],
-                        "versions": conn.execute("SELECT count(*) FROM recipe_version WHERE recipe_id = ?",
-                                                 (recipe_id,)).fetchone()[0]}
-            conn.execute("DELETE FROM recipe WHERE id = ?", (recipe_id,))
-            _log(conn, "delete", recipe_id, snapshot, None, source)
+            delete_in_tx(conn, recipe_id, source=source)
     except sqlite3.IntegrityError as exc:
         raise ConflictError("Das Rezept wird noch verwendet – bitte archivieren.", code="in_use") from exc
+
+
+def delete_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "admin") -> None:
+    """Löschen in einer offenen Transaktion (Regeln wie ``delete_recipe``)."""
+    row = _fetch(conn, recipe_id)
+    use = usage(conn, recipe_id)
+    if use["used"]:
+        what = "in Aufträgen" if use["orders"] else "als Unterrezept"
+        raise ConflictError(f"Das Rezept wird {what} verwendet – bitte archivieren.",
+                            code="in_use", usage=use)
+    snapshot = {"number": row["number"], "name": row["name"], "group_id": row["group_id"],
+                "versions": conn.execute("SELECT count(*) FROM recipe_version WHERE recipe_id = ?",
+                                         (recipe_id,)).fetchone()[0]}
+    conn.execute("DELETE FROM recipe WHERE id = ?", (recipe_id,))
+    _log(conn, "delete", recipe_id, snapshot, None, source)

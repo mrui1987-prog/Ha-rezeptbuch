@@ -1,6 +1,6 @@
 # Modul 05 – Rezeptverwaltung (Schritt B: Konzept)
 
-Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt, Praxisprüfung am 16.11.2026 bestanden**, Ergänzungen C1-E1 bis C1-E3 am 17.11.2026 von Michael bestätigt. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), am 17.11.2026 in `main` zusammengeführt, Praxisprüfung C2 am 17.11.2026 bestanden (Verbesserungen KC2-1 bis KC2-6). **Teil C3 (0.5.2) am 17.11.2026 umgesetzt** mit den Korrekturen KC2-1 bis KC2-6 und Migration `0004_recipe_note.sql` (interne Notiz); Praxisprüfung C3 offen. Umsetzungshinweise und Abweichungen in Abschnitt 16.
+Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt, Praxisprüfung am 16.11.2026 bestanden**, Ergänzungen C1-E1 bis C1-E3 am 17.11.2026 von Michael bestätigt. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), am 17.11.2026 in `main` zusammengeführt, Praxisprüfung C2 am 17.11.2026 bestanden (Verbesserungen KC2-1 bis KC2-6). **Teil C3 (0.5.2) am 17.11.2026 umgesetzt** mit den Korrekturen KC2-1 bis KC2-6 und Migration `0004_recipe_note.sql` (interne Notiz); **Ergänzung C3-E1 Sammelaktionen (0.5.3)** am 17.11.2026; Praxisprüfung C3 läuft (Import der echten Vorlage ohne Fehler). Umsetzungshinweise und Abweichungen in Abschnitt 16.
 Grundlage: Code-Stand `main` 807a198 (Add-on `rezeptbuch` 0.3.4), docs/datenmodell.md, docs/rohstoffe.md, docs/bedienkonzept.md, docs/importvorlage-rezepte.md, Entscheidungen M05-1 bis M05-15 und M05-13b vom 15.11.2026 (PROJEKTSTATUS Abschnitt 3).
 Zielversion: Add-on `rezeptbuch` **0.5.x** (Umsetzung in drei Teilen, Abschnitt 12).
 
@@ -201,6 +201,7 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 | POST, PATCH, DELETE | `/admin/recipe-groups`, `/admin/recipe-groups/{id}` | Gruppen; `PUT /admin/recipe-groups/order` für die Reihenfolge |
 | POST | `/admin/import/raw-materials?mode=check` bzw. `mode=run&confirm_overwrite=true` | CSV-Import (6.1) – **umgesetzt in 0.5.0** |
 | GET | `/admin/recipes/{id}` | wie `/recipes/{id}`, zusätzlich `internal_note` (0.5.2, KC2-2) |
+| POST | `/admin/recipes/bulk` | Sammelaktion `{action: unlock\|lock\|archive\|delete, ids, mode: check\|run, confirm}` (0.5.3, C3-E1); Export der Auswahl über `export.xlsx?ids=1,2,3` |
 | POST | `/admin/import/recipes?mode=check` bzw. `mode=run&confirm_overwrite=true` | Vorlagen-Import (6.2) – **umgesetzt in 0.5.2** |
 | GET | `/admin/recipes/export.xlsx?include_archived=false` | Export (6.3, K05-1) |
 
@@ -308,6 +309,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 15.11.2026 | Konzeptfragen K05-1 bis K05-7 entschieden und eingearbeitet: Export als .xlsx, Rohstoffe beim Import überschreiben (K05-2 mit 2a–2d, Abschnitt 6.1/6.2, Schnittstellen, Tests), übrige wie vorgeschlagen. |
 | 15.11.2026 | Konzept von Michael freigegeben. Teil C1 (0.5.0) umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 | 15.11.2026 | Teil C2 (0.5.1) auf Zweig `modul05-c2` umgesetzt; Umsetzungshinweise in Abschnitt 16. |
+| 17.11.2026 | Ergänzung C3-E1 (0.5.3): Sammelaktionen in der Rezeptliste (Abschnitt 16). |
 | 17.11.2026 | Teil C3 (0.5.2) umgesetzt: Vorlagen-Import, Export, KC2-1 bis KC2-6, interne Notiz (Migration 0004); Umsetzungshinweise in Abschnitt 16. |
 
 ## 16. Umsetzung und Abweichungen
@@ -384,3 +386,21 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 **Korrekturen KC2-1 bis KC2-6** (Seite `recipes.html`): „Kurzname: …“ statt „Station: …“; Auswahl „am Anfang und am Ende“ (`start`) / „nur am Ende“ (`end`) mit Satz „Ist der Hinweistext leer, erscheint an der Waage kein Hinweis.“; Taste „Zutaten speichern“ mit Erläuterung; Kasten Stückgewichte/Chargengrößen bei ungespeicherten Änderungen farbig umrandet mit Warnzeile, „Zutaten speichern“ fragt dann „Beides speichern / Nur Zutaten speichern“, ungespeicherte Stückgewichte bleiben nach dem Speichern der Zutaten stehen (bisher stillschweigend verworfen); Rückfrage beim Klick auf ✕ eines Stückgewichts mit den betroffenen Chargengrößen (Rückfrage des Servers beim Speichern bleibt); Haken „mit archivierten Rohstoffen“ (API `GET /recipes?archived_raw_materials=true`, Listenfeld `archived_raw_material_count`, Spalte „Hinweis“); Konflikt „bitte neu laden“ als Fenster mit „Neu laden“ (auch beim Speichern der Stückgewichte).
 
 **Tests:** lokal 411 bestanden, 5 übersprungen (API-Tests ohne FastAPI); neu 45 Import-, 7 Export- und 6 Servicetests, 9 API-Tests (nur GitHub-Testlauf). Zusätzlich lokaler Oberflächentest in Chrome mit einem Prüfserver (nur für die Prüfung, nicht im Repo): Probelauf und Import einer Testvorlage, Export-Download, Filter „mit archivierten Rohstoffen“, Kurzname-Hinweis, interne Notiz, KC2-4-Rückfrage, KC2-3 „Beides speichern“ mit Server-Sicherung, KC2-6-Fenster mit „Neu laden“, Handy-Ansicht (390 px).
+
+### Ergänzung C3-E1 (0.5.3, 17.11.2026) – Sammelaktionen
+
+**Wunsch Michael (17.11.2026, während der Praxisprüfung C3):** Rezepte in der Liste über Haken einzeln oder mit „alle auswählen“ anwählen; sobald etwas ausgewählt ist, die Aktionen **Freischalten, Sperren, Archivieren, Löschen, Exportieren**. Freischalten aller gewählten Rezepte auf einmal mit einer gemeinsamen Warnliste („*“, 0 %) und einer Bestätigung.
+
+**Umsetzung:** `app/recipes/bulk.py` (`bulk_action`), Endpunkt `POST /api/v1/admin/recipes/bulk`, Export mit `ids`. Die Statusfunktionen haben dafür Varianten für eine offene Transaktion (`unlock_in_tx`, `lock_in_tx`, `archive_in_tx`, `delete_in_tx`); die bisherigen Funktionen rufen diese auf und verhalten sich unverändert. Keine Migration.
+
+**Präzisierungen** (keine neue Fachregel):
+- Es gelten dieselben Regeln wie beim einzelnen Rezept (R05-21, R05-22, R05-25). Anders als beim Import gilt **nicht** „alles oder nichts“: nicht erlaubte Rezepte werden **übersprungen** und mit Grund gemeldet, die übrigen ausgeführt. Die Vorschau (gleiche Schritte in einer Transaktion, danach zurückgerollt) zeigt das vor der Bestätigung.
+- Ausführen verlangt `confirm: true` (sonst 409 `confirmation_required`). Die Seite fragt immer einmal, beim Löschen mit „Endgültig löschen“.
+- Archivieren und Löschen werden wiederholt, solange es vorangeht: Haupt- und Unterrezept lassen sich gemeinsam archivieren bzw. löschen, wenn beide gewählt sind.
+- Bereits freigeschaltete bzw. gesperrte Rezepte erscheinen als „ohne Änderung“.
+- „alle auswählen“ wählt die **angezeigten** Rezepte (Suche und Filter wirken). Ändert sich der Filter, bleiben nur sichtbare Rezepte gewählt.
+- Export der Auswahl: gewählte Rezepte plus ihre Unterrezepte (auch archivierte), unabhängig vom Haken „archivierte“.
+- Höchstens 1 000 Rezepte je Aktion. Jede Änderung steht wie bisher im `change_log`.
+- Wiederherstellen ist (noch) keine Sammelaktion – nicht gewünscht.
+
+**Tests:** `test_recipe_bulk.py` (18), 5 API-Tests in `test_import_export_api.py` (nur GitHub). Oberflächentest in Chrome: Auswahl, „alle auswählen“, Vorschau mit Warnliste, Freischalten, Archivieren eines Unterrezepts übersprungen, Export der Auswahl mit Unterrezept, Löschen, Handy-Ansicht.

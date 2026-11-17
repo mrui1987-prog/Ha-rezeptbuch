@@ -13,6 +13,7 @@ from fastapi import APIRouter, Body, Depends, Response
 
 from ..auth.dependencies import require_admin
 from ..deps import get_db
+from . import bulk as bulk_module
 from . import groups, service
 
 router = APIRouter(prefix="/api/v1", tags=["recipes"])
@@ -54,6 +55,13 @@ def list_groups(db: sqlite3.Connection = Depends(get_db)):
 @router.get("/admin/recipes/next-number", dependencies=admin)
 def next_number(db: sqlite3.Connection = Depends(get_db)):
     return {"number": service.next_number(db)}
+
+
+@router.post("/admin/recipes/bulk", dependencies=admin)
+def bulk(body: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Sammelaktion für angehakte Rezepte (C3-E1): Vorschau oder Ausführung."""
+    return bulk_module.bulk_action(db, body.get("action"), body.get("ids"), mode=body.get("mode", "check"),
+                                   confirm=body.get("confirm") is True)
 
 
 @router.get("/admin/recipes/{recipe_id}", dependencies=admin)

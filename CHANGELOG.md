@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.5.3 – Modul 05, Ergänzung C3-E1 (in Entwicklung)
+
+- **Sammelaktionen in der Rezeptliste:** Haken je Rezept und „alle auswählen“; sobald etwas angehakt ist, erscheint eine Leiste mit **Freischalten, Sperren, Archivieren, Löschen, Exportieren** und „Auswahl aufheben“
+- Vor jeder Aktion eine Vorschau: was ausgeführt wird, was übersprungen wird (mit Grund, z. B. „ohne Zeilen“, „als Unterrezept verwendet“, „wird verwendet – bitte archivieren“) und beim Freischalten alle offenen „*“ und Toleranzen 0 % in einer Liste; eine Bestätigung für alle
+- Es gelten dieselben Regeln wie beim einzelnen Rezept; nicht erlaubte Rezepte werden übersprungen, die übrigen ausgeführt. Haupt- und Unterrezept können gemeinsam archiviert oder gelöscht werden
+- „Exportieren“ erzeugt die .xlsx-Datei nur mit den ausgewählten Rezepten und ihren Unterrezepten
+
 ## 0.5.2 – Modul 05, Teil C3 (in Entwicklung)
 
 - **Rezeptimport aus der Importvorlage (.xlsx)** im neuen Reiter „Import/Export“: Blätter Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen und Umrechnung; erst Probelauf mit Bericht, dann Import; alles oder nichts

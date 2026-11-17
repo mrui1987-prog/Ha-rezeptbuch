@@ -96,10 +96,16 @@ def _tolerance_cells(tolerance: dict | None) -> tuple:
     return "g", int(tolerance["value"])
 
 
-def _selected(conn: sqlite3.Connection, include_archived: bool) -> list[dict]:
-    """Rezepte für den Export; archivierte Unterrezepte aktiver Rezepte kommen immer mit."""
+def _selected(conn: sqlite3.Connection, include_archived: bool, ids: list[int] | None = None) -> list[dict]:
+    """Rezepte für den Export; Unterrezepte der gewählten Rezepte kommen immer mit (auch archivierte).
+
+    ``ids``: nur diese Rezepte (Auswahl in der Rezeptliste, C3-E1), dann ohne Rücksicht auf ``include_archived``.
+    """
     every = {r["id"]: r for r in recipe_service.list_recipes(conn, include_locked=True, include_archived=True)}
-    chosen = {rid for rid, r in every.items() if include_archived or not r["archived"]}
+    if ids is not None:
+        chosen = {rid for rid in ids if rid in every}
+    else:
+        chosen = {rid for rid, r in every.items() if include_archived or not r["archived"]}
     details: dict[int, dict] = {}
     pending = list(chosen)
     while pending:
@@ -113,12 +119,12 @@ def _selected(conn: sqlite3.Connection, include_archived: bool) -> list[dict]:
     return sorted(details.values(), key=lambda r: r["number"])
 
 
-def build_workbook(conn: sqlite3.Connection, include_archived: bool = False) -> bytes:
-    """Erzeugt die .xlsx-Datei."""
+def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids: list[int] | None = None) -> bytes:
+    """Erzeugt die .xlsx-Datei (alle Rezepte oder nur die Auswahl ``ids`` mit ihren Unterrezepten)."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
 
-    recipes = _selected(conn, include_archived)
+    recipes = _selected(conn, include_archived, ids)
     wb = Workbook()
     info = wb.active
     info.title = "Info"
@@ -127,6 +133,7 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False) -> 
     lines = [
         "HA-Rezeptbuch – Export der Rezepte",
         f"Erstellt am {stamp} mit Version {__version__}. {len(recipes)} Rezepte"
+        + (" (Auswahl mit Unterrezepten)" if ids is not None else "")
         + (f", davon {archived_count} archiviert." if archived_count else "."),
         "Je Rezept die aktuelle Version. Mengen in Gramm (Einheit g, Faktor 1). Import-ID = R + Rezeptnummer.",
         "Wieder importierbar im Admin-Bereich unter „Import/Export“ (Vorlagen-Import). Rezeptnummern und "
