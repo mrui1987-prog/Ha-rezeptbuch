@@ -1,6 +1,6 @@
 # Modul 05 – Rezeptverwaltung (Schritt B: Konzept)
 
-Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt**, Praxisprüfung offen. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), Zusammenführung in `main` nach bestandener Praxisprüfung C1. Teil C3 folgt (Abschnitt 12). Umsetzungshinweise und Abweichungen in Abschnitt 16.
+Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt, Praxisprüfung am 16.11.2026 bestanden**, Ergänzungen C1-E1 bis C1-E3 am 17.11.2026 von Michael bestätigt. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), am 17.11.2026 in `main` zusammengeführt; Praxisprüfung C2 offen. Teil C3 folgt (Abschnitt 12). Umsetzungshinweise und Abweichungen in Abschnitt 16.
 Grundlage: Code-Stand `main` 807a198 (Add-on `rezeptbuch` 0.3.4), docs/datenmodell.md, docs/rohstoffe.md, docs/bedienkonzept.md, docs/importvorlage-rezepte.md, Entscheidungen M05-1 bis M05-15 und M05-13b vom 15.11.2026 (PROJEKTSTATUS Abschnitt 3).
 Zielversion: Add-on `rezeptbuch` **0.5.x** (Umsetzung in drei Teilen, Abschnitt 12).
 
@@ -322,7 +322,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 - **Antworten:** Probelauf immer 200 mit Bericht. Import mit Fehlern: 400 `import_failed`; ohne Bestätigung bei Überschreiben: 409 `overwrite_confirmation_required`; beide mit dem Bericht im Feld `report`. Nur neue Rohstoffe brauchen keine Bestätigung.
 - Fehler in einer Zeile verwerfen nur diese Zeile (Savepoint), damit der Bericht alle Fehler zeigt; gespeichert wird trotzdem nur ohne jeden Fehler.
 
-**Ergänzungen** (zur Bestätigung durch Michael, betreffen nur das Lesen der Datei):
+**Ergänzungen C1-E1 bis C1-E3** (betreffen nur das Lesen der Datei; am 17.11.2026 von Michael bestätigt, in der Praxisprüfung C1 geprüft):
 - Speichert Excel die Datei als „CSV (Trennzeichen-getrennt)“, ist sie nicht UTF-8, sondern Windows-1252. Der Import liest diese Dateien ebenfalls und zeigt einen Hinweis „bitte Umlaute prüfen“. Ohne diese Ergänzung müsste beim Speichern immer „CSV UTF-8“ gewählt werden.
 - Trennzeichen wird an der Kopfzeile erkannt (Semikolon, sonst Tabulator oder Komma).
 - Ganze Zahlen in Excel-Schreibweise werden verstanden: „25.000“ → 25 000, „55,0“ → 55 (Nummer, Gebindegröße).
