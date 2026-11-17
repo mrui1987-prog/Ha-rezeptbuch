@@ -167,3 +167,24 @@ def test_page_has_bulk_bar(client):
     html = client.get("/admin/rezepte").text
     for text in ("sel-all", "Auswahl aufheben", "Endgültig löschen", "admin/recipes/bulk"):
         assert text in html, text
+
+
+def test_import_include_samples_param(client, auth):
+    """C3-E11: Musterdaten werden übersprungen, mit include_samples=true importiert."""
+    sample = client.get("/api/v1/admin/recipes/template.xlsx", headers=auth).content
+    r = post(client, auth, sample, mode="check")
+    assert r.status_code == 200 and r.json()["nothing_to_import"] and r.json()["counts"]["samples_recipes"] == 2
+    r = post(client, auth, sample, mode="check", include_samples="true")
+    assert r.status_code == 200 and r.json()["counts"]["recipes"] == 2 and r.json()["counts"]["conversions"] == 2
+
+
+def test_bulk_restore(client, auth):
+    """C3-E8: Sammelaktion „Wiederherstellen“."""
+    assert post(client, auth, template(), mode="run").status_code == 200
+    rid = client.get("/api/v1/recipes", params={"include_locked": "true"}).json()[0]["id"]
+    body = {"action": "archive", "ids": [rid], "mode": "run", "confirm": True}
+    assert client.post("/api/v1/admin/recipes/bulk", json=body, headers=auth).status_code == 200
+    body["action"] = "restore"
+    r = client.post("/api/v1/admin/recipes/bulk", json=body, headers=auth)
+    assert r.status_code == 200, r.text
+    assert [e["id"] for e in r.json()["done"]] == [rid]

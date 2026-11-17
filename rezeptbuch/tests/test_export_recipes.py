@@ -64,7 +64,7 @@ def snapshot(conn, recipe_id):
 
 def test_sheets_and_content(conn, filled):
     data = sheets(build_workbook(conn))
-    assert list(data) == ["Info", "Rezepte", "Rezeptzeilen", "Stückgewichte", "Chargengrößen", "Rohstoffe", "Umrechnung"]
+    assert list(data) == ["Info", "Rezepte", "Rezeptzeilen", "Stückgewichte", "Chargengrößen", "Rohstoffe"]
     recipes = data["Rezepte"]
     assert recipes[0][:3] == ["Import-ID", "Rezeptnummer", "Rezeptname"]
     assert [r[0] for r in recipes[1:]] == ["R1", "R2"]
@@ -131,3 +131,13 @@ def test_reimport_into_same_database_is_unchanged(conn, filled):
 def test_empty_database(conn):
     data = sheets(build_workbook(conn))
     assert data["Rezepte"] == [data["Rezepte"][0]]
+
+
+def test_raw_material_sheet_has_empty_conversion_columns(conn, filled):
+    """C3-E7: Umrechnung im Blatt „Rohstoffe“ (leer, wird nicht gespeichert); kein Blatt „Umrechnung“ mehr."""
+    rows = sheets(build_workbook(conn))["Rohstoffe"]
+    header = rows[0]
+    assert header[8].startswith("Umrechnung Einheit") and header[9] == "Gramm je Einheit"
+    assert all(r[8] is None and r[9] is None for r in rows[1:])
+    info = " ".join(str(r[0]) for r in sheets(build_workbook(conn))["Info"])
+    assert "neue Version" in info and "dürfen in der Zieldatenbank" not in info

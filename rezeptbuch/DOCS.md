@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.5.7:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.5.8:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -52,7 +52,7 @@ Reiter **„Rezepte“** im Admin-Bereich.
 - **Interne Notiz:** nur im Admin-Bereich sichtbar, nie an der Waage; Ändern legt keine neue Version an.
 - Hat ein anderes Gerät das Rezept inzwischen gespeichert, wird nichts überschrieben: Fenster „bitte neu laden“.
 - **Stückgewichte und Chargengrößen** gehören zum Rezept und haben eine eigene Taste im eigenen Kasten (keine neue Version). Ungespeicherte Änderungen dort werden deutlich angezeigt; „Zutaten speichern“ fragt dann „Beides speichern“ oder „Nur Zutaten speichern“. Wird ein Stückgewicht gelöscht, fragt das Rezeptbuch sofort nach den zugehörigen Chargengrößen, die mit wegfallen.
-- **Mehrere Rezepte auf einmal:** In der Liste Rezepte anhaken (oder „alle auswählen“ oben links für alle angezeigten). Die Leiste bietet Freischalten, Sperren, Archivieren, Löschen und Exportieren. Vorher zeigt eine Vorschau, was passiert und was übersprungen wird; beim Freischalten stehen alle offenen „*“ und Toleranzen 0 % in einer Liste. Es gelten dieselben Regeln wie beim einzelnen Rezept.
+- **Mehrere Rezepte auf einmal:** In der Liste Rezepte anhaken (oder „alle auswählen“ oben links für alle angezeigten). Die Leiste bietet Freischalten, Sperren, Archivieren, Löschen und Exportieren; sind archivierte Rezepte angehakt, zusätzlich **Wiederherstellen** (nicht möglich, wenn ein aktives Rezept gleich heißt – das Rezept wird dann übersprungen und genannt). Vorher zeigt eine Vorschau, was passiert und was übersprungen wird; beim Freischalten stehen alle offenen „*“ und Toleranzen 0 % in einer Liste. Es gelten dieselben Regeln wie beim einzelnen Rezept.
 - Der Haken **„mit archivierten Rohstoffen“** zeigt Rezepte, deren aktuelle Version einen archivierten Rohstoff enthält.
 - **Sperren** blendet ein Rezept nur in der Vorwahl aus; als Unterrezept bleibt es nutzbar. **Archivieren** geht nicht, solange das Rezept als Unterrezept in einem aktiven Rezept steckt. Archivierte Rezepte können wiederhergestellt, aber nicht bearbeitet werden. **Löschen** nur, wenn das Rezept nie verwendet wurde.
 - **Kopieren** übernimmt die aktuelle Version, Stückgewichte und Chargengrößen als „Kopie von …“ (gesperrt).
@@ -63,11 +63,13 @@ Reiter **„Rezepte“** im Admin-Bereich.
 
 Reiter **„Import/Export“**.
 
-- **Import** liest die Importvorlage: Blätter *Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen* und *Umrechnung*. Spalten werden an der Überschrift erkannt; Zusätze in Klammern zählen nicht, Spalten mit „(Formel)“ oder „(nicht importieren)“ werden nicht gelesen. Die Datei muss als `.xlsx` gespeichert sein (nicht `.xlsb`).
+- **Import** liest die Importvorlage: Blätter *Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte* und *Chargengrößen*. Spalten werden an der Überschrift erkannt; Zusätze in Klammern zählen nicht, Spalten mit „(Formel)“ oder „(nicht importieren)“ werden nicht gelesen. Die Datei muss als `.xlsx` gespeichert sein (nicht `.xlsb`). **Ohne Microsoft Office:** die Datei z. B. in LibreOffice Calc öffnen und beim Speichern „Excel 2007-365 (.xlsx)“ wählen (nicht .ods).
 - Ablauf wie beim CSV-Import: **Probelauf** → Bericht → **„Importieren“**; alles oder nichts.
 - Rohstoffe: wie der CSV-Import (Zuordnung über Nummer, sonst Name; vorhandene werden nach Bestätigung überschrieben; neue ohne Toleranz erhalten 0 %).
-- Rezepte: Rezeptnummer oder -name schon vorhanden = Fehler. Leere Nummer = nächste freie. Fehlende Gruppen werden angelegt. Importierte Rezepte sind **gesperrt**; Zeilen mit „*“ prüfen, dann freischalten.
-- Zeilen: Zutat über den Rohstoffnamen, Unterrezept über die Import-ID. **Menge g = Menge Original × Faktor** (g = 1, kg = 1 000, sonst Blatt „Umrechnung“, Schlüssel „Einheit Zutat“, z. B. „Stück Ei“), auf ganze Gramm gerundet. Leere Menge = 0 g Handzugabe. Fehlt der Faktor, ist das ein Fehler.
+- Rezepte: Ist die Rezeptnummer (sonst der Name) schon vorhanden, bekommt das Rezept nach Bestätigung eine **neue Version**, die bisherige bleibt als „old (n)“; gleicher Inhalt = unverändert; archivierte Rezepte erst wiederherstellen. Leere Nummer = nächste freie. Fehlende Gruppen werden angelegt. Neue Rezepte sind **gesperrt**; Zeilen mit „*“ prüfen, dann freischalten.
+- Zeilen: Zutat über den Rohstoffnamen, Unterrezept über die Import-ID. **Menge g = Menge Original × Faktor**, auf ganze Gramm gerundet. g und kg rechnet der Import selbst. **Für Stück, ml, Maß usw.** im Blatt *Rohstoffe* beim Rohstoff die Spalten **„Umrechnung Einheit“** und **„Gramm je Einheit“** ausfüllen (z. B. Eier: Stück, 65; dann reicht in der Rezeptzeile „20“ „Stück“ „Eier“ = 1 300 g). Für ml eingetragen gilt der Wert auch für l (× 1 000) und umgekehrt. Der Wert wird nicht gespeichert, er dient nur dem Import. Eine Zeile im Blatt *Rohstoffe* nur mit Name und Umrechnung ändert einen vorhandenen Rohstoff nicht. **Jede umgerechnete Zeile bekommt „*“**; der Probelauf zeigt alle Umrechnungen vorab in einem eigenen Fenster („Weiter“), danach den Bericht. Leere Menge = 0 g Handzugabe. Fehlt der Faktor, ist das ein Fehler.
+- Ein Blatt *Umrechnung* aus älteren Vorlagen (Schlüssel „Einheit Zutat“, z. B. „Stück Ei“) wird übergangsweise noch gelesen; der Bericht weist dann auf „veraltet“ hin.
+- **Mustervorlage** (Taste „Mustervorlage herunterladen“): Die gelben Musterzeilen (Rezepte „… (Muster)“, Rohstoffe „Muster …“) überspringt der Import; eigene Zeilen einfach darunter ergänzen. Mit dem Haken „Musterdaten der Mustervorlage mit importieren“ lassen sie sich zum Ausprobieren importieren. Bereits importierte Musterrezepte bleiben unverändert und können bei Bedarf gelöscht werden.
 - Chargengröße „Gewicht“ ohne Wert (oder mit Formel) = Gesamtgewicht des Rezepts; „Stück“ braucht Wert und Stückgewicht-Bezeichnung.
 - **Export:** alle Rezepte (aktuelle Version) mit den verwendeten Rohstoffen im Format der Vorlage, auf Wunsch mit archivierten. Die Datei kann in eine leere Datenbank wieder importiert werden. Kein Ersatz für die Datensicherung.
 

@@ -20,7 +20,8 @@ BATCHES = ["Import-ID", "Rezeptname (Formel)", "Bezeichnung (Taste)", "Art (Gewi
            "Stückgewicht-Bezeichnung (nur bei Stück)", "Reihenfolge", "Prüfen", "Bemerkung"]
 RAW = ["Nummer", "Name", "Kurzname", "Typ (standard/flour)", "Toleranz (Pflicht)", "Toleranzeinheit (g/percent)",
        "Gebindegröße g", "Gebindebezeichnung", "Herkunft", "archiviert", "Zeilen in Rezepten (Formel)",
-       "Schreibweisen im Original (nicht importieren)"]
+       "Schreibweisen im Original (nicht importieren)", "Umrechnung Einheit (nur für den Rezeptimport)",
+       "Gramm je Einheit (z. B. Eier: 65)"]
 UNITS = ["Schlüssel (Einheit + Zutat)", "Gramm je Einheit", "Bemerkung"]
 
 
@@ -34,8 +35,14 @@ def line(import_id, zutat, menge, einheit="g", schritt=None, art="Rohstoff", sub
             "menge": menge, "unit": einheit, "tol_unit": tol_unit, "tol": tol, "flag": flag}
 
 
-def raw(name, number=None, typ="standard", tol=None, unit=None, size=None, label=None, archived=0, short=None):
-    return [number, name, short, typ, tol, unit, size, label, "own", archived]
+def raw(name, number=None, typ="standard", tol=None, unit=None, size=None, label=None, archived=0, short=None,
+        conv_unit=None, conv=None):
+    return [number, name, short, typ, tol, unit, size, label, "own", archived, conv_unit, conv]
+
+
+def conv_only(name, conv_unit, conv, number=None):
+    """Zeile im Blatt „Rohstoffe“ nur mit Name (bzw. Nummer) und Umrechnung (C3-E7, E7b)."""
+    return [number, name, None, None, None, None, None, None, None, None, conv_unit, conv]
 
 
 def build(recipes, lines, raw_materials=(), pieces=(), batches=(), units=(), *, footnotes=True,
@@ -74,7 +81,7 @@ def build(recipes, lines, raw_materials=(), pieces=(), batches=(), units=(), *, 
     if "Rohstoffe" not in skip:
         ws = sheet("Rohstoffe", RAW)
         for r in raw_materials:
-            ws.append([*r, "=1", "orig"])
+            ws.append([*r[:10], "=1", "orig", *r[10:]])
         if footnotes:
             ws.append([])
             ws.append(["Spalten A bis J entsprechen dem CSV-Format der Rohstoffe (Hinweis der Vorlage)."])

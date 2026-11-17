@@ -1,5 +1,15 @@
 # Änderungen
 
+## 0.5.8 – Modul 05, Ergänzungen C3-E7, C3-E8, C3-E11 (in Entwicklung)
+
+- **Umrechnung im Blatt „Rohstoffe“** (C3-E7, ersetzt das Blatt „Umrechnung“): Spalten „Umrechnung Einheit“ und „Gramm je Einheit“ beim Rohstoff, z. B. Eier: Stück, 65 – in der Rezeptzeile reicht dann „20“ „Stück“ „Eier“. Für ml gilt der Wert auch für l (× 1 000) und umgekehrt. Der Wert wird nicht gespeichert, er dient nur dem Import
+- **Jede umgerechnete Zeile bekommt „*“** zum Prüfen; der Probelauf zeigt alle Umrechnungen vorab in einem eigenen Fenster („Weiter“), danach den Bericht
+- Eine Zeile im Blatt „Rohstoffe“ nur mit Name und Umrechnung ändert einen vorhandenen Rohstoff nicht
+- Ein Blatt „Umrechnung“ aus älteren Vorlagen wird übergangsweise weiter gelesen (Hinweis „veraltet“). Mustervorlage und Export enthalten es nicht mehr
+- Hinweis zu LibreOffice („als .xlsx speichern“) in Mustervorlage, Export und Doku
+- **Sammelaktion „Wiederherstellen“** für archivierte Rezepte (C3-E8), gleiche Regeln wie beim einzelnen Rezept
+- **Musterdaten der Mustervorlage werden beim Import übersprungen** (C3-E11, erkannt am Namen); Hinweis im Bericht, Datei nur mit Musterdaten = „nichts zu importieren“. Zum Ausprobieren: Haken „Musterdaten der Mustervorlage mit importieren“
+
 ## 0.5.7 – Modul 05, Ergänzung C3-E5 (in Entwicklung)
 
 - **Import vorhandener Rezepte erzeugt neue Versionen** (Wunsch Michael, ersetzt „vorhandene Nummer/Name = Fehler“): Ein Rezept der Datei, dessen Nummer (sonst Name) schon vorhanden ist, bekommt nach Bestätigung eine **neue Version**; die bisherige wird zur alten Version „old (n)“. Gleicher Inhalt = unverändert, keine Bestätigung nötig. Nummer, Gruppe und interne Notiz bleiben, wenn sie in der Datei leer sind; Stückgewichte und Chargengrößen werden über die Bezeichnung fortgeführt. Enthält die neue Version „*“, wird das Rezept gesperrt. Archivierte Rezepte und widersprüchliche Nummer/Name-Paare bleiben Fehler

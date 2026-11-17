@@ -16,7 +16,7 @@ from app.errors import ConflictError, PayloadTooLargeError, ValidationError  # n
 from app.imports.recipe_template import header_key, import_recipe_template  # noqa: E402
 from app.raw_materials import service as rm_service  # noqa: E402
 from app.recipes import service  # noqa: E402
-from template_factory import build, line, raw, recipe  # noqa: E402
+from template_factory import build, conv_only, line, raw, recipe  # noqa: E402
 
 BASE_RAW = [raw("Weizenmehl 550", typ="flour", tol=20, unit="g"), raw("Wasser", tol=2, unit="percent"),
             raw("Hefe", tol=5, unit="g"), raw("Salz", tol=2, unit="g"), raw("Ei", size=50, label="Ei"),
@@ -218,7 +218,8 @@ def test_amount_conversion_and_rounding(conn):
     r = recipe_by_name(conn, "Biskuit")
     assert [i["amount_g"] for i in r["items"]] == [1800, 92, 3, 1235, 0]     # kaufmännisch gerundet
     assert r["items"][4]["hand_addition"] is True                              # leer = Handzugabe
-    assert [i["needs_review"] for i in r["items"]] == [False, True, False, False, False]
+    # seit 0.5.8 (C3-E7): jede umgerechnete Zeile bekommt „*“, g/kg und Handzugabe nicht
+    assert [i["needs_review"] for i in r["items"]] == [True, True, False, False, False]
 
 
 def test_missing_factor_is_error(conn):
@@ -497,3 +498,200 @@ def test_missing_sheets(conn):
 def test_bad_mode(conn):
     with pytest.raises(ValidationError):
         run(conn, simple(), mode="los")
+
+
+# -- Umrechnung im Blatt „Rohstoffe“ (C3-E7, 0.5.8) ------------------------------------------
+
+CONV_RAW = [raw("Weizenmehl 550", typ="flour", tol=20, unit="g"), raw("Eier", conv_unit="Stück", conv=65),
+            raw("Öl", conv_unit="ml", conv=0.92), raw("Salz", tol=2, unit="g")]
+
+
+def test_conversion_from_raw_material_sheet(conn):
+    data = build([recipe("R", "Biskuit")],
+                 [line("R", "Eier", 20, "Stück"), line("R", "Öl", 1.5, "l"), line("R", "Öl", 100, "ml"),
+                  line("R", "Weizenmehl 550", 0.5, "kg"), line("R", "Salz", 5)],
+                 CONV_RAW, skip=("Umrechnung",))
+    report = run(conn, data)
+    r = recipe_by_name(conn, "Biskuit")
+    assert [i["amount_g"] for i in r["items"]] == [1300, 1380, 92, 500, 5]          # l über ml × 1 000 (E7c)
+    assert [i["needs_review"] for i in r["items"]] == [True, True, True, False, False]
+    assert [c["text"] for c in report["conversions"]] == [
+        "20 Stück × 65 g = 1 300 g", "1,5 l × 920 g = 1 380 g", "100 ml × 0,92 g = 92 g"]
+    assert {c["source"] for c in report["conversions"]} == {"Rohstoffe"}
+    assert report["conversions"][0]["recipe"] == "Biskuit" and report["conversions"][0]["line"] == 2
+    assert report["counts"]["conversions"] == 3
+    assert any("3 Zeilen umgerechnet" in h["message"] for h in report["hints"])
+    assert not any("veraltet" in h["message"] for h in report["hints"])
+    # Faktor wird nicht gespeichert (M02-2): der Rohstoff hat keine neuen Felder
+    eier = rm_service.list_raw_materials(conn, search="Eier")[0]
+    assert "conv" not in " ".join(eier.keys())
+
+
+def test_liter_factor_gives_milliliter(conn):
+    data = build([recipe("R", "Suppe")], [line("R", "Milch", 250, "ml")],
+                 [raw("Milch", conv_unit="l", conv=1030)], skip=("Umrechnung",))
+    run(conn, data)
+    assert recipe_by_name(conn, "Suppe")["items"][0]["amount_g"] == 258        # 250 × 1,03 = 257,5 → 258
+
+
+def test_missing_conversion_names_raw_material_sheet(conn):
+    data = build([recipe("R", "Biskuit")], [line("R", "Eier", 4, "Stück")], [raw("Eier")], skip=("Umrechnung",))
+    report = run(conn, data, mode="check")
+    err = report["errors"][0]
+    assert err["sheet"] == "Rezeptzeilen" and err["column"] == "Einheit Original"
+    assert "Blatt „Rohstoffe“" in err["message"] and "Eier" in err["message"]
+
+
+def test_conversion_for_other_unit_is_missing(conn):
+    data = build([recipe("R", "Biskuit")], [line("R", "Eier", 4, "Maß")], CONV_RAW, skip=("Umrechnung",))
+    assert "fehlt" in run(conn, data, mode="check")["errors"][0]["message"]
+
+
+@pytest.mark.parametrize("unit, factor, column, text", [
+    (None, 65, "Umrechnung Einheit", "Umrechnung Einheit fehlt"),
+    ("Stück", None, "Gramm je Einheit", "Gramm je Einheit fehlt"),
+    ("Stück", 0, "Gramm je Einheit", "größer 0"),
+    ("Stück", "viel", "Gramm je Einheit", "Zahl"),
+])
+def test_bad_conversion_values(conn, unit, factor, column, text):
+    data = build([recipe("R", "Brot")], [line("R", "Salz", 5)], [raw("Salz", tol=2, unit="g"),
+                 raw("Eier", conv_unit=unit, conv=factor)], skip=("Umrechnung",))
+    report = run(conn, data, mode="check")
+    err = report["errors"][0]
+    assert err["sheet"] == "Rohstoffe" and err["line"] == 3 and err["column"] == column and text in err["message"]
+
+
+def test_conversion_for_g_is_ignored_with_hint(conn):
+    data = build([recipe("R", "Brot")], [line("R", "Salz", 5)], [raw("Salz", tol=2, unit="g", conv_unit="g", conv=1)],
+                 skip=("Umrechnung",))
+    report = run(conn, data, mode="check")
+    assert report["ok"] and any("nicht nötig" in h["message"] for h in report["hints"])
+
+
+def test_row_with_only_conversion_keeps_existing_raw_material(conn):
+    """E7b: Name + Umrechnung ändert einen vorhandenen Rohstoff nicht (Kurzname, Gebinde bleiben)."""
+    rm_service.create_raw_material(conn, {"name": "Eier", "tolerance": "5", "display_name": "Ei",
+                                          "unit_size_g": "55", "unit_label": "Ei"})
+    data = build([recipe("R", "Biskuit")], [line("R", "eier", 10, "Stück")], [conv_only("Eier", "Stück", 60)],
+                 skip=("Umrechnung",))
+    report = run(conn, data)                                       # keine Bestätigung nötig
+    assert report["imported"] and report["counts"]["overwritten"] == 0 and report["counts"]["unchanged"] == 1
+    eier = rm_service.list_raw_materials(conn, search="Eier")[0]
+    assert eier["display_name"] == "Ei" and eier["unit_size_g"] == 55
+    assert recipe_by_name(conn, "Biskuit")["items"][0]["amount_g"] == 600
+
+
+def test_row_with_only_conversion_by_number(conn):
+    rm = rm_service.create_raw_material(conn, {"name": "Eier", "tolerance": "5", "display_name": "Ei"})
+    data = build([recipe("R", "Biskuit")], [line("R", "Eier", 2, "Stück")],
+                 [conv_only(None, "Stück", 50, number=rm["number"])], skip=("Umrechnung",))
+    run(conn, data)
+    assert recipe_by_name(conn, "Biskuit")["items"][0]["amount_g"] == 100
+    assert rm_service.list_raw_materials(conn, search="Eier")[0]["display_name"] == "Ei"
+
+
+def test_row_with_only_conversion_creates_new_raw_material(conn):
+    data = build([recipe("R", "Biskuit")], [line("R", "Wachteleier", 12, "Stück")],
+                 [conv_only("Wachteleier", "Stück", 10)], skip=("Umrechnung",))
+    report = run(conn, data)
+    assert report["counts"]["new"] == 1 and {z["name"] for z in report["zero_percent"]} == {"Wachteleier"}
+    assert recipe_by_name(conn, "Biskuit")["items"][0]["amount_g"] == 120
+
+
+def test_full_row_with_conversion_still_overwrites(conn):
+    rm_service.create_raw_material(conn, {"name": "Eier", "tolerance": "5", "display_name": "Ei"})
+    data = build([recipe("R", "Biskuit")], [line("R", "Eier", 2, "Stück")],
+                 [raw("Eier", tol=5, unit="g", conv_unit="Stück", conv=50)], skip=("Umrechnung",))
+    with pytest.raises(ConflictError):
+        run(conn, data)                                            # Kurzname würde geleert → Bestätigung (K05-2)
+    run(conn, data, confirm_overwrite=True)
+    assert rm_service.list_raw_materials(conn, search="Eier")[0]["display_name"] is None
+
+
+def test_old_conversion_sheet_still_read_with_hint(conn):
+    """E7a: alte Vorlagen mit Blatt „Umrechnung“ bleiben importierbar (ToDo Modul 14: entfernen)."""
+    data = build([recipe("R", "Biskuit")], [line("R", "Ei", 3, "Stück")], BASE_RAW, units=[("Stück Ei", 50)])
+    report = run(conn, data)
+    assert recipe_by_name(conn, "Biskuit")["items"][0]["amount_g"] == 150
+    assert report["conversions"][0]["source"] == "Umrechnung"
+    assert recipe_by_name(conn, "Biskuit")["items"][0]["needs_review"] is True
+    assert any("veraltet" in h["message"] for h in report["hints"])
+
+
+def test_empty_old_conversion_sheet_gives_no_hint(conn):
+    report = run(conn, simple(footnotes=False), mode="check")
+    assert not any("veraltet" in h["message"] for h in report["hints"])
+
+
+def test_raw_material_sheet_wins_over_old_sheet(conn):
+    data = build([recipe("R", "Biskuit")], [line("R", "Eier", 2, "Stück")], [raw("Eier", conv_unit="Stück", conv=65)],
+                 units=[("Stück Eier", 50)])
+    report = run(conn, data)
+    assert recipe_by_name(conn, "Biskuit")["items"][0]["amount_g"] == 130
+    assert report["conversions"][0]["source"] == "Rohstoffe"
+
+
+def test_review_column_still_works_without_conversion(conn):
+    data = build([recipe("R", "Brot")], [line("R", "Salz", 5, flag="*"), line("R", "Weizenmehl 550", 100)], BASE_RAW)
+    run(conn, data)
+    assert [i["needs_review"] for i in recipe_by_name(conn, "Brot")["items"]] == [True, False]
+
+
+# -- Musterdaten (C3-E11, 0.5.8) -----------------------------------------------------------------
+
+def _with_samples(extra_recipes=(), extra_lines=(), extra_raw=()):
+    """Vorlage mit den Musterdaten der Mustervorlage und optional eigenen Zeilen."""
+    return build([recipe("M1", "Schoko-Biskuit (Muster)"), recipe("M2", "Schwarzwälder Kirschtorte (Muster)"),
+                  *extra_recipes],
+                 [line("M1", "Muster Zucker", 180), line("M2", "Schoko-Biskuit (Muster)", 720, art="Unterrezept", sub="M1"),
+                  line("M2", "Muster Ei", 2, "Stück"), *extra_lines],
+                 [raw("Muster Zucker"), raw("Muster Ei", conv_unit="Stück", conv=50), *extra_raw],
+                 pieces=[("M2", "Stück (1/16)", 170)], batches=[("M2", "16 Stück", "Stück", 16, "Stück (1/16)")],
+                 skip=("Umrechnung",))
+
+
+def test_sample_data_is_ignored(conn):
+    report = run(conn, _with_samples(), mode="check")
+    assert report["ok"] and report["nothing_to_import"]
+    assert report["counts"]["samples_recipes"] == 2 and report["counts"]["samples_raw_materials"] == 2
+    messages = " ".join(h["message"] for h in report["hints"])
+    assert "2 Musterrezepte und 2 Musterrohstoffe" in messages and "nur Musterdaten" in messages
+    run(conn, _with_samples())
+    assert service.list_recipes(conn, include_locked=True) == [] and rm_service.list_raw_materials(conn) == []
+
+
+def test_own_rows_next_to_sample_data_are_imported(conn):
+    data = _with_samples([recipe("R1", "Weizenbrot")], [line("R1", "Weizenmehl 550", 1000)],
+                         [raw("Weizenmehl 550", typ="flour", tol=20, unit="g")])
+    report = run(conn, data)
+    assert report["imported"] and not report["nothing_to_import"]
+    assert [r["name"] for r in service.list_recipes(conn, include_locked=True)] == ["Weizenbrot"]
+    assert [m["name"] for m in rm_service.list_raw_materials(conn)] == ["Weizenmehl 550"]
+    assert not any("nur Musterdaten" in h["message"] for h in report["hints"])
+
+
+def test_include_samples_imports_them(conn):
+    report = run(conn, _with_samples(), include_samples=True)
+    assert report["counts"]["samples_recipes"] == 0 and len(report["recipes"]) == 2
+    torte = recipe_by_name(conn, "Schwarzwälder Kirschtorte (Muster)")
+    assert [i["amount_g"] for i in torte["items"]] == [720, 100] and len(torte["batch_sizes"]) == 1
+
+
+def test_already_imported_samples_are_left_alone(conn):
+    run(conn, _with_samples(), include_samples=True)
+    torte = recipe_by_name(conn, "Schwarzwälder Kirschtorte (Muster)")
+    report = run(conn, _with_samples())                           # erneuter Import: keine neue Version (E11-5)
+    assert report["recipes_updated"] == [] and report["changes"] == []
+    assert recipe_by_name(conn, "Schwarzwälder Kirschtorte (Muster)")["version_no"] == torte["version_no"]
+
+
+def test_own_recipe_using_sample_as_sub_recipe_is_error(conn):
+    data = _with_samples([recipe("R1", "Torte groß")], [line("R1", "x", 500, art="Unterrezept", sub="M1")])
+    report = run(conn, data, mode="check")
+    assert any("Musterrezept" in e["message"] for e in report["errors"])
+
+
+def test_sample_name_matching_ignores_case(conn):
+    data = build([recipe("X", "schwarzwälder kirschtorte (muster)")], [line("X", "Salz", 5)], BASE_RAW)
+    report = run(conn, data, mode="check")
+    assert report["counts"]["samples_recipes"] == 1 and report["recipes"] == []

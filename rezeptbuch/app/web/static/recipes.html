@@ -96,6 +96,7 @@
       <button type="button" id="bulk-unlock">Freischalten</button>
       <button type="button" id="bulk-lock">Sperren</button>
       <button type="button" id="bulk-archive">Archivieren</button>
+      <button type="button" id="bulk-restore">Wiederherstellen</button>
       <button type="button" id="bulk-delete">Löschen</button>
       <button type="button" id="bulk-export">Exportieren</button>
       <button type="button" id="bulk-clear">Auswahl aufheben</button>
@@ -200,11 +201,15 @@
     <h1>Import/Export</h1>
     <div class="panel">
       <h2>Rezepte aus der Importvorlage importieren (.xlsx)</h2>
-      <p class="small">Gelesen werden die Blätter Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen und Umrechnung.
+      <p class="small">Gelesen werden die Blätter Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte und Chargengrößen.
+        Stück, ml usw. rechnet der Import über die Spalten „Umrechnung Einheit“ und „Gramm je Einheit“ im Blatt Rohstoffe um;
+        jede umgerechnete Zeile bekommt „*“, und der Probelauf zeigt alle Umrechnungen vorab in einem eigenen Fenster.
         Erst „Probelauf“ (ändert nichts, zeigt den Bericht), dann „Importieren“. Alles oder nichts: Bei einem Fehler wird nichts gespeichert.
-        Rezeptnummer oder Rezeptname schon vorhanden = Fehler. Vorhandene Rohstoffe werden mit den Werten der Datei überschrieben (mit Rückfrage).
-        Importierte Rezepte starten <b>gesperrt</b>; Zeilen mit „*“ bitte prüfen und dann freischalten.</p>
+        Vorhandene Rezepte (gleiche Nummer, sonst gleicher Name) bekommen nach Rückfrage eine neue Version; vorhandene Rohstoffe werden mit den Werten der Datei überschrieben (mit Rückfrage).
+        Neue Rezepte starten <b>gesperrt</b>; Zeilen mit „*“ bitte prüfen und dann freischalten.
+        Musterdaten der Mustervorlage („… (Muster)“, „Muster …“) werden übersprungen.</p>
       <input id="io-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div><label class="inline"><input id="io-samples" type="checkbox"> Musterdaten der Mustervorlage mit importieren (nur zum Ausprobieren)</label></div>
       <div class="toolbar">
         <button type="button" id="io-check">Probelauf</button>
         <button type="button" id="io-run" disabled>Importieren</button>
@@ -463,6 +468,7 @@ const selected = new Set();
 function updateBulkBar() {
   const n = selected.size;
   show("bulk-bar", n > 0);
+  show("bulk-restore", listItems.some((r) => r.archived && selected.has(r.id)));
   $("bulk-count").textContent = n + (n === 1 ? " Rezept ausgewählt:" : " Rezepte ausgewählt:");
   const all = $("sel-all");
   all.checked = listItems.length > 0 && listItems.every((r) => selected.has(r.id));
@@ -488,6 +494,7 @@ const BULK = {
   unlock: { verb: "freischalten", button: "Freischalten" },
   lock: { verb: "sperren", button: "Sperren" },
   archive: { verb: "archivieren", button: "Archivieren" },
+  restore: { verb: "wiederherstellen", button: "Wiederherstellen" },
   delete: { verb: "endgültig löschen", button: "Endgültig löschen" },
 };
 
@@ -517,14 +524,14 @@ async function bulkAction(action) {
   if (!ok) return;
   try {
     const result = await api("admin/recipes/bulk", { method: "POST", body: { action, ids, mode: "run", confirm: true } });
-    if (action === "delete" || action === "archive") result.done.forEach((e) => selected.delete(e.id));
+    if (action === "delete" || action === "archive" || action === "restore") result.done.forEach((e) => selected.delete(e.id));
     await loadList();                     // leert die Meldung, daher danach anzeigen
     showMsg("list-msg", result.summary + (result.skipped.length ? "\nÜbersprungen:\n" + nameList(result.skipped, true) : ""),
       result.skipped.length ? "" : "info");
   } catch (err) { handleError(err, "list-msg"); }
 }
 
-["unlock", "lock", "archive", "delete"].forEach((a) => $("bulk-" + a).addEventListener("click", () => bulkAction(a)));
+["unlock", "lock", "archive", "restore", "delete"].forEach((a) => $("bulk-" + a).addEventListener("click", () => bulkAction(a)));
 
 $("bulk-export").addEventListener("click", async () => {
   showMsg("list-msg", "");
@@ -1173,10 +1180,29 @@ function addList(box, title, items, render) {
   box.appendChild(ul);
 }
 
+// Übersicht der Umrechnungen (C3-E7d): eigenes Fenster vor dem Bericht, damit sie nicht untergeht
+function conversionText(report) {
+  const list = report.conversions || [];
+  const lines = list.slice(0, 200).map((c) => "• " + c.recipe + ", Zeile " + c.line + ": " + c.ingredient + " – " + c.text
+    + (c.source === "Umrechnung" ? " (altes Blatt „Umrechnung“)" : ""));
+  if (list.length > 200) lines.push("… und " + (list.length - 200) + " weitere");
+  return "Umrechnungen – bitte prüfen (" + list.length + ")\nJede umgerechnete Zeile bekommt „*“ und wird beim Import gesperrt.\n\n"
+    + lines.join("\n");
+}
+async function showConversions(report) {
+  if (report && report.conversions && report.conversions.length) await ask(conversionText(report), [], "Weiter");
+}
+
 function renderIoReport(report) {
   ioReport = report;
   const box = $("io-report"); box.textContent = "";
   box.appendChild(el("p", report.summary, report.ok ? "" : "warn"));
+  if (report.conversions && report.conversions.length) {
+    const p = el("p", report.conversions.length + (report.conversions.length === 1 ? " Zeile" : " Zeilen") + " umgerechnet (mit „*“). ");
+    p.appendChild(button("Umrechnungen anzeigen", () => showConversions(report)));
+    box.appendChild(p);
+  }
+  if (report.nothing_to_import) box.appendChild(el("p", "Es gibt nichts zu importieren.", "warn"));
   addList(box, "Fehler (Import nicht möglich)", report.errors, (e) => el("li", where(e) + e.message, "warn"));
   addList(box, "Rezepte neu (" + report.recipes.length + ")", report.recipes, (r) =>
     el("li", "Nr. " + r.number + " " + r.name + " (" + r.import_id + ", " + r.lines + " Zeilen, " + r.total_g + " g"
@@ -1199,19 +1225,28 @@ function renderIoReport(report) {
   addList(box, "Toleranz 0 % – wird auf ±1 g genau gewogen, bitte prüfen (" + report.zero_percent.length + ")",
     report.zero_percent, (z) => el("li", "Nr. " + z.number + " " + z.name + " (" + z.reason + ")"));
   addList(box, "Hinweise", report.hints, (h) => el("li", where(h) + h.message));
-  $("io-run").disabled = !(report.ok && !report.imported);
+  $("io-run").disabled = !(report.ok && !report.imported && !report.nothing_to_import);
 }
 
-$("io-file").addEventListener("change", () => {
+function samplesParam() { return $("io-samples").checked ? "&include_samples=true" : ""; }
+
+function resetIo() {
   ioFile = $("io-file").files[0] || null; ioReport = null;
   $("io-report").textContent = ""; $("io-run").disabled = true; showMsg("io-msg", "");
-});
+}
+$("io-file").addEventListener("change", resetIo);
+$("io-samples").addEventListener("change", resetIo);       // andere Auswahl → neuer Probelauf nötig
 
 $("io-check").addEventListener("click", async () => {
   showMsg("io-msg", "");
   if (!ioFile) { showMsg("io-msg", "Bitte zuerst die Importvorlage (.xlsx) wählen."); return; }
   $("io-check").disabled = true;
-  try { renderIoReport(await api("admin/import/recipes?mode=check", { method: "POST", file: ioFile })); }
+  try {
+    const report = await api("admin/import/recipes?mode=check" + samplesParam(), { method: "POST", file: ioFile });
+    $("io-report").textContent = "";
+    await showConversions(report);                       // erst die Umrechnungen, dann der Bericht (E7d)
+    renderIoReport(report);
+  }
   catch (err) { $("io-report").textContent = ""; handleError(err, "io-msg"); }
   finally { $("io-check").disabled = false; }
 });
@@ -1219,7 +1254,7 @@ $("io-check").addEventListener("click", async () => {
 $("io-run").addEventListener("click", async () => {
   if (!ioFile || !ioReport || !ioReport.ok) return;
   const n = ioReport.counts.overwritten;
-  let path = "admin/import/recipes?mode=run";
+  let path = "admin/import/recipes?mode=run" + samplesParam();
   const r = ioReport.counts.recipes;
   const v = ioReport.counts.recipes_new_version || 0;
   let text = r + (r === 1 ? " Rezept wird" : " Rezepte werden") + " angelegt (gesperrt).";
@@ -1261,7 +1296,7 @@ $("io-export").addEventListener("click", () => downloadFile(
   "admin/recipes/export.xlsx" + ($("io-archived").checked ? "?include_archived=true" : ""), "rezepte.xlsx", "Export erstellt."));
 $("io-sample").addEventListener("click", () => downloadFile(
   "admin/recipes/template.xlsx", "mustervorlage_rezepte.xlsx",
-  "Mustervorlage erstellt. Die gelben Musterzeilen vor dem Import löschen oder überschreiben."));
+  "Mustervorlage erstellt. Die gelben Musterzeilen überspringt der Import; eigene Zeilen einfach darunter ergänzen."));
 
 // ---- Start -------------------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 """Sammelaktionen in der Rezeptliste (Modul 05, Ergänzung C3-E1, Wunsch Michael 17.11.2026).
 
-Mehrere angehakte Rezepte auf einmal **freischalten, sperren, archivieren oder löschen**
+Mehrere angehakte Rezepte auf einmal **freischalten, sperren, archivieren, wiederherstellen
+(C3-E8, 0.5.8) oder löschen**
 (Exportieren der Auswahl läuft über den Export, ``ids``). Es gelten dieselben Regeln wie
 für ein einzelnes Rezept – die Sammelaktion ruft die Funktionen der Service-Schicht auf.
 
@@ -11,7 +12,7 @@ die Warnungen beim Freischalten („*“, Toleranz 0 %). Danach **Ausführen** (
 
 Anders als der Import gilt hier **nicht** „alles oder nichts“: Rezepte, für die die Aktion
 nicht erlaubt ist (z. B. ohne Zeilen freischalten, als Unterrezept verwendet archivieren,
-verwendetes Rezept löschen), werden übersprungen und im Ergebnis mit Grund genannt; die
+verwendetes Rezept löschen, wiederherstellen bei gleichnamigem aktivem Rezept), werden übersprungen und im Ergebnis mit Grund genannt; die
 übrigen werden ausgeführt. Die Vorschau zeigt das vor der Bestätigung.
 
 Reihenfolge: Beim Archivieren und Löschen wird so lange wiederholt, bis nichts mehr geht.
@@ -26,9 +27,10 @@ import sqlite3
 from ..errors import ConflictError, NotFoundError, ServiceError, ValidationError
 from . import service
 
-ACTIONS = ("unlock", "lock", "archive", "delete")
+ACTIONS = ("unlock", "lock", "archive", "restore", "delete")
 MAX_IDS = 1000
-ACTION_LABEL = {"unlock": "freigeschaltet", "lock": "gesperrt", "archive": "archiviert", "delete": "gelöscht"}
+ACTION_LABEL = {"unlock": "freigeschaltet", "lock": "gesperrt", "archive": "archiviert",
+                "restore": "wiederhergestellt", "delete": "gelöscht"}
 
 
 def _clean_ids(ids) -> list[int]:
@@ -65,6 +67,13 @@ def _apply(conn: sqlite3.Connection, action: str, recipe_id: int, source: str):
     if action == "archive":
         service.archive_in_tx(conn, recipe_id, source=source)
         return True, None
+    if action == "restore":
+        # nicht archivierte Rezepte: „ohne Änderung“ statt Fehler (wie Sperren eines gesperrten Rezepts)
+        row = conn.execute("SELECT archived FROM recipe WHERE id = ?", (recipe_id,)).fetchone()
+        if row is not None and not row["archived"]:
+            return False, None
+        service.restore_in_tx(conn, recipe_id, source=source)
+        return True, None
     service.delete_in_tx(conn, recipe_id, source=source)
     return True, None
 
@@ -73,7 +82,7 @@ def bulk_action(conn: sqlite3.Connection, action: str, ids, *, mode: str = "chec
                 source: str = "admin") -> dict:
     """Vorschau oder Ausführung einer Sammelaktion. Ergebnis siehe Moduldoku."""
     if action not in ACTIONS:
-        raise ValidationError("Aktion muss unlock, lock, archive oder delete sein.", field="action")
+        raise ValidationError("Aktion muss unlock, lock, archive, restore oder delete sein.", field="action")
     if mode not in ("check", "run"):
         raise ValidationError("mode muss „check“ oder „run“ sein.", field="mode")
     recipe_ids = _clean_ids(ids)

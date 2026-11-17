@@ -41,7 +41,11 @@ def import_raw_materials(mode: str = "check", confirm_overwrite: bool = False,
 
 
 @router.post("/recipes")
-def import_recipes(mode: str = "check", confirm_overwrite: bool = False,
+def import_recipes(mode: str = "check", confirm_overwrite: bool = False, include_samples: bool = False,
                    body: bytes = Depends(upload_body), db: sqlite3.Connection = Depends(get_db)):
-    """Vorlagen-Import (.xlsx, Teil C3): Probelauf → Bericht → Import, alles oder nichts."""
-    return import_recipe_template(db, body, mode=mode, confirm_overwrite=confirm_overwrite)
+    """Vorlagen-Import (.xlsx, Teil C3): Probelauf → Bericht → Import, alles oder nichts.
+
+    ``include_samples``: Musterdaten der Mustervorlage mit importieren (sonst übersprungen, C3-E11).
+    """
+    return import_recipe_template(db, body, mode=mode, confirm_overwrite=confirm_overwrite,
+                                  include_samples=include_samples)

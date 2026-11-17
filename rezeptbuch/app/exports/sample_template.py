@@ -1,16 +1,17 @@
 """Mustervorlage zum Herunterladen (Modul 05, Ergänzung C3-E2, Wunsch Michael 17.11.2026).
 
 Eine Importvorlage mit denselben Blättern und Spalten wie die echte Vorlage, ausgefüllt mit
-**einem Musterrohstoff** und einem **Musterrezept „Schwarzwälder Kirschtorte“** – mit
+**Musterrohstoffen** und einem **Musterrezept „Schwarzwälder Kirschtorte“** – mit
 Schoko-Biskuit als Unterrezept, damit alle Möglichkeiten einmal vorkommen: Schritte, Stück-
-und ml-Angaben über das Blatt „Umrechnung“, „*“ zum Prüfen, Handzugabe (leere Menge),
-eigene Zeilentoleranz, Stückgewicht, Chargengrößen (Gewicht und Stück), Knetzeit, Hinweis
-und interne Notiz.
+und ml-Angaben über die Umrechnung im Blatt „Rohstoffe“ (seit 0.5.8, C3-E7), „*“ zum Prüfen,
+Handzugabe (leere Menge), eigene Zeilentoleranz, Stückgewicht, Chargengrößen (Gewicht und
+Stück), Knetzeit, Hinweis und interne Notiz.
 
-Die Musterzeilen sind gelb hinterlegt und in der Spalte „Bemerkung“ gekennzeichnet. Sie
-werden wie alle Zeilen importiert, wenn man sie nicht löscht oder überschreibt. Die Spalten
-„Faktor“ und „Menge g“ enthalten für die ersten Zeilen Excel-Formeln zur Kontrolle; der
-Import liest sie nicht (K05-6). Es werden keine Betriebsdaten verwendet.
+Die Musterzeilen sind gelb hinterlegt und in der Spalte „Bemerkung“ gekennzeichnet. Der Import
+**überspringt sie** (C3-E11, erkannt an den Namen in ``SAMPLE_RECIPE_NAMES`` und
+``SAMPLE_RAW_NAMES``), außer mit dem Haken „Musterdaten mit importieren“. Die Spalten „Faktor“
+und „Menge g“ enthalten Excel-Formeln zur Kontrolle; der Import liest sie nicht (K05-6).
+Es werden keine Betriebsdaten verwendet.
 """
 
 from __future__ import annotations
@@ -35,8 +36,13 @@ PIECES = ["Import-ID", "Bezeichnung", "Gewicht g", "Reihenfolge", "Bemerkung"]
 BATCHES = ["Import-ID", "Bezeichnung (Taste)", "Art (Gewicht/Stück)", "Wert (g bzw. Stück)",
            "Stückgewicht-Bezeichnung (nur bei Stück)", "Reihenfolge", "Bemerkung"]
 RAW = ["Nummer", "Name", "Kurzname", "Typ (standard/flour)", "Toleranz (leer = 0 %)", "Toleranzeinheit (g/percent)",
-       "Gebindegröße g", "Gebindebezeichnung", "archiviert (0/1)", "Bemerkung (nicht importieren)"]
-UNITS = ["Schlüssel (Einheit + Zutat)", "Gramm je Einheit", "Bemerkung"]
+       "Gebindegröße g", "Gebindebezeichnung", "Umrechnung Einheit (nur für den Rezeptimport, z. B. Stück)",
+       "Gramm je Einheit (z. B. Eier: 65)", "archiviert (0/1)", "Bemerkung (nicht importieren)"]
+CONVERSION_NOTE = ("Nur ausfüllen, wenn Rezepte über Umrechnung importiert werden sollen.\n"
+                   "Beispiel Eier: Umrechnung Einheit „Stück“, Gramm je Einheit 65. In der Rezeptzeile reicht dann "
+                   "Menge 20, Einheit „Stück“, Zutat „Eier“ (= 1 300 g, Zeile bekommt „*“).\n"
+                   "Für „ml“ eingetragen, gilt der Wert automatisch auch für „l“ (× 1 000) und umgekehrt.\n"
+                   "Der Wert wird nicht gespeichert, er dient nur dem Import.")
 
 SAMPLE_RECIPES = [
     ["M1", None, "Schoko-Biskuit (Muster)", "Torten", None, None,
@@ -47,7 +53,8 @@ SAMPLE_RECIPES = [
 ]
 # Import-ID, Position, Schritt, Zeilenart, Zutat, Unterrezept, Menge, Einheit, Tol.-Einheit, Tol.-Wert, Prüfen, Bemerkung
 SAMPLE_LINES = [
-    ["M1", 1, "aufschlagen", "Rohstoff", "Muster Ei", None, 6, "Stück", None, None, None, "Stück → Gramm über Blatt „Umrechnung“"],
+    ["M1", 1, "aufschlagen", "Rohstoff", "Muster Ei", None, 6, "Stück", None, None, None,
+     "Stück → Gramm über die Umrechnung im Blatt „Rohstoffe“ (bekommt automatisch „*“)"],
     ["M1", 2, "aufschlagen", "Rohstoff", "Muster Zucker", None, 180, "g", None, None, None, None],
     ["M1", 3, "unterheben", "Rohstoff", "Muster Weizenmehl 405", None, 120, "g", None, None, None, None],
     ["M1", 4, "unterheben", "Rohstoff", "Muster Speisestärke", None, 40, "g", None, None, None, None],
@@ -58,8 +65,8 @@ SAMPLE_LINES = [
     ["M2", 2, "Kirschfüllung", "Rohstoff", "Muster Sauerkirschen", None, 0.7, "kg", None, None, None, "kg → 700 g"],
     ["M2", 3, "Kirschfüllung", "Rohstoff", "Muster Zucker", None, 50, "g", None, None, None, None],
     ["M2", 4, "Kirschfüllung", "Rohstoff", "Muster Speisestärke", None, 40, "g", None, None, None, None],
-    ["M2", 5, "Kirschfüllung", "Rohstoff", "Muster Kirschwasser", None, 40, "ml", "percent", 5, "*",
-     "ml → Gramm geschätzt, daher „*“; eigene Toleranz 5 %"],
+    ["M2", 5, "Kirschfüllung", "Rohstoff", "Muster Kirschwasser", None, 40, "ml", "percent", 5, None,
+     "ml → Gramm über die Umrechnung (Schätzwert, automatisch „*“); eigene Toleranz 5 %"],
     ["M2", 6, "Sahne", "Rohstoff", "Muster Sahne", None, 1, "kg", None, None, None, None],
     ["M2", 7, "Sahne", "Rohstoff", "Muster Vanillezucker", None, 16, "g", None, None, None, None],
     ["M2", 8, "Garnitur", "Rohstoff", "Muster Schokoraspeln", None, None, None, None, None, None,
@@ -70,31 +77,38 @@ SAMPLE_BATCHES = [
     ["M2", "1 Torte", "Gewicht", None, None, 1, "leerer Wert = Gesamtgewicht des Rezepts"],
     ["M2", "16 Stück", "Stück", 16, "Stück (1/16)", 2, "Stückzahl über das Stückgewicht"],
 ]
-SAMPLE_RAW = [[None, "Muster Kirschwasser", "M-Kirschw.", "standard", 5, "percent", None, None, 0,
-               "Musterrohstoff mit allen Spalten. Leere Nummer = nächste freie. Gleicher Name wie ein vorhandener Rohstoff = überschreiben (mit Rückfrage)."]]
+SAMPLE_RAW = [[None, "Muster Kirschwasser", "M-Kirschw.", "standard", 5, "percent", None, None, "ml", 0.95, 0,
+               "Musterrohstoff mit allen Spalten. Leere Nummer = nächste freie. Gleicher Name wie ein vorhandener "
+               "Rohstoff = überschreiben (mit Rückfrage). Umrechnung ml: Schätzwert (Alkohol leichter als Wasser)."]]
 for _n in ["Ei", "Zucker", "Weizenmehl 405", "Speisestärke", "Kakaopulver", "Butter", "Sauerkirschen", "Sahne",
            "Vanillezucker", "Schokoraspeln"]:
-    SAMPLE_RAW.append([None, "Muster " + _n, None, "flour" if _n.startswith("Weizen") else "standard", None, None, None, None, 0,
-                       "nur nötig, damit das Musterrezept ohne Vorarbeit importierbar ist"])
-SAMPLE_UNITS = [
-    ["Stück Muster Ei", 50, "Gramm je Ei – bitte an den eigenen Wert anpassen"],
-    ["ml Muster Kirschwasser", 0.95, "Schätzwert (Alkohol leichter als Wasser)"],
-]
+    SAMPLE_RAW.append([None, "Muster " + _n, None, "flour" if _n.startswith("Weizen") else "standard", None, None, None,
+                       None, "Stück" if _n == "Ei" else None, 50 if _n == "Ei" else None, 0,
+                       "Umrechnung: Gramm je Ei – an den eigenen Wert anpassen" if _n == "Ei"
+                       else "nur nötig, damit das Musterrezept ohne Vorarbeit importierbar ist"])
+
+# Feste Namensliste der Musterdaten: der Import überspringt sie (C3-E11)
+SAMPLE_RECIPE_NAMES = tuple(r[2] for r in SAMPLE_RECIPES)
+SAMPLE_RAW_NAMES = tuple(r[1] for r in SAMPLE_RAW)
 
 GUIDE = [
     ("HA-Rezeptbuch – Mustervorlage für den Rezeptimport", True),
     ("", False),
     ("So geht es", True),
-    ("1. Gelb hinterlegte Zeilen sind Muster (Schwarzwälder Kirschtorte mit Schoko-Biskuit als Unterrezept). "
-     "Löschen oder mit eigenen Rezepten überschreiben – sonst werden sie mit importiert.", False),
+    ("1. Gelb hinterlegte Zeilen sind Muster (Schwarzwälder Kirschtorte mit Schoko-Biskuit als Unterrezept, Rohstoffe "
+     "„Muster …“). Der Import überspringt sie automatisch (erkannt am Namen); eigene Zeilen einfach darunter ergänzen. "
+     "Zum Ausprobieren lassen sie sich mit dem Haken „Musterdaten mit importieren“ einmal importieren.", False),
     ("2. Blatt „Rezepte“: eine Zeile je Rezept. Die Import-ID (z. B. R1, M2) verbindet alle Blätter; sie wird nicht gespeichert.", False),
     ("3. Blatt „Rezeptzeilen“: eine Zeile je Zutat. Zutat = Name des Rohstoffs wie im Rohstoffstamm "
      "(Groß-/Kleinschreibung egal). Unterrezept: Zeilenart „Unterrezept“ und die Import-ID des anderen Rezepts.", False),
-    ("4. Menge: Menge Original + Einheit. g und kg rechnet der Import selbst, alles andere (Stück, ml, Maß) über das "
-     "Blatt „Umrechnung“ mit dem Schlüssel „Einheit Zutat“, z. B. „Stück Ei“. Leere Menge = 0 g Handzugabe.", False),
+    ("4. Menge: Menge Original + Einheit. g und kg rechnet der Import selbst. Für alles andere (Stück, ml, Maß) im Blatt "
+     "„Rohstoffe“ beim Rohstoff „Umrechnung Einheit“ und „Gramm je Einheit“ eintragen, z. B. Eier: Stück, 65. "
+     "ml gilt automatisch auch für l. Jede umgerechnete Zeile bekommt „*“ zum Prüfen; der Probelauf zeigt "
+     "alle Umrechnungen vorab in einem eigenen Fenster. Leere Menge = 0 g Handzugabe.", False),
     ("5. „*“ in der Spalte „Prüfen“ markiert Zeilen, die nach dem Import kontrolliert werden sollen.", False),
-    ("6. Blatt „Rohstoffe“ ist nur nötig für neue oder zu ändernde Rohstoffe. Vorhandene Rohstoffe werden über die Nummer, "
-     "sonst den Namen gefunden und mit den Werten der Datei überschrieben (der Probelauf zeigt „alt → neu“).", False),
+    ("6. Blatt „Rohstoffe“ ist nur nötig für neue oder zu ändernde Rohstoffe und für Umrechnungen. Vorhandene Rohstoffe "
+     "werden über die Nummer, sonst den Namen gefunden und mit den Werten der Datei überschrieben (der Probelauf zeigt "
+     "„alt → neu“). Eine Zeile nur mit Name und Umrechnung ändert einen vorhandenen Rohstoff nicht.", False),
     ("7. Im Admin-Bereich: Reiter „Import/Export“ → Datei wählen → Probelauf → Importieren. Alles oder nichts: "
      "bei einem Fehler wird nichts gespeichert. Importierte Rezepte sind gesperrt.", False),
     ("", False),
@@ -109,6 +123,9 @@ GUIDE = [
     ("• Toleranz je Zeile ist freiwillig (sonst gilt die des Rohstoffs): Einheit g oder percent, Wert in g bzw. %.", False),
     ("• Chargengröße „Gewicht“ ohne Wert = Gesamtgewicht des Rezepts; „Stück“ braucht Anzahl und Stückgewicht-Bezeichnung.", False),
     ("• Spalten mit „(Formel)“ dienen nur der Kontrolle in Excel und werden nicht importiert. Die Datei als .xlsx speichern.", False),
+    ("• Ohne Microsoft Office: die Datei z. B. in LibreOffice Calc öffnen und beim Speichern das Format "
+     "„Excel 2007-365 (.xlsx)“ wählen (nicht .ods).", False),
+    ("• Ein Blatt „Umrechnung“ aus älteren Vorlagen wird übergangsweise noch gelesen; neu bitte das Blatt „Rohstoffe“ verwenden.", False),
 ]
 
 
@@ -166,17 +183,22 @@ def build_sample() -> bytes:
     for ln in SAMPLE_LINES:
         lines.append([*ln[:8], None, None, *ln[8:]])
     ws_l = _sheet(wb, "Rezeptzeilen", LINES, lines, [10, 9, 16, 14, 26, 12, 12, 14, 12, 12, 14, 12, 8, 44], muster)
-    # Kontrollformeln Faktor und Menge g (wie die Importvorlage; der Import liest sie nicht)
+    # Kontrollformeln Faktor und Menge g (der Import liest sie nicht); Faktor aus der Umrechnung im Blatt „Rohstoffe“
     for r in range(2, FORMULA_ROWS + 2):
+        match = f"MATCH(E{r},Rohstoffe!$B:$B,0)"
         ws_l.cell(row=r, column=9, value=(
             f'=IF(G{r}="","",IF(OR(H{r}="g",H{r}=""),1,IF(H{r}="kg",1000,'
-            f'IFERROR(INDEX(Umrechnung!$B:$B,MATCH(H{r}&" "&E{r},Umrechnung!$A:$A,0)),""))))'))
+            f'IFERROR(IF(INDEX(Rohstoffe!$I:$I,{match})=H{r},INDEX(Rohstoffe!$J:$J,{match}),""),""))))'))
         ws_l.cell(row=r, column=10, value=f'=IF(OR(G{r}="",I{r}=""),"",ROUND(G{r}*I{r},0))')
         ws_l.cell(row=r, column=9).number_format = "0.00"
     ws_p = _sheet(wb, "Stückgewichte", PIECES, SAMPLE_PIECES, [10, 22, 11, 11, 40], muster)
     ws_b = _sheet(wb, "Chargengrößen", BATCHES, SAMPLE_BATCHES, [10, 22, 14, 14, 26, 11, 40], muster)
-    ws_rm = _sheet(wb, "Rohstoffe", RAW, SAMPLE_RAW, [9, 26, 14, 14, 14, 14, 14, 16, 14, 60], muster)
-    _sheet(wb, "Umrechnung", UNITS, SAMPLE_UNITS, [30, 16, 50], muster)
+    ws_rm = _sheet(wb, "Rohstoffe", RAW, SAMPLE_RAW, [9, 26, 14, 14, 14, 14, 14, 16, 18, 14, 14, 60], muster)
+    from openpyxl.comments import Comment
+    for column in (9, 10):
+        comment = Comment(CONVERSION_NOTE, "HA-Rezeptbuch")
+        comment.width, comment.height = 360, 160
+        ws_rm.cell(row=1, column=column).comment = comment
 
     end = FORMULA_ROWS + 1
     _validation(ws_r, '"Beginn,Ende"', f"H2:H{end}")
@@ -187,7 +209,7 @@ def build_sample() -> bytes:
     _validation(ws_b, '"Gewicht,Stück"', f"C2:C{end}")
     _validation(ws_rm, '"standard,flour"', f"D2:D{end}")
     _validation(ws_rm, '"g,percent"', f"F2:F{end}")
-    _validation(ws_rm, '"0,1"', f"I2:I{end}")
+    _validation(ws_rm, '"0,1"', f"K2:K{end}")
     del ws_p  # nur der Vollständigkeit halber angelegt
 
     out = io.BytesIO()

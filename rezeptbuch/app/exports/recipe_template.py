@@ -1,7 +1,8 @@
 """Export der Rezepte als .xlsx im Format der Importvorlage (Modul 05, Teil C3, docs/rezepte.md 6.3).
 
 Blätter wie die Vorlage: Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen, Rohstoffe (nur
-verwendete) und eine leere Umrechnung; davor ein Blatt „Info“. Je Rezept die **aktuelle Version**;
+verwendete, mit leeren Spalten für die Umrechnung, C3-E7); davor ein Blatt „Info“. Das Blatt
+„Umrechnung“ gibt es seit 0.5.8 nicht mehr. Je Rezept die **aktuelle Version**;
 Menge Original = Menge g, Einheit g (Faktor 1). Import-ID = „R“ + Rezeptnummer. Die Datei kann in
 eine leere Datenbank wieder importiert werden (K05-1).
 
@@ -38,17 +39,16 @@ BATCH_HEADER = [
 ]
 RAW_HEADER = [
     "Nummer", "Name", "Kurzname", "Typ", "Toleranz", "Toleranzeinheit", "Gebindegröße g",
-    "Gebindebezeichnung", "Herkunft (nicht importieren)", "archiviert",
+    "Gebindebezeichnung", "Umrechnung Einheit (nur für den Rezeptimport)", "Gramm je Einheit",
+    "Herkunft (nicht importieren)", "archiviert",
 ]
-UNIT_HEADER = ["Schlüssel (Einheit + Zutat)", "Gramm je Einheit", "Bemerkung"]
 
 WIDTHS = {
     "Rezepte": [10, 12, 30, 20, 12, 12, 50, 22, 40, 14, 12],
     "Rezeptzeilen": [10, 26, 9, 22, 14, 30, 12, 12, 12, 12, 10, 10, 12, 12, 8],
     "Stückgewichte": [10, 26, 24, 11, 11],
     "Chargengrößen": [10, 26, 24, 14, 14, 22, 11],
-    "Rohstoffe": [9, 30, 16, 10, 10, 14, 14, 16, 12, 10],
-    "Umrechnung": [30, 16, 50],
+    "Rohstoffe": [9, 30, 16, 10, 10, 14, 14, 16, 18, 14, 12, 10],
 }
 
 
@@ -136,10 +136,14 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids
         + (" (Auswahl mit Unterrezepten)" if ids is not None else "")
         + (f", davon {archived_count} archiviert." if archived_count else "."),
         "Je Rezept die aktuelle Version. Mengen in Gramm (Einheit g, Faktor 1). Import-ID = R + Rezeptnummer.",
-        "Wieder importierbar im Admin-Bereich unter „Import/Export“ (Vorlagen-Import). Rezeptnummern und "
-        "Rezeptnamen dürfen in der Zieldatenbank noch nicht vorhanden sein; importierte Rezepte starten gesperrt.",
+        "Wieder importierbar im Admin-Bereich unter „Import/Export“ (Vorlagen-Import). Neue Rezepte starten gesperrt; "
+        "vorhandene Rezepte (gleiche Nummer, sonst gleicher Name) bekommen nach Bestätigung eine neue Version, "
+        "bei gleichem Inhalt bleiben sie unverändert.",
         "Rohstoffe werden beim Import über die Nummer zugeordnet und überschrieben (mit Rückfrage).",
         "Spalten mit „(nicht importieren)“ oder „(Formel)“ dienen nur der Information.",
+        "Umrechnung (Stück, ml …) bei Bedarf im Blatt „Rohstoffe“ eintragen (Umrechnung Einheit, Gramm je Einheit); "
+        "sie wird nicht gespeichert und dient nur dem Import. Umgerechnete Zeilen bekommen „*“.",
+        "Ohne Microsoft Office: in LibreOffice Calc öffnen und als „Excel 2007-365 (.xlsx)“ speichern.",
     ]
     for row, text in enumerate(lines, start=1):
         _put(info, row, [text])
@@ -151,7 +155,6 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids
     ws_p = _sheet(wb, "Stückgewichte", PIECE_HEADER)
     ws_b = _sheet(wb, "Chargengrößen", BATCH_HEADER)
     ws_rm = _sheet(wb, "Rohstoffe", RAW_HEADER)
-    _sheet(wb, "Umrechnung", UNIT_HEADER)
 
     used_rm: set[int] = set()
     r_row = l_row = p_row = b_row = 2
@@ -201,7 +204,7 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids
         _put(ws_rm, rm_row, [
             rm["number"], rm["name"], rm["display_name"], "Mehl" if rm["type"] == "flour" else "Standard",
             float(rm["tolerance"]) if percent else int(rm["tolerance"]), "%" if percent else "g",
-            rm["unit_size_g"], rm["unit_label"], "BÄKO" if rm["source"] == "baeko" else "eigen",
+            rm["unit_size_g"], rm["unit_label"], None, None, "BÄKO" if rm["source"] == "baeko" else "eigen",
             "ja" if rm["archived"] else "nein",
         ])
         ws_rm.cell(row=rm_row, column=5).value = float(rm["tolerance"]) if percent else int(rm["tolerance"])

@@ -7,6 +7,8 @@ Der Bericht ist für Probelauf und Import gleich. Er unterscheidet:
 * **Hinweise** – Import möglich (ähnliche Namen, Typwechsel, nicht ausgewertete Spalten …)
 * **Toleranz 0 %** – Rohstoffe, die 0 % erhalten (M05-13b)
 * **Rezepte** – beim Vorlagen-Import neu angelegte Rezepte und Gruppen (Teil C3)
+* **Umrechnungen** – umgerechnete Rezeptzeilen (Stück, ml …), gesondert für die Übersicht vorab (C3-E7, E7d)
+* **Musterdaten** – Anzahl übersprungener Musterrezepte und Musterrohstoffe (C3-E11)
 """
 
 from __future__ import annotations
@@ -27,6 +29,9 @@ class ImportReport:
         self.recipes: list[dict] = []        # Vorlagen-Import: neu angelegte Rezepte
         self.recipes_updated: list[dict] = []  # Vorlagen-Import: vorhandene Rezepte, die eine neue Version bekommen
         self.groups_created: list[str] = []  # Vorlagen-Import: neu angelegte Gruppen
+        self.conversions: list[dict] = []    # Vorlagen-Import: umgerechnete Zeilen (C3-E7)
+        self.samples_recipes = 0             # Vorlagen-Import: übersprungene Musterrezepte (C3-E11)
+        self.samples_raw_materials = 0       # Vorlagen-Import: übersprungene Musterrohstoffe (C3-E11)
         self.imported = False
 
     # -- Einträge --------------------------------------------------------------
@@ -53,6 +58,12 @@ class ImportReport:
         """Rohstoffe überschreiben (K05-2) oder vorhandene Rezepte neue Versionen bekommen (C3-E5): Bestätigung nötig."""
         return self.overwritten > 0 or any(r["action"] == "new_version" for r in self.recipes_updated)
 
+    @property
+    def nothing_to_import(self) -> bool:
+        """Weder neue noch geänderte Rohstoffe oder Rezepte (z. B. Datei nur mit Musterdaten)."""
+        return not (self.created or self.changes or self.recipes
+                    or any(r["action"] == "new_version" for r in self.recipes_updated))
+
     def summary(self) -> str:
         if self.errors:
             n = len(self.errors)
@@ -78,7 +89,12 @@ class ImportReport:
                 "recipes_unchanged": sum(1 for r in self.recipes_updated if r["action"] != "new_version"),
                 "groups": len(self.groups_created),
                 "review_lines": sum(r.get("review_count", 0) for r in self.recipes),
+                "conversions": len(self.conversions),
+                "samples_recipes": self.samples_recipes,
+                "samples_raw_materials": self.samples_raw_materials,
             })
+            result["nothing_to_import"] = self.nothing_to_import
+            result["conversions"] = self.conversions
             result["recipes"] = self.recipes
             result["recipes_updated"] = self.recipes_updated
             result["groups_created"] = self.groups_created

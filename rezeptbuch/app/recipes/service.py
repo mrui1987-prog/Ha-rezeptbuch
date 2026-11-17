@@ -932,17 +932,22 @@ def archive_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "ad
 def restore_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin") -> dict:
     """Wiederherstellen (R05-23): nur ohne gleichnamiges aktives Rezept; Status bleibt."""
     with transaction(conn):
-        row = _fetch(conn, recipe_id)
-        if not row["archived"]:
-            raise ConflictError("Das Rezept ist nicht archiviert.", code="not_archived")
-        same = _find_active_with_name(conn, row["name"], exclude_id=recipe_id)
-        if same is not None:
-            raise ConflictError(
-                f"Wiederherstellen nicht möglich: Das aktive Rezept „{same['name']}“ (Nummer {same['number']}) "
-                "hat denselben Namen. Bitte zuerst einen der beiden umbenennen.", field="name", code="name_taken")
-        conn.execute("UPDATE recipe SET archived = 0 WHERE id = ?", (recipe_id,))
-        _log(conn, "restore", recipe_id, {"archived": 1}, {"archived": 0}, source)
+        restore_in_tx(conn, recipe_id, source=source)
     return get_recipe(conn, recipe_id)
+
+
+def restore_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "admin") -> None:
+    """Wiederherstellen in einer offenen Transaktion (Regeln wie ``restore_recipe``, Sammelaktion C3-E8)."""
+    row = _fetch(conn, recipe_id)
+    if not row["archived"]:
+        raise ConflictError("Das Rezept ist nicht archiviert.", code="not_archived")
+    same = _find_active_with_name(conn, row["name"], exclude_id=recipe_id)
+    if same is not None:
+        raise ConflictError(
+            f"Wiederherstellen nicht möglich: Das aktive Rezept „{same['name']}“ (Nummer {same['number']}) "
+            "hat denselben Namen. Bitte zuerst einen der beiden umbenennen.", field="name", code="name_taken")
+    conn.execute("UPDATE recipe SET archived = 0 WHERE id = ?", (recipe_id,))
+    _log(conn, "restore", recipe_id, {"archived": 1}, {"archived": 0}, source)
 
 
 def _copy_name(conn, name: str) -> str:

@@ -147,3 +147,50 @@ def test_export_selection_with_sub_recipe(conn, rm):
     wb = load_workbook(io.BytesIO(build_workbook(conn, ids=[brot])))
     names = [r[2] for r in wb["Rezepte"].iter_rows(min_row=2, values_only=True)]
     assert names == ["Vorteig", "Brot"]
+
+
+# -- Wiederherstellen (C3-E8, 0.5.8) ---------------------------------------------------------
+
+def test_restore_many(conn, rm):
+    a = make(conn, "A", [line(rm["mehl"])])
+    b = make(conn, "B", [line(rm["mehl"])])
+    active = make(conn, "C", [line(rm["mehl"])])
+    bulk_action(conn, "archive", [a, b], mode="run", confirm=True)
+    preview = bulk_action(conn, "restore", [a, b, active], mode="check")
+    assert [e["id"] for e in preview["done"]] == [a, b] and [e["id"] for e in preview["unchanged"]] == [active]
+    assert status(conn, a) == (True, True)                       # Vorschau ändert nichts
+    result = bulk_action(conn, "restore", [a, b, active], mode="run", confirm=True)
+    assert result["executed"] and result["summary"].startswith("2 Rezepte wiederhergestellt")
+    assert status(conn, a) == (True, False) and status(conn, b) == (True, False)
+
+
+def test_restore_skips_name_conflict(conn, rm):
+    old = make(conn, "Brot", [line(rm["mehl"])])
+    bulk_action(conn, "archive", [old], mode="run", confirm=True)
+    make(conn, "Brot", [line(rm["mehl"])])                         # neues aktives Rezept mit gleichem Namen
+    other = make(conn, "Zopf", [line(rm["mehl"])])
+    bulk_action(conn, "archive", [other], mode="run", confirm=True)
+    result = bulk_action(conn, "restore", [old, other], mode="run", confirm=True)
+    assert [e["id"] for e in result["done"]] == [other]
+    assert result["skipped"][0]["id"] == old and "denselben Namen" in result["skipped"][0]["reason"]
+    assert status(conn, old) == (True, True)
+
+
+def test_restore_two_archived_with_same_name(conn, rm):
+    a = make(conn, "Brot", [line(rm["mehl"])])
+    bulk_action(conn, "archive", [a], mode="run", confirm=True)
+    b = make(conn, "Brot", [line(rm["mehl"])])
+    bulk_action(conn, "archive", [b], mode="run", confirm=True)
+    result = bulk_action(conn, "restore", [a, b], mode="run", confirm=True)
+    assert len(result["done"]) == 1 and len(result["skipped"]) == 1
+
+
+def test_restore_keeps_lock_state_and_logs(conn, rm):
+    a = make(conn, "A", [line(rm["mehl"])])
+    bulk_action(conn, "unlock", [a], mode="run", confirm=True)
+    bulk_action(conn, "archive", [a], mode="run", confirm=True)
+    bulk_action(conn, "restore", [a], mode="run", confirm=True)
+    assert status(conn, a) == (False, False)                       # Status bleibt (R05-23)
+    actions = [r[0] for r in conn.execute(
+        "SELECT action FROM change_log WHERE entity = 'recipe' AND entity_id = ? ORDER BY id", (a,))]
+    assert actions[-1] == "restore"

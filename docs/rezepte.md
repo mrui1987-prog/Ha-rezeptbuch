@@ -157,13 +157,13 @@ Beide Importe: nur im Admin-Bereich (PIN), Datei wird als Rohdaten im Anfragekö
 
 ### 6.2 Rezeptimport aus der Importvorlage (M05-11, M05-12)
 
-Gelesen werden die Blätter **Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen** (Spalten wie in docs/importvorlage-rezepte.md). Anleitung, Prüfliste und Umrechnung werden nur für die Mengenberechnung gelesen. Spalten „(nicht importieren)“, „Bemerkung“ und „(Formel)“ werden ignoriert.
+Gelesen werden die Blätter **Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen** (Spalten wie in docs/importvorlage-rezepte.md). Die Umrechnung steht seit 0.5.8 im Blatt Rohstoffe (Spalten „Umrechnung Einheit“, „Gramm je Einheit“, C3-E7); ein altes Blatt Umrechnung wird übergangsweise gelesen. Anleitung und Prüfliste werden nicht gelesen. Spalten „(nicht importieren)“, „Bemerkung“ und „(Formel)“ werden ignoriert.
 
 | Schritt | Verhalten |
 |---|---|
 | 1 Rohstoffe | **genau wie der CSV-Import (6.1):** Zuordnung über Nummer, sonst Name; vorhandene Rohstoffe werden **überschrieben** (Warnhinweis und Bestätigung), leere Toleranz bleibt unverändert, neue Rohstoffe mit 0 % bei leerer Toleranz (K05-2, M05-13). Schreibweisen `standard`/`flour`, `own`, `0`/`1` der Vorlage werden verstanden. |
-| 2 Rezepte | je Import-ID ein Rezept; **Rezeptnummer vorhanden → Fehler, Name vorhanden → Fehler** (M05-11, M05-3). Gruppe: vorhandene wird verwendet, neue wird angelegt (M05-9). Status **gesperrt** (M05-12). Hinweis „Beginn/Ende“ → `start`/`end`. |
-| 3 Rezeptzeilen | Rohstoff über „Zutat (bereinigt)“ → Rohstoff aus Schritt 1 (Name, ohne Groß-/Kleinschreibung). Unterrezept über „Unterrezept Import-ID“, nur innerhalb der Datei. **Menge g rechnet der Import selbst** aus „Menge Original“ × Faktor (g = 1, kg = 1 000, sonst Blatt „Umrechnung“ nach „Einheit + Zutat“), kaufmännisch auf ganze Gramm gerundet (K05-6). Leere Menge Original → 0 g Handzugabe. Fehlender Faktor (z. B. „Maß“ ohne Wert) → Fehler. „Prüfen“ = „*“ → Prüfmarkierung. Toleranz optional (g/percent). Schritte in Reihenfolge des ersten Auftretens je Rezept. Kreisprüfung (R05-10) über die ganze Datei. |
+| 2 Rezepte | je Import-ID ein Rezept; **vorhandenes Rezept (Nummer, sonst Name) → neue Version nach Bestätigung** (seit 0.5.7, C3-E5; ursprünglich Fehler nach M05-11). Musterrezepte der Mustervorlage werden übersprungen (0.5.8, C3-E11). Gruppe: vorhandene wird verwendet, neue wird angelegt (M05-9). Status **gesperrt** (M05-12). Hinweis „Beginn/Ende“ → `start`/`end`. |
+| 3 Rezeptzeilen | Rohstoff über „Zutat (bereinigt)“ → Rohstoff aus Schritt 1 (Name, ohne Groß-/Kleinschreibung). Unterrezept über „Unterrezept Import-ID“, nur innerhalb der Datei. **Menge g rechnet der Import selbst** aus „Menge Original“ × Faktor (g = 1, kg = 1 000, sonst Umrechnung des Rohstoffs aus dem Blatt Rohstoffe, ml ↔ l automatisch; übergangsweise altes Blatt „Umrechnung“ nach „Einheit + Zutat“), kaufmännisch auf ganze Gramm gerundet (K05-6). Leere Menge Original → 0 g Handzugabe. Fehlender Faktor (z. B. „Maß“ ohne Wert) → Fehler. „Prüfen“ = „*“ → Prüfmarkierung; **jede umgerechnete Zeile bekommt „*“** (C3-E7). Toleranz optional (g/percent). Schritte in Reihenfolge des ersten Auftretens je Rezept. Kreisprüfung (R05-10) über die ganze Datei. |
 | 4 Stückgewichte | je Import-ID; Bezeichnung eindeutig je Rezept. |
 | 5 Chargengrößen | Art „Gewicht“: Wert = Zahl in der Zelle, sonst Gesamtgewicht des Rezepts; Art „Stück“: Wert Pflicht, Stückgewicht über die Bezeichnung desselben Rezepts. |
 
@@ -201,8 +201,9 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 | POST, PATCH, DELETE | `/admin/recipe-groups`, `/admin/recipe-groups/{id}` | Gruppen; `PUT /admin/recipe-groups/order` für die Reihenfolge |
 | POST | `/admin/import/raw-materials?mode=check` bzw. `mode=run&confirm_overwrite=true` | CSV-Import (6.1) – **umgesetzt in 0.5.0** |
 | GET | `/admin/recipes/{id}` | wie `/recipes/{id}`, zusätzlich `internal_note` (0.5.2, KC2-2) |
-| POST | `/admin/recipes/bulk` | Sammelaktion `{action: unlock\|lock\|archive\|delete, ids, mode: check\|run, confirm}` (0.5.3, C3-E1); Export der Auswahl über `export.xlsx?ids=1,2,3` |
-| POST | `/admin/import/recipes?mode=check` bzw. `mode=run&confirm_overwrite=true` | Vorlagen-Import (6.2) – **umgesetzt in 0.5.2** |
+| POST | `/admin/recipes/bulk` | Sammelaktion `{action: unlock\|lock\|archive\|restore\|delete, ids, mode: check\|run, confirm}` (0.5.3, C3-E1; `restore` seit 0.5.8, C3-E8); Export der Auswahl über `export.xlsx?ids=1,2,3` |
+| POST | `/admin/import/recipes?mode=check` bzw. `mode=run&confirm_overwrite=true`, optional `include_samples=true` | Vorlagen-Import (6.2) – **umgesetzt in 0.5.2**; Bericht seit 0.5.8 mit `conversions`, `nothing_to_import`, `counts.samples_*` |
+| GET | `/admin/recipes/template.xlsx` | Mustervorlage (0.5.4, C3-E2) |
 | GET | `/admin/recipes/export.xlsx?include_archived=false` | Export (6.3, K05-1) |
 
 Fehlerantworten wie Modul 03 (`detail`, `field`, `code`): 400 ungültig, 401 nicht angemeldet, 404 nicht gefunden, 409 Konflikt (Name/Nummer, Kreis, Archivieren als Unterrezept, Löschen verwendet, `version_choice_required`, `changed_elsewhere`, `confirmation_required`, `overwrite_confirmation_required`), 413 Datei zu groß, 423 PIN gesperrt, 503 Datenbank nicht bereit.
@@ -315,6 +316,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 17.11.2026 | Ergänzung C3-E3 (0.5.5): Filter „öffentliche zeigen“, „nie verwogen“, „enthält Unterrezepte“ in der Rezeptliste (`GET /recipes?include_public=&never_weighed=&has_sub_recipes=`). |
 | 17.11.2026 | Ergänzung C3-E2 (0.5.4): Mustervorlage `GET /admin/recipes/template.xlsx` (Musterrezept Schwarzwälder Kirschtorte, Musterrohstoffe mit Präfix „Muster“); Hinweisfenster statt Meldung oben bei fehlendem Rohstoff. |
 | 17.11.2026 | Teil C3 (0.5.2) umgesetzt: Vorlagen-Import, Export, KC2-1 bis KC2-6, interne Notiz (Migration 0004); Umsetzungshinweise in Abschnitt 16. |
+| 18.11.2026 | Ergänzungen C3-E7, C3-E8, C3-E11 (0.5.8): Umrechnung im Blatt Rohstoffe mit automatischem „*“ und Übersicht vorab, Blatt Umrechnung veraltet; Sammelaktion Wiederherstellen; Musterdaten beim Import übersprungen (Abschnitt 16). |
 
 ## 16. Umsetzung und Abweichungen
 
@@ -405,6 +407,31 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 - „alle auswählen“ wählt die **angezeigten** Rezepte (Suche und Filter wirken). Ändert sich der Filter, bleiben nur sichtbare Rezepte gewählt.
 - Export der Auswahl: gewählte Rezepte plus ihre Unterrezepte (auch archivierte), unabhängig vom Haken „archivierte“.
 - Höchstens 1 000 Rezepte je Aktion. Jede Änderung steht wie bisher im `change_log`.
-- Wiederherstellen ist (noch) keine Sammelaktion – nicht gewünscht.
+- Wiederherstellen war zunächst keine Sammelaktion; seit 0.5.8 vorhanden (C3-E8).
 
 **Tests:** `test_recipe_bulk.py` (18), 5 API-Tests in `test_import_export_api.py` (nur GitHub). Oberflächentest in Chrome: Auswahl, „alle auswählen“, Vorschau mit Warnliste, Freischalten, Archivieren eines Unterrezepts übersprungen, Export der Auswahl mit Unterrezept, Löschen, Handy-Ansicht.
+
+### Ergänzungen C3-E7, C3-E8, C3-E11 (0.5.8, 18.11.2026)
+
+**C3-E7 Umrechnung im Blatt „Rohstoffe“** (Entscheidung Michael 17.11.2026, Variante A, ändert K05-6/6.2):
+- Zwei Spalten im Blatt Rohstoffe: „Umrechnung Einheit“ und „Gramm je Einheit“ (Mustervorlage mit Kommentar „Nur ausfüllen, wenn Rezepte über Umrechnung importiert werden sollen“ und Beispiel). Erkannt an der Überschrift ohne Klammerzusatz. Der Wert wird **nicht gespeichert** (M02-2), keine Migration.
+- Die Rezeptzeile findet den Faktor über den Rohstoff (Name, ohne Groß-/Kleinschreibung) und die Einheit. Ist er für „ml“ eingetragen, gilt × 1 000 für „l“ und umgekehrt (E7c).
+- **Jede umgerechnete Zeile bekommt „*“** (die Spalte „Prüfen“ bleibt für von Hand gesetzte „*“). g/kg und leere Menge (Handzugabe) gelten nicht als Umrechnung.
+- **E7b:** Eine Zeile im Blatt Rohstoffe, die außer Nummer bzw. Name nur die Umrechnung enthält, ändert einen **vorhandenen** Rohstoff nicht (zählt als „unverändert“, keine Bestätigung); gibt es den Rohstoff noch nicht, wird er wie bisher neu angelegt (Toleranz 0 %). Eine vollständige Zeile mit Umrechnung überschreibt wie bisher (K05-2).
+- **E7a:** Ein altes Blatt „Umrechnung“ wird weiter gelesen; der Bericht meldet „veraltet“, sobald es Zeilen enthält. Bei beiden Angaben gilt das Blatt Rohstoffe. **ToDo Modul 14:** Unterstützung des alten Blatts entfernen.
+- **E7d:** Der Bericht enthält die Umrechnungen gesondert (`conversions`: Rezept, Zeile, Zutat, Text „20 Stück × 65 g = 1 300 g“, Quelle). Die Seite zeigt sie nach dem Probelauf **vorab in einem eigenen Fenster** mit „Weiter“, danach den Bericht; im Bericht steht eine Zeile mit der Taste „Umrechnungen anzeigen“.
+- Fehlermeldungen: Umrechnung fehlt → Blatt Rezeptzeilen, Spalte „Einheit Original“, mit Hinweis auf das Blatt Rohstoffe; Einheit ohne Wert, Wert ohne Einheit, Wert ≤ 0 oder kein Zahlwert → Blatt Rohstoffe mit Zeile und Spalte. Eine Umrechnung für g/kg wird mit Hinweis nicht verwendet.
+- Mustervorlage und Export: Blatt „Umrechnung“ entfällt; Export hat leere Umrechnungsspalten im Blatt Rohstoffe. Die Kontrollformel „Faktor“ der Mustervorlage liest den Faktor aus dem Blatt Rohstoffe (gleiche Einheit). Info-Text des Exports an C3-E5 angepasst (vorhandene Rezepte → neue Version).
+- **E7e:** Hinweis LibreOffice („als .xlsx speichern“) in Anleitung der Mustervorlage, Info-Blatt des Exports und DOCS.md. Kein `.ods`-Leser. ToDo Modul 14: eine mit LibreOffice gespeicherte Vorlage einmal importieren.
+
+**C3-E8 Sammelaktion „Wiederherstellen“:** Aktion `restore` in `bulk.py`, Service-Funktion `restore_in_tx` (die bisherige `restore_recipe` ruft sie auf, Verhalten unverändert). Nicht archivierte Rezepte erscheinen als „ohne Änderung“; ein gleichnamiges aktives Rezept (M05-3) → übersprungen mit Grund. Die Taste erscheint nur, wenn mindestens ein archiviertes Rezept angehakt ist. Status gesperrt/öffentlich bleibt (R05-23).
+
+**C3-E11 Musterdaten ignorieren** (Entscheidung Michael 18.11.2026, E11-1 bis E11-6 wie vorgeschlagen):
+- Erkennung über die **feste Namensliste** `SAMPLE_RECIPE_NAMES` / `SAMPLE_RAW_NAMES` in `exports/sample_template.py` (2 Musterrezepte, 11 Musterrohstoffe; ohne Groß-/Kleinschreibung), nicht über die gelbe Füllung oder „Muster“ im Namen.
+- Übersprungen werden die Musterrezepte samt ihren Zeilen, Stückgewichten und Chargengrößen (über die Import-ID) sowie die Musterrohstoffe. Verweist ein eigenes Rezept auf ein Musterrezept als Unterrezept → Fehler „ist ein Musterrezept“.
+- Bericht: Hinweis „Musterdaten der Mustervorlage ignoriert: n Musterrezepte und m Musterrohstoffe“, Zähler `counts.samples_recipes`, `counts.samples_raw_materials`. Enthält die Datei nur Musterdaten: Hinweis „nichts zu importieren“, `nothing_to_import`, Taste „Importieren“ bleibt aus.
+- Bereits importierte Musterrezepte werden nicht mehr angefasst (keine neue Version, E11-5).
+- **Präzisierung (zur Kenntnis):** Damit die Mustervorlage weiter zum Ausprobieren taugt (C3-E2: „ohne Änderung importierbar“), gibt es den Haken **„Musterdaten der Mustervorlage mit importieren“** (`include_samples=true`, Standard aus).
+
+**Tests:** neu 26 Import-Tests (Umrechnung, E7a/E7b/E7c, Fehler, Musterdaten), 4 Sammelaktions-Tests (Wiederherstellen), 3 Tests der Mustervorlage, 1 Export-Test; `test_amount_conversion_and_rounding` erwartet jetzt „*“ bei der Stück-Zeile.
+

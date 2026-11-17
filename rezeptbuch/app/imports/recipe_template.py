@@ -1,7 +1,9 @@
 """Rezeptimport aus der Importvorlage .xlsx (Modul 05, Teil C3, docs/rezepte.md Abschnitt 6.2).
 
 Gelesen werden die Blätter **Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte,
-Chargengrößen** und für die Mengenberechnung **Umrechnung**. Spalten werden über die
+Chargengrößen**. Die Umrechnung von Stück, ml usw. steht seit 0.5.8 im Blatt **Rohstoffe**
+(Spalten „Umrechnung Einheit“ und „Gramm je Einheit“, C3-E7); ein altes Blatt **Umrechnung**
+wird weiter gelesen (Hinweis „veraltet“, E7a; ToDo Modul 14: entfernen). Spalten werden über die
 Überschrift erkannt; ein Zusatz in Klammern zählt nicht („Rezeptnummer (Vorschlag)“ =
 „Rezeptnummer“). Spalten mit „(Formel)“ oder „(nicht importieren)“ werden nicht
 ausgewertet, ebenso Bemerkungen.
@@ -17,9 +19,17 @@ Ablauf (alles oder nichts, M05-11):
    Archivierte Rezepte werden nicht verändert (Fehler). Gruppe: vorhandene verwenden, sonst anlegen (M05-9).
 3. **Rezeptzeilen:** Rohstoff über „Zutat“ (Name), Unterrezept über „Unterrezept Import-ID“
    (nur innerhalb der Datei). **Menge g rechnet der Import selbst** aus Menge Original ×
-   Faktor (g = 1, kg = 1 000, sonst Blatt „Umrechnung“ nach „Einheit + Zutat“), kaufmännisch
-   gerundet (K05-6). Leere Menge = 0 g Handzugabe. „Prüfen“ = „*“ → Prüfmarkierung.
+   Faktor (g = 1, kg = 1 000, sonst Umrechnung des Rohstoffs aus dem Blatt „Rohstoffe“, ml ↔ l
+   automatisch × 1 000; ersatzweise altes Blatt „Umrechnung“ nach „Einheit + Zutat“), kaufmännisch
+   gerundet (K05-6). Leere Menge = 0 g Handzugabe. „Prüfen“ = „*“ → Prüfmarkierung; **jede
+   umgerechnete Zeile bekommt automatisch „*“** (C3-E7). Die Umrechnungen stehen im Bericht
+   gesondert unter ``conversions`` (Übersicht vorab, E7d).
 4. **Stückgewichte** und 5. **Chargengrößen** je Import-ID.
+
+**Musterdaten** der Mustervorlage (C3-E2) werden übersprungen (C3-E11): die Musterrezepte und
+Musterrohstoffe, erkannt an der festen Namensliste in ``exports/sample_template.py``, samt ihren
+Zeilen, Stückgewichten und Chargengrößen. Mit ``include_samples`` werden sie wie früher importiert
+(zum Ausprobieren der Mustervorlage).
 
 Probelauf und Import führen dieselben Schritte in einer Transaktion aus; der Probelauf
 rollt zurück. Alle Regeln prüft die Service-Schicht (keine zweite Regelprüfung).
@@ -35,6 +45,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from ..errors import ConflictError, PayloadTooLargeError, ServiceError, ValidationError
+from ..exports.sample_template import SAMPLE_RAW_NAMES, SAMPLE_RECIPE_NAMES
 from ..raw_materials import service as rm_service
 from ..raw_materials.models import normalize_text
 from ..recipes import groups as group_service
@@ -42,6 +53,8 @@ from ..recipes import service as recipe_service
 from ..recipes.models import validate_batch_sizes, validate_piece_weights
 from .raw_materials_csv import HEADERS as RM_HEADERS
 from .raw_materials_csv import MAX_BYTES, SourceRow, apply_rows, cell_text
+from .raw_materials_csv import _find_target as find_raw_material
+from .raw_materials_csv import _parse_number as parse_raw_number
 from .report import ImportReport
 
 MAX_ROWS = 5000
@@ -76,6 +89,9 @@ BATCH_COLUMNS = {
     "stückgewicht-bezeichnung": "piece_label", "reihenfolge": "order", "prüfen": None, "bemerkung": None,
 }
 UNIT_COLUMNS = {"schlüssel": "key", "gramm je einheit": "factor", "bemerkung": None}
+# Umrechnung im Blatt „Rohstoffe“ (C3-E7); wird nicht gespeichert, nur für den Import verwendet (M02-2)
+CONVERSION_COLUMNS = {"umrechnung einheit": "conv_unit", "gramm je einheit": "conv_factor"}
+CONV_TITLES = {"conv_unit": "Umrechnung Einheit", "conv_factor": "Gramm je Einheit"}
 
 COLUMN_TITLES = {
     SHEET_RECIPES: {"import_id": "Import-ID", "number": "Rezeptnummer", "name": "Rezeptname",
@@ -101,6 +117,8 @@ BATCH_KIND_VALUES = {"gewicht": "weight", "weight": "weight", "stück": "pieces"
 TOL_UNIT_VALUES = {"g": "g", "%": "percent", "percent": "percent", "prozent": "percent"}
 REVIEW_VALUES = {"*", "x", "ja", "1"}
 FIXED_FACTORS = {"g": Decimal(1), "kg": Decimal(1000)}
+# ml ↔ l: ist der Faktor für die eine Einheit bekannt, ergibt sich die andere (E7c)
+RELATED_UNITS = {"l": ("ml", Decimal(1000)), "ml": ("l", Decimal(1) / Decimal(1000))}
 
 _PAREN = re.compile(r"\s*\([^)]*\)")
 
@@ -252,18 +270,39 @@ def _note_row(values) -> bool:
     return filled == [0] and isinstance(values[0], str) and len(values[0].split()) >= 4
 
 
-def _raw_material_rows(values_wb, report: ImportReport) -> list[SourceRow] | None:
-    """Blatt „Rohstoffe“ → Zeilen wie beim CSV-Import (gleiche Spalten wie der CSV-Export)."""
+@dataclass
+class Conversion:
+    """Umrechnung eines Rohstoffs aus dem Blatt „Rohstoffe“ (C3-E7)."""
+
+    line: int
+    name: str
+    number: str
+    unit: str            # wie eingegeben
+    factor: Decimal
+    only: bool           # Zeile enthält außer Nummer/Name nur die Umrechnung (E7b)
+    row: SourceRow
+
+
+def _raw_material_rows(values_wb, report: ImportReport, *, include_samples: bool = False
+                       ) -> tuple[list[SourceRow] | None, list[Conversion]]:
+    """Blatt „Rohstoffe“ → Zeilen wie beim CSV-Import (gleiche Spalten wie der CSV-Export) und Umrechnungen.
+
+    Die Spalten „Umrechnung Einheit“ und „Gramm je Einheit“ gehen nicht an den Rohstoff-Import,
+    sondern nur in die Umrechnung der Rezeptzeilen. Musterrohstoffe werden übersprungen (C3-E11).
+    """
     ws = _find_sheet(values_wb, SHEET_RAW)
     if ws is None:
-        return None
+        return None, []
     iterator = ws.iter_rows(values_only=True)
     header = next(iterator, None) or ()
     targets: list[str | None] = []
     seen: set[str] = set()
     for title in header:
         key = header_key(title)
-        target = RM_HEADERS.get(key, "?") if key and not _skipped_header(title) else None
+        if key in CONVERSION_COLUMNS and not _skipped_header(title):
+            target = CONVERSION_COLUMNS[key]
+        else:
+            target = RM_HEADERS.get(key, "?") if key and not _skipped_header(title) else None
         if target == "?":
             report.hint(f"Spalte „{normalize_text(str(title))}“ wird nicht ausgewertet.", sheet=SHEET_RAW)
             target = None
@@ -275,22 +314,73 @@ def _raw_material_rows(values_wb, report: ImportReport) -> list[SourceRow] | Non
         targets.append(target)
     if "name" not in seen:
         report.error("Spalte „Name“ fehlt.", sheet=SHEET_RAW)
-        return []
+        return [], []
     rows: list[SourceRow] = []
+    conversions: list[Conversion] = []
     for line, vals in enumerate(iterator, start=2):
         values = {}
+        conv_raw = {}
         for index, target in enumerate(targets):
-            if target is not None:
-                values[target] = cell_text(vals[index]) if index < len(vals) else ""
-        if not any(values.values()):
+            if target is None:
+                continue
+            cell = vals[index] if index < len(vals) else None
+            if target in CONV_TITLES:
+                conv_raw[target] = cell
+            else:
+                values[target] = cell_text(cell)
+        if not any(values.values()) and not any(cell_text(v) for v in conv_raw.values()):
             continue
         if _note_row(vals):
             report.hint("Zeile wird als Anmerkung übersprungen.", line=line, sheet=SHEET_RAW)
             continue
-        rows.append(SourceRow(line=line, values=values))
+        if not include_samples and _key(values.get("name", "")) in SAMPLE_RAW_KEYS:
+            report.samples_raw_materials += 1
+            continue
+        row = SourceRow(line=line, values=values)
+        rows.append(row)
+        conversion = _conversion(row, conv_raw, report)
+        if conversion is not None:
+            conversions.append(conversion)
         if len(rows) > MAX_ROWS:
             raise ValidationError(f"Das Blatt „{SHEET_RAW}“ hat mehr als {MAX_ROWS} Zeilen.", code="too_many_rows")
-    return rows
+    return rows, conversions
+
+
+def _conversion(row: SourceRow, conv_raw: dict, report: ImportReport) -> Conversion | None:
+    """Prüft „Umrechnung Einheit“ und „Gramm je Einheit“ einer Rohstoffzeile."""
+    unit = cell_text(conv_raw.get("conv_unit"))
+    factor_cell = conv_raw.get("conv_factor")
+    if not unit and not cell_text(factor_cell):
+        return None
+    try:
+        factor = _decimal(factor_cell)
+    except ValueError:
+        report.error("Gramm je Einheit muss eine Zahl sein.", line=row.line, sheet=SHEET_RAW,
+                     column="Gramm je Einheit")
+        return None
+    if not unit:
+        report.error("Umrechnung Einheit fehlt (z. B. „Stück“).", line=row.line, sheet=SHEET_RAW,
+                     column="Umrechnung Einheit")
+        return None
+    if factor is None:
+        report.error(f"Gramm je Einheit fehlt für „{unit}“.", line=row.line, sheet=SHEET_RAW,
+                     column="Gramm je Einheit")
+        return None
+    if factor <= 0:
+        report.error("Gramm je Einheit muss größer 0 sein.", line=row.line, sheet=SHEET_RAW,
+                     column="Gramm je Einheit")
+        return None
+    if _key(unit) in FIXED_FACTORS:
+        report.hint(f"Umrechnung für „{unit}“ ist nicht nötig (g und kg rechnet der Import selbst) und wird "
+                    "nicht verwendet.", line=row.line, sheet=SHEET_RAW)
+        return None
+    only = not any(text for key, text in row.values.items() if key not in ("name", "number"))
+    return Conversion(line=row.line, name=row.get("name"), number=row.get("number"), unit=unit, factor=factor,
+                      only=only, row=row)
+
+
+SAMPLE_RAW_KEYS = {normalize_text(n).casefold() for n in SAMPLE_RAW_NAMES}
+SAMPLE_RECIPE_KEYS = {normalize_text(n).casefold() for n in SAMPLE_RECIPE_NAMES}
 
 
 # -- Werte ----------------------------------------------------------------------
@@ -388,7 +478,52 @@ def _units(sheet: Sheet | None, report: ImportReport) -> dict[str, Decimal | Non
     return result
 
 
-def _plan_recipes(sheet: Sheet, err: _Errors) -> dict[str, PlannedRecipe]:
+@dataclass
+class Factors:
+    """Umrechnungsfaktoren für den Import: Blatt „Rohstoffe“ (je Rohstoff) und altes Blatt „Umrechnung“."""
+
+    by_material: dict[str, tuple[str, Decimal]] = field(default_factory=dict)   # Name-Schlüssel → (Einheit, g)
+    old_sheet: dict[str, Decimal | None] = field(default_factory=dict)          # „einheit zutat“ → g
+
+    def lookup(self, unit_key: str, ingredient: str) -> tuple[Decimal | None, str | None, bool]:
+        """(Faktor, Quelle, im alten Blatt ohne Wert). Quelle „Rohstoffe“ oder „Umrechnung“."""
+        entry = self.by_material.get(rm_service.name_key(ingredient))
+        if entry is not None:
+            factor = _with_related(unit_key, {entry[0]: entry[1]})
+            if factor is not None:
+                return factor, SHEET_RAW, False
+        old = {}
+        for key in (unit_key, RELATED_UNITS.get(unit_key, (None,))[0]):
+            if key is not None:
+                lookup = f"{key} {_key(ingredient)}".strip()
+                if lookup in self.old_sheet:
+                    old[key] = self.old_sheet[lookup]
+        factor = _with_related(unit_key, {k: v for k, v in old.items() if v is not None})
+        if factor is not None:
+            return factor, SHEET_UNITS, False
+        return None, None, unit_key in old and old[unit_key] is None
+
+
+def _with_related(unit_key: str, factors: dict[str, Decimal]) -> Decimal | None:
+    """Faktor für die Einheit, sonst über ml ↔ l (× 1 000 bzw. ÷ 1 000, E7c)."""
+    if unit_key in factors:
+        return factors[unit_key]
+    related = RELATED_UNITS.get(unit_key)
+    if related and related[0] in factors:
+        return factors[related[0]] * related[1]
+    return None
+
+
+def _number_text(value: Decimal) -> str:
+    """Zahl für den Bericht: ohne unnötige Nullen, Komma als Dezimalzeichen, Tausender mit Leerzeichen."""
+    text = format(value.normalize(), "f")
+    whole, _, frac = text.partition(".")
+    whole = f"{int(whole):,}".replace(",", " ") if whole.lstrip("-").isdigit() else whole
+    return whole + ("," + frac if frac else "")
+
+
+def _plan_recipes(sheet: Sheet, err: _Errors, report: ImportReport, ignored: set[str],
+                  include_samples: bool = False) -> dict[str, PlannedRecipe]:
     planned: dict[str, PlannedRecipe] = {}
     names: dict[str, int] = {}
     numbers: dict[int, int] = {}
@@ -398,6 +533,10 @@ def _plan_recipes(sheet: Sheet, err: _Errors) -> dict[str, PlannedRecipe]:
             err.add(SHEET_RECIPES, row.line, "import_id", "Import-ID fehlt.")
             continue
         key = import_id.casefold()
+        if not include_samples and _key(row.text("name")) in SAMPLE_RECIPE_KEYS:
+            ignored.add(key)                    # Musterrezept der Mustervorlage (C3-E11)
+            report.samples_recipes += 1
+            continue
         if key in planned:
             err.add(SHEET_RECIPES, row.line, "import_id",
                     f"Import-ID „{import_id}“ steht mehrfach (auch Zeile {planned[key].line}).")
@@ -452,10 +591,12 @@ def _plan_recipes(sheet: Sheet, err: _Errors) -> dict[str, PlannedRecipe]:
     return planned
 
 
-def _plan_lines(sheet: Sheet, planned: dict[str, PlannedRecipe], units: dict, err: _Errors,
-                report: ImportReport) -> None:
+def _plan_lines(sheet: Sheet, planned: dict[str, PlannedRecipe], factors: Factors, err: _Errors,
+                report: ImportReport, ignored: set[str]) -> None:
     for order, row in enumerate(sheet.rows):
         import_id = row.text("import_id")
+        if import_id and import_id.casefold() in ignored:
+            continue
         recipe = planned.get(import_id.casefold()) if import_id else None
         if recipe is None:
             err.add(SHEET_LINES, row.line, "import_id",
@@ -485,6 +626,7 @@ def _plan_lines(sheet: Sheet, planned: dict[str, PlannedRecipe], units: dict, er
 
         # Menge g = Menge Original × Faktor, kaufmännisch gerundet (K05-6)
         grams = None
+        converted = False
         try:
             amount = _decimal(row.raw("amount"))
         except ValueError:
@@ -499,17 +641,31 @@ def _plan_lines(sheet: Sheet, planned: dict[str, PlannedRecipe], units: dict, er
                 grams = 0                                  # leere Menge = Handzugabe (M02-15)
             elif ok:
                 factor = FIXED_FACTORS.get(unit)
+                source = None
                 if factor is None:
-                    lookup = f"{unit} {_key(ingredient or '')}".strip()
-                    factor = units.get(lookup)
+                    factor, source, empty = factors.lookup(unit, ingredient or "")
                     if factor is None:
-                        shown = f"{row.text('unit')} {ingredient}".strip()
-                        what = "ohne Wert" if lookup in units else "fehlt"
-                        err.add(SHEET_LINES, row.line, "unit",
-                                f"Umrechnung „{shown}“ {what} (Blatt „Umrechnung“, Gramm je Einheit).")
+                        shown_unit = row.text("unit")
+                        if empty:
+                            message = (f"Umrechnung „{shown_unit} {ingredient}“ ohne Wert "
+                                       "(Blatt „Umrechnung“, Gramm je Einheit).")
+                        else:
+                            message = (f"Umrechnung für „{shown_unit}“ bei „{ingredient}“ fehlt: im Blatt „Rohstoffe“ "
+                                       f"beim Rohstoff „{ingredient}“ „Umrechnung Einheit“ = {shown_unit} und "
+                                       "„Gramm je Einheit“ eintragen.")
+                        err.add(SHEET_LINES, row.line, "unit", message)
                         ok = False
                 if factor is not None:
                     grams = int((amount * factor).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+                    if source is not None:
+                        converted = True        # jede Umrechnung bekommt „*“ (C3-E7)
+                        report.conversions.append({
+                            "sheet": SHEET_LINES, "line": row.line, "recipe": recipe.name or recipe.import_id,
+                            "import_id": recipe.import_id, "ingredient": ingredient, "source": source,
+                            "text": f"{_number_text(amount)} {row.text('unit')} × {_number_text(factor)} g = "
+                                    f"{_number_text(Decimal(grams))} g",
+                            "amount": float(amount), "unit": row.text("unit"), "factor": float(factor),
+                            "grams": grams})
             if grams is not None and row.cached_grams is not None:
                 try:
                     cached = _decimal(row.cached_grams)
@@ -540,15 +696,17 @@ def _plan_lines(sheet: Sheet, planned: dict[str, PlannedRecipe], units: dict, er
             "ingredient": ingredient, "sub_id": sub_id, "amount_g": grams,
             "tolerance": tolerance, "tolerance_unit": tolerance_unit,
             "step": row.text("step") or None,
-            "review": _key(row.text("review")) in REVIEW_VALUES,
+            "review": _key(row.text("review")) in REVIEW_VALUES or converted,
         })
 
 
-def _plan_pieces(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _Errors) -> None:
+def _plan_pieces(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _Errors, ignored: set[str]) -> None:
     if sheet is None:
         return
     for order, row in enumerate(sheet.rows):
         import_id = row.text("import_id")
+        if import_id and import_id.casefold() in ignored:
+            continue
         recipe = planned.get(import_id.casefold()) if import_id else None
         if recipe is None:
             err.add(SHEET_PIECES, row.line, "import_id",
@@ -565,11 +723,13 @@ def _plan_pieces(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _E
                               "label": row.text("label"), "weight_g": weight})
 
 
-def _plan_batches(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _Errors) -> None:
+def _plan_batches(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _Errors, ignored: set[str]) -> None:
     if sheet is None:
         return
     for order, row in enumerate(sheet.rows):
         import_id = row.text("import_id")
+        if import_id and import_id.casefold() in ignored:
+            continue
         recipe = planned.get(import_id.casefold()) if import_id else None
         if recipe is None:
             err.add(SHEET_BATCHES, row.line, "import_id",
@@ -593,7 +753,7 @@ def _plan_batches(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _
                                "piece_label": row.text("piece_label") or None})
 
 
-def _order(planned: dict[str, PlannedRecipe], err: _Errors) -> list[PlannedRecipe]:
+def _order(planned: dict[str, PlannedRecipe], err: _Errors, ignored: set[str] = frozenset()) -> list[PlannedRecipe]:
     """Reihenfolge zum Anlegen: Unterrezepte zuerst. Kreise und unbekannte Verweise sind Fehler (R05-10)."""
     edges: dict[str, list[tuple[str, int]]] = {}
     for key, recipe in planned.items():
@@ -601,6 +761,12 @@ def _order(planned: dict[str, PlannedRecipe], err: _Errors) -> list[PlannedRecip
             if line["kind"] != "sub_recipe":
                 continue
             target = line["sub_id"].casefold()
+            if target in ignored:
+                err.add(SHEET_LINES, line["line"], "sub_id",
+                        f"Unterrezept „{line['sub_id']}“ ist ein Musterrezept der Mustervorlage und wird nicht "
+                        "importiert.")
+                recipe.broken = True
+                continue
             if target not in planned:
                 err.add(SHEET_LINES, line["line"], "sub_id",
                         f"Unterrezept „{line['sub_id']}“ gibt es im Blatt „Rezepte“ nicht.")
@@ -854,14 +1020,45 @@ def _assign_numbers(conn: sqlite3.Connection, planned: dict) -> None:
             recipe.data["number"] = highest
 
 
-def apply_template(conn: sqlite3.Connection, values_wb, formulas_wb, report: ImportReport) -> None:
+def _apply_raw_materials(conn: sqlite3.Connection, raw_rows: list[SourceRow], conversions: list[Conversion],
+                         report: ImportReport) -> Factors:
+    """Schritt 1: Rohstoffe wie der CSV-Import; danach die Umrechnungen je Rohstoff (C3-E7)."""
+    only_conversion = {c.line for c in conversions if c.only}
+    apply_list = []
+    for row in raw_rows:
+        if row.line in only_conversion:
+            # E7b: nur Name/Nummer + Umrechnung → vorhandenen Rohstoff nicht ändern (sonst würden leere Felder geleert)
+            try:
+                target = find_raw_material(conn, parse_raw_number(row), row.get("name"))
+            except ServiceError:
+                target = None
+            if target is not None:
+                report.unchanged += 1
+                report.rows += 1
+                continue
+        apply_list.append(row)
+    if apply_list:
+        apply_rows(conn, apply_list, report, sheet=SHEET_RAW)
+
+    factors = Factors()
+    for conv in conversions:
+        name = conv.name
+        if not name and conv.number:
+            found = conn.execute("SELECT name FROM raw_material WHERE number = ?", (conv.number,)).fetchone()
+            name = found["name"] if found else ""
+        if name:
+            factors.by_material[rm_service.name_key(name)] = (_key(conv.unit), conv.factor)
+    return factors
+
+
+def apply_template(conn: sqlite3.Connection, values_wb, formulas_wb, report: ImportReport, *,
+                   include_samples: bool = False) -> None:
     """Wendet die Vorlage an. Erwartet eine offene Transaktion; schreibt Fehler in den Bericht."""
     err = _Errors(report)
 
-    # 1 Rohstoffe (wie CSV-Import)
-    raw_rows = _raw_material_rows(values_wb, report)
-    if raw_rows:
-        apply_rows(conn, raw_rows, report, sheet=SHEET_RAW)
+    # 1 Rohstoffe (wie CSV-Import) und Umrechnungen aus dem Blatt „Rohstoffe“
+    raw_rows, conversions = _raw_material_rows(values_wb, report, include_samples=include_samples)
+    factors = _apply_raw_materials(conn, raw_rows or [], conversions, report)
 
     # 2–5 Rezepte planen
     recipes_sheet = _read_sheet(values_wb, formulas_wb, SHEET_RECIPES, RECIPE_COLUMNS, report, required=True)
@@ -877,12 +1074,17 @@ def apply_template(conn: sqlite3.Connection, values_wb, formulas_wb, report: Imp
                 report.error(f"Spalte „{COLUMN_TITLES[sheet.name][key]}“ fehlt.", sheet=sheet.name)
                 return
 
-    units = _units(units_sheet, report)
-    planned = _plan_recipes(recipes_sheet, err)
-    _plan_lines(lines_sheet, planned, units, err, report)
-    _plan_pieces(pieces_sheet, planned, err)
-    _plan_batches(batches_sheet, planned, err)
-    ordered = _order(planned, err)
+    factors.old_sheet = _units(units_sheet, report)
+    if units_sheet is not None and units_sheet.rows:
+        report.hint("Das Blatt „Umrechnung“ ist veraltet und wird nur noch übergangsweise gelesen. Bitte die "
+                    "Umrechnung im Blatt „Rohstoffe“ eintragen (Spalten „Umrechnung Einheit“ und „Gramm je Einheit“).",
+                    sheet=SHEET_UNITS)
+    ignored: set[str] = set()
+    planned = _plan_recipes(recipes_sheet, err, report, ignored, include_samples)
+    _plan_lines(lines_sheet, planned, factors, err, report, ignored)
+    _plan_pieces(pieces_sheet, planned, err, ignored)
+    _plan_batches(batches_sheet, planned, err, ignored)
+    ordered = _order(planned, err, ignored)
     _match_existing(conn, planned, err, report)
     _assign_numbers(conn, planned)
     report.rows += len(recipes_sheet.rows)
@@ -924,15 +1126,26 @@ def apply_template(conn: sqlite3.Connection, values_wb, formulas_wb, report: Imp
         n = sum(1 for r in report.recipes if r["review_count"])
         report.hint(f"{review} Zeile{'n' if review != 1 else ''} mit „*“ in {n} Rezept{'en' if n != 1 else ''}: "
                     "bitte nach dem Import prüfen. Importierte Rezepte sind gesperrt.")
+    if report.conversions:
+        n = len(report.conversions)
+        report.hint(f"{n} Zeile{'n' if n != 1 else ''} umgerechnet (Stück, ml …); jede umgerechnete Zeile hat „*“ "
+                    "zum Prüfen. Liste: „Umrechnungen anzeigen“.")
+    if report.samples_recipes or report.samples_raw_materials:
+        r, m = report.samples_recipes, report.samples_raw_materials
+        report.hint(f"Musterdaten der Mustervorlage ignoriert: {r} Musterrezept{'e' if r != 1 else ''} und "
+                    f"{m} Musterrohstoff{'e' if m != 1 else ''}.")
+        if report.nothing_to_import and not planned and not raw_rows:
+            report.hint("Die Datei enthält nur Musterdaten – es gibt nichts zu importieren.")
 
 
 def import_recipe_template(conn: sqlite3.Connection, data: bytes, *, mode: str = "check",
-                           confirm_overwrite: bool = False) -> dict:
+                           confirm_overwrite: bool = False, include_samples: bool = False) -> dict:
     """Probelauf (``mode="check"``) oder Import (``mode="run"``) der Importvorlage.
 
     Wie der Rohstoff-Import: Probelauf liefert immer den Bericht und ändert nichts. Der
     Import speichert nur ohne Fehler und – wenn vorhandene Rohstoffe überschrieben werden –
     mit ``confirm_overwrite``. Sonst wird nichts gespeichert und ein Fehler mit Bericht ausgelöst.
+    ``include_samples``: Musterdaten der Mustervorlage mit importieren (sonst übersprungen, C3-E11).
     """
     if mode not in ("check", "run"):
         raise ValidationError("mode muss „check“ oder „run“ sein.", field="mode")
@@ -941,7 +1154,7 @@ def import_recipe_template(conn: sqlite3.Connection, data: bytes, *, mode: str =
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:
-            apply_template(conn, values_wb, formulas_wb, report)
+            apply_template(conn, values_wb, formulas_wb, report, include_samples=include_samples)
             commit = mode == "run" and report.ok and (confirm_overwrite or not report.needs_confirmation)
             if commit:
                 conn.execute("COMMIT")
