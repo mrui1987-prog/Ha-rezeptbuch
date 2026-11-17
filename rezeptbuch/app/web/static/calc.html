@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch – Berechnung</title>
+<style>
+  /* Bewusst schlicht: Prüfseite für Modul 06, an den Stationen ersetzt durch Modul 10 */
+  :root { color-scheme: light; }
+  html { background: #fafafa; }
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
+  main { padding: 1rem; max-width: 80rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
+  h2 { font-size: 1.1rem; margin: .2rem 0 .5rem; }
+  button { font-size: 1rem; padding: .5rem .9rem; margin: .15rem; cursor: pointer; }
+  button.small { padding: .2rem .5rem; font-size: .95rem; margin: 0 .3rem 0 0; }
+  input, select { font-size: 1rem; padding: .4rem; box-sizing: border-box; font-family: inherit; }
+  label { display: block; margin: .5rem 0 .15rem; font-weight: bold; }
+  label.inline { display: inline; margin: 0 .8rem 0 0; font-weight: normal; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #ccc; padding: .3rem .45rem; text-align: left; vertical-align: middle; }
+  th { background: #eee; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  tr.sub td { background: #eef5ff; }
+  tr.child td { background: #f7faff; color: #333; }
+  tr.review td { background: #fff7e0; }
+  tr.archived td { color: #888; }
+  .hidden { display: none !important; }
+  #probe { background: #c62828; color: #fff; font-weight: bold; text-align: center; padding: .6rem; }
+  nav { display: flex; flex-wrap: wrap; gap: .3rem; background: #fff; border-bottom: 1px solid #ccc; padding: .4rem 1rem; }
+  nav a, nav button { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; margin: 0; }
+  nav .active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  nav .grow { flex: 1; }
+  .msg { margin: .6rem 0; padding: .5rem .7rem; border-radius: 4px; white-space: pre-line; }
+  .msg.error { background: #fdecea; color: #8a1c13; border: 1px solid #f5c2bd; }
+  .msg.info { background: #e8f1fb; color: #14406b; border: 1px solid #b9d3ee; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .5rem 0; }
+  .toolbar .grow { flex: 1 1 14rem; }
+  .panel { background: #fff; border: 1px solid #ccc; padding: .8rem 1rem; margin: .8rem 0; }
+  .small { font-size: .9rem; color: #555; }
+  .scroll { overflow-x: auto; }
+  .bases { display: flex; flex-wrap: wrap; gap: .3rem; margin: .3rem 0 .6rem; }
+  .bases button { margin: 0; border: 1px solid #aaa; border-radius: 5px; background: #f4f4f4; }
+  .bases button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .bases button:disabled { opacity: .45; cursor: default; }
+  .w-num { width: 8rem; }
+  .w-count { width: 6rem; }
+  .pieces { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .3rem 1rem; }
+  .bad { border: 2px solid #c62828 !important; background: #fdecea; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .3rem 1rem; margin: .6rem 0; }
+  .facts div b { display: inline-block; min-width: 9rem; }
+  .indent { display: inline-block; }
+  .toggle { min-width: 2rem; }
+  #warnings li { margin: .2rem 0; }
+</style>
+</head>
+<body>
+<div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<nav>
+  <a id="nav-raw" href="#">Rohstoffe</a>
+  <a id="nav-recipes" href="#">Rezepte</a>
+  <a class="active" href="#" aria-current="page">Berechnung</a>
+  <span class="grow"></span>
+  <button type="button" id="nav-logout">Abmelden</button>
+</nav>
+<main>
+  <h1>Berechnung prüfen</h1>
+  <p class="small">Nur zum Nachrechnen: Diese Seite speichert nichts. Gerechnet wird wie später an der Waage
+    (jede Zutat auf ganze Gramm aufgerundet, Prozent-Toleranz abgerundet, mindestens 1 g).</p>
+
+  <section class="panel">
+    <h2>1. Rezept</h2>
+    <div class="toolbar">
+      <input id="search" class="grow" type="search" placeholder="Suchen (Nummer, Name)" aria-label="Rezept suchen">
+      <label class="inline"><input id="show-archived" type="checkbox"> archivierte zeigen</label>
+    </div>
+    <div class="toolbar">
+      <select id="recipe" class="grow" aria-label="Rezept"><option value="">– Rezept wählen –</option></select>
+      <select id="version" aria-label="Version" class="hidden"></select>
+    </div>
+    <div id="recipe-msg" class="msg hidden" role="alert"></div>
+    <p id="recipe-info" class="small"></p>
+  </section>
+
+  <section id="basis-panel" class="panel hidden">
+    <h2>2. Bezugsgröße</h2>
+    <div class="bases" id="bases">
+      <button type="button" data-basis="total">Gesamtteig</button>
+      <button type="button" data-basis="pieces">Stückzahlen</button>
+      <button type="button" data-basis="batch_size">Chargengröße</button>
+      <button type="button" data-basis="flour_total">Mehl gesamt</button>
+      <button type="button" data-basis="raw_material">Leitrohstoff</button>
+    </div>
+
+    <div id="in-amount" class="hidden">
+      <div id="in-leading" class="hidden">
+        <label for="leading">Leitrohstoff</label>
+        <select id="leading" class="grow"></select>
+      </div>
+      <label for="value" id="value-label">Menge</label>
+      <div class="toolbar">
+        <input id="value" class="w-num" type="text" inputmode="decimal" autocomplete="off">
+        <select id="unit" aria-label="Einheit"></select>
+      </div>
+    </div>
+    <div id="in-pieces" class="hidden"><div class="pieces" id="pieces"></div></div>
+    <div id="in-batch" class="hidden"><div class="bases" id="batch-sizes"></div></div>
+
+    <div class="toolbar"><button type="button" id="btn-calc">Berechnen</button></div>
+    <div id="calc-msg" class="msg hidden" role="alert"></div>
+  </section>
+
+  <section id="result-panel" class="panel hidden">
+    <h2>3. Ergebnis</h2>
+    <p id="result-head" class="small"></p>
+    <div class="toolbar">
+      <button type="button" class="small" id="btn-expand">Alle Unterrezepte aufklappen</button>
+      <button type="button" class="small" id="btn-collapse">Alle zuklappen</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th class="num">Pos.</th><th>Schritt</th><th>Zutat</th><th class="num">Menge</th><th class="num">Toleranz</th>
+        <th>Gebinde / Stück</th><th class="num">Anteil</th><th class="num" id="th-baker">Bäcker-%</th></tr></thead>
+      <tbody id="rows"></tbody></table></div>
+    <div class="facts" id="facts"></div>
+    <div id="hints-box" class="hidden"><h2>Ergibt</h2><ul id="hints"></ul></div>
+    <div id="warnings-box" class="hidden"><h2>Hinweise</h2><ul id="warnings"></ul></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// Adressen aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
+const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
+const API = BASE + "api/v1/";
+const SESSION_KEY = "rezeptbuch_admin_session";
+const $ = (id) => document.getElementById(id);
+
+let token = null;
+try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+
+let recipes = [];          // Liste für die Auswahl
+let options = null;        // Bezugsgrößen des gewählten Rezepts (basis-options)
+let basis = null;          // gewählte Bezugsgröße
+let batchSizeId = null;    // gewählte Chargengröße
+
+$("nav-raw").href = BASE + "admin/rohstoffe";
+$("nav-recipes").href = BASE + "admin/rezepte";
+
+function toLogin() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
+  location.href = BASE + "admin/login?next=berechnung";
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (token) headers["X-Rezeptbuch-Session"] = token;
+  let body;
+  if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+  let res;
+  try {
+    res = await fetch(API + path, { method: opts.method || "GET", headers: headers, body: body });
+  } catch (e) {
+    const err = new Error("Keine Verbindung zum Rezeptserver."); err.status = 0; err.data = {}; throw err;
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (!res.ok) {
+    let text = data && data.detail;
+    if (typeof text !== "string") text = "Ungültige Eingabe (Fehler " + res.status + ").";
+    const err = new Error(text); err.status = res.status; err.data = data || {}; throw err;
+  }
+  return data;
+}
+
+function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
+function showMsg(id, text, kind) {
+  const box = $(id);
+  box.textContent = text || "";
+  box.className = "msg " + (kind || "error") + (text ? "" : " hidden");
+}
+function handleError(err, target) {
+  if (err.status === 401) { toLogin(); return; }
+  showMsg(target, err.message, "error");
+}
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+function td(row, content, cls) {
+  const cell = el("td", null, cls);
+  if (content instanceof Node) cell.appendChild(content); else if (content !== undefined && content !== null) cell.textContent = content;
+  row.appendChild(cell);
+  return cell;
+}
+function fmtG(n) { return Number(n).toLocaleString("de-DE") + " g"; }
+function fmtDec(text) {          // „312.125“ → „312,125“ mit Tausenderpunkten
+  const parts = String(text).split(".");
+  return Number(parts[0]).toLocaleString("de-DE") + (parts[1] ? "," + parts[1] : "");
+}
+function fmtTenths(n) { return n === null || n === undefined ? "" : (n / 10).toFixed(1).replace(".", ",") + " %"; }
+function fmtCount(tenths) { return (tenths / 10).toFixed(1).replace(".", ","); }
+
+// ---- Rezept wählen -------------------------------------------------------------------
+
+async function loadRecipes() {
+  try {
+    const archived = $("show-archived").checked ? "&include_archived=true" : "";
+    recipes = await api("recipes?include_locked=true" + archived);
+    fillRecipeSelect();
+  } catch (err) { handleError(err, "recipe-msg"); }
+}
+
+function fillRecipeSelect() {
+  const needle = $("search").value.trim().toLowerCase();
+  const sel = $("recipe");
+  const keep = sel.value;
+  sel.textContent = "";
+  sel.appendChild(new Option("– Rezept wählen –", ""));
+  recipes.filter((r) => !needle || String(r.number).includes(needle) || r.name.toLowerCase().includes(needle))
+    .forEach((r) => {
+      let label = r.number + " – " + r.name;
+      if (r.archived) label += " (archiviert)"; else if (r.locked) label += " (gesperrt)";
+      sel.appendChild(new Option(label, String(r.id)));
+    });
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+}
+
+async function chooseRecipe() {
+  showMsg("recipe-msg", "");
+  show("result-panel", false);
+  const id = $("recipe").value;
+  if (!id) { show("basis-panel", false); show("version", false); $("recipe-info").textContent = ""; return; }
+  try {
+    const detail = await api("recipes/" + id);
+    const vs = $("version");
+    vs.textContent = "";
+    detail.versions.forEach((v) => vs.appendChild(new Option(v.current ? "Version " + v.version_no + " (aktuell)"
+      : "Version " + v.version_no + " – old (" + v.version_no + ")", String(v.version_no))));
+    vs.value = String(detail.version_no);
+    show("version", detail.versions.length > 1);
+    await loadOptions();
+  } catch (err) { handleError(err, "recipe-msg"); }
+}
+
+async function loadOptions() {
+  const id = $("recipe").value;
+  const current = $("version").options.length && $("version").selectedIndex === 0;
+  const query = current ? "" : "?version_no=" + $("version").value;
+  try {
+    options = await api("recipes/" + id + "/basis-options" + query);
+  } catch (err) { show("basis-panel", false); handleError(err, "recipe-msg"); return; }
+  const o = options;
+  $("recipe-info").textContent = "Grundrezept: " + fmtG(o.total_g) +
+    (o.flour_total_available ? " · Mehl gesamt (mit Unterrezepten): " + fmtDec(o.flour_exact) + " g" : " · ohne Mehl") +
+    (o.knead ? " · Knetzeit " + o.knead : "");
+  setupBases();
+  show("basis-panel", true);
+}
+
+// ---- Bezugsgröße ---------------------------------------------------------------------
+
+function setupBases() {
+  const o = options;
+  const available = {
+    total: true,
+    pieces: o.piece_weights.length > 0,
+    batch_size: o.batch_sizes.length > 0,
+    flour_total: o.flour_total_available,
+    raw_material: o.raw_materials.length > 0,
+  };
+  document.querySelectorAll("#bases button").forEach((b) => {
+    b.disabled = !available[b.dataset.basis];
+    b.title = b.disabled ? "Für dieses Rezept nicht möglich" : "";
+  });
+  // Stückzahlen
+  const box = $("pieces"); box.textContent = "";
+  o.piece_weights.forEach((p) => {
+    const wrap = el("div");
+    const lab = el("label", p.label + " (" + fmtG(p.weight_g) + ")");
+    const inp = el("input"); inp.type = "text"; inp.inputMode = "numeric"; inp.className = "w-count";
+    inp.dataset.pieceWeightId = p.id; inp.placeholder = "0"; inp.id = "pc-" + p.id; lab.htmlFor = inp.id;
+    wrap.appendChild(lab); wrap.appendChild(inp); box.appendChild(wrap);
+  });
+  // Chargengrößen
+  const bs = $("batch-sizes"); bs.textContent = "";
+  o.batch_sizes.forEach((b) => {
+    const text = b.label + " (" + (b.kind === "weight" ? fmtG(b.value) : b.value + " × " + b.piece_weight_label + " = " + fmtG(b.weight_g)) + ")";
+    const btn = el("button", text); btn.type = "button"; btn.dataset.id = b.id;
+    btn.addEventListener("click", () => {
+      batchSizeId = b.id;
+      bs.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === btn));
+    });
+    bs.appendChild(btn);
+  });
+  batchSizeId = null;
+  // Leitrohstoffe: „gesamt“ und darunter die Zeilen (K06-1)
+  const lead = $("leading"); lead.textContent = "";
+  o.raw_materials.forEach((m) => {
+    const total = new Option(m.station_name + " gesamt (" + fmtDec(m.amount_exact) + " g)", m.raw_material_id + ":");
+    lead.appendChild(total);
+    m.lines.forEach((l) => {
+      const step = l.step_name ? l.step_name + ", " : "";
+      lead.appendChild(new Option("   – " + m.station_name + " – " + step + "Zeile " + l.position +
+        " (" + fmtG(l.amount_g) + ")", m.raw_material_id + ":" + l.position));
+    });
+  });
+  if (!basis || !available[basis]) basis = "total";
+  selectBasis(basis);
+}
+
+function selectBasis(name) {
+  basis = name;
+  document.querySelectorAll("#bases button").forEach((b) => b.classList.toggle("active", b.dataset.basis === name));
+  const amount = name === "total" || name === "flour_total" || name === "raw_material";
+  show("in-amount", amount);
+  show("in-leading", name === "raw_material");
+  show("in-pieces", name === "pieces");
+  show("in-batch", name === "batch_size");
+  $("value-label").textContent = { total: "Gesamtteig je Teig", flour_total: "Mehl gesamt je Teig",
+    raw_material: "Vorhandene Menge des Leitrohstoffs" }[name] || "Menge";
+  const unit = $("unit"); const keep = unit.value; unit.textContent = "";
+  const units = name === "raw_material" ? ["g", "kg", "l"] : ["g", "kg"];
+  units.forEach((u) => unit.appendChild(new Option(u === "l" ? "l (1 l = 1 000 g)" : u, u)));
+  if (units.includes(keep)) unit.value = keep;
+  showMsg("calc-msg", "");
+}
+
+document.querySelectorAll("#bases button").forEach((b) => b.addEventListener("click", () => { if (!b.disabled) selectBasis(b.dataset.basis); }));
+
+function buildRequest() {
+  const body = { recipe_id: Number($("recipe").value), basis_type: basis };
+  if ($("version").options.length && $("version").selectedIndex > 0) body.version_no = Number($("version").value);
+  if (basis === "total" || basis === "flour_total" || basis === "raw_material") {
+    body.value = $("value").value.trim();
+    body.input_unit = $("unit").value;
+  }
+  if (basis === "raw_material") {
+    const parts = ($("leading").value || ":").split(":");
+    body.raw_material_id = parts[0] ? Number(parts[0]) : null;
+    if (parts[1]) body.item_position = Number(parts[1]);
+  }
+  if (basis === "pieces") {
+    body.pieces = [...document.querySelectorAll("#pieces input")]
+      .filter((i) => i.value.trim() !== "")
+      .map((i) => ({ piece_weight_id: Number(i.dataset.pieceWeightId), count: i.value.trim() }));
+  }
+  if (basis === "batch_size") body.batch_size_id = batchSizeId;
+  return body;
+}
+
+function markField(field) {
+  document.querySelectorAll(".bad").forEach((x) => x.classList.remove("bad"));
+  const target = { value: "value", input_unit: "unit", raw_material_id: "leading", item_position: "leading",
+    pieces: "pieces", batch_size_id: "batch-sizes" }[field];
+  if (target) $(target).classList.add("bad");
+}
+
+async function calc() {
+  showMsg("calc-msg", "");
+  markField(null);
+  if (basis === "batch_size" && !batchSizeId) { showMsg("calc-msg", "Bitte eine Chargengröße wählen."); markField("batch_size_id"); return; }
+  try {
+    const result = await api("calculation", { method: "POST", body: buildRequest() });
+    renderResult(result);
+  } catch (err) {
+    show("result-panel", false);
+    handleError(err, "calc-msg");
+    if (err.data && err.data.field) markField(err.data.field);
+  }
+}
+
+// ---- Ergebnis -----------------------------------------------------------------------
+
+const BASIS_TEXT = { total: "Gesamtteig", pieces: "Stückzahlen", batch_size: "Chargengröße",
+  flour_total: "Mehl gesamt", raw_material: "Leitrohstoff" };
+
+function toleranceText(item) {
+  if (item.kind === "hand") return "Handzugabe";
+  const t = item.tolerance;
+  if (!t) return "";
+  if (t.is_hand_ack) return "nur quittieren";
+  return "± " + t.tolerance_g + " g" + (t.unit === "percent" ? " (" + String(t.value.toFixed(1)).replace(".", ",") + " %)" : "");
+}
+
+function unitsText(item) {
+  const u = item.units;
+  if (!u) return "";
+  let text = u.count + " × " + u.label + " (" + fmtG(u.size_g) + ")";
+  text += u.rest_g > 0 ? " + " + fmtG(u.rest_g) + " wiegen" : ", kein Rest";
+  return text;
+}
+
+let rowKey = 0;
+
+function addRows(items, depth, ancestors, parentKey) {
+  const body = $("rows");
+  items.forEach((item) => {
+    const tr = el("tr");
+    if (depth > 0) tr.className = "child hidden";
+    if (item.kind === "sub_recipe") tr.classList.add("sub");
+    if (item.needs_review) tr.classList.add("review");
+    if ((item.raw_material && item.raw_material.archived) || (item.sub_recipe && item.sub_recipe.archived)) tr.classList.add("archived");
+    tr.dataset.parent = parentKey || "";
+    tr.dataset.anc = ancestors;
+    td(tr, depth ? "" : String(item.position), "num");
+    td(tr, depth ? "" : (item.step_name || ""));
+    const name = el("span", null, "indent");
+    name.style.paddingLeft = (depth * 1.4) + "rem";
+    let key = null;
+    if (item.kind === "sub_recipe") {
+      key = "k" + (++rowKey);
+      const tog = el("button", "▸", "small toggle"); tog.type = "button"; tog.dataset.key = key;
+      tog.setAttribute("aria-label", "Unterrezept aufklappen");
+      tog.addEventListener("click", () => toggle(key, tog));
+      name.appendChild(tog);
+      name.appendChild(document.createTextNode(item.sub_recipe.name + " (Unterrezept " + item.sub_recipe.number + ")"));
+    } else {
+      const rm = item.raw_material;
+      name.appendChild(document.createTextNode((item.needs_review ? "* " : "") + rm.station_name));
+      if (rm.station_name !== rm.name) { name.appendChild(el("br")); name.appendChild(el("span", rm.name, "small")); }
+    }
+    td(tr, name);
+    const amount = td(tr, fmtG(item.target_g), "num");
+    amount.title = "genau " + fmtDec(item.exact_g) + " g" + (item.overridden ? " (Menge geändert)" : "");
+    td(tr, toleranceText(item), "num");
+    td(tr, unitsText(item));
+    td(tr, fmtTenths(item.share_tenths), "num");
+    td(tr, fmtTenths(item.baker_tenths), "num");
+    body.appendChild(tr);
+    if (item.sub) addRows(item.sub.items, depth + 1, ancestors + " " + key + " ", key);
+  });
+}
+
+function toggle(key, btn) {
+  const open = btn.textContent === "▸";
+  btn.textContent = open ? "▾" : "▸";
+  btn.setAttribute("aria-label", open ? "Unterrezept zuklappen" : "Unterrezept aufklappen");
+  document.querySelectorAll("#rows tr").forEach((tr) => {
+    if (open && tr.dataset.parent === key) tr.classList.remove("hidden");
+    if (!open && tr.dataset.anc.includes(" " + key + " ")) {
+      tr.classList.add("hidden");
+      const inner = tr.querySelector("button.toggle");
+      if (inner) inner.textContent = "▸";
+    }
+  });
+}
+
+function setAll(open) {
+  document.querySelectorAll("#rows tr").forEach((tr) => {
+    if (tr.dataset.anc.trim()) tr.classList.toggle("hidden", !open);
+    const b = tr.querySelector("button.toggle");
+    if (b) b.textContent = open ? "▾" : "▸";
+  });
+}
+
+function fact(label, value) {
+  const d = el("div"); d.appendChild(el("b", label)); d.appendChild(document.createTextNode(" " + value));
+  $("facts").appendChild(d);
+}
+
+function renderResult(r) {
+  rowKey = 0;
+  $("rows").textContent = "";
+  addRows(r.items, 0, " ", null);
+  const t = r.totals, b = r.basis;
+  show("th-baker", t.has_flour);
+  document.querySelectorAll("#rows tr").forEach((tr) => { tr.lastChild.classList.toggle("hidden", !t.has_flour); });
+  const version = r.recipe.current_version ? "Version " + r.recipe.version_no + " (aktuell)" : "Version " + r.recipe.version_no + " – old (" + r.recipe.version_no + ")";
+  let basisText = BASIS_TEXT[b.type];
+  if (b.batch_size) basisText += " „" + b.batch_size.label + "“";
+  if (b.pieces) basisText += " " + b.pieces.map((p) => p.count + " × " + p.label).join(", ");
+  if (b.input_value) basisText += " " + b.input_value.replace(".", ",") + " " + b.input_unit;
+  $("result-head").textContent = r.recipe.number + " – " + r.recipe.name + " · " + version + " · " + basisText +
+    " · Faktor " + b.factor_text.replace(".", ",") + " (alle Werte je Teig)";
+  $("facts").textContent = "";
+  fact("Bezug:", fmtG(b.target_g));
+  fact("Ziel Teig:", (t.target_is_exact ? "" : "ca. ") + fmtG(t.target_g));
+  fact("Summe nach Rundung:", fmtG(t.rounded_sum_g));
+  if (t.has_flour) fact("Mehl gesamt:", fmtDec(t.flour_exact) + " g");
+  if (t.knead) fact("Knetzeit:", t.knead + " min");
+  const hints = $("hints"); hints.textContent = "";
+  r.piece_hints.forEach((h) => hints.appendChild(el("li", fmtCount(h.count_tenths) + " × " + h.label + " (" + fmtG(h.weight_g) + ")")));
+  show("hints-box", r.piece_hints.length > 0);
+  const warn = $("warnings"); warn.textContent = "";
+  r.warnings.forEach((w) => warn.appendChild(el("li", (w.position ? "Pos. " + w.position + ": " : "") + w.text)));
+  show("warnings-box", r.warnings.length > 0);
+  show("result-panel", true);
+  $("result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---- Bedienung ------------------------------------------------------------------------
+
+$("search").addEventListener("input", fillRecipeSelect);
+$("show-archived").addEventListener("change", loadRecipes);
+$("recipe").addEventListener("change", chooseRecipe);
+$("version").addEventListener("change", () => { show("result-panel", false); loadOptions(); });
+$("btn-calc").addEventListener("click", calc);
+$("value").addEventListener("keydown", (ev) => { if (ev.key === "Enter") calc(); });
+$("btn-expand").addEventListener("click", () => setAll(true));
+$("btn-collapse").addEventListener("click", () => setAll(false));
+$("nav-logout").addEventListener("click", async () => {
+  try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
+  toLogin();
+});
+
+async function start() {
+  try { const info = await api("system/info"); show("probe", info.pin_is_default === true); } catch (e) { /* egal */ }
+  if (!token) { toLogin(); return; }
+  // Die Rechnung selbst braucht keine PIN; die Seite gehört aber zum Admin-Bereich (K06-3)
+  try { await api("admin/recipes/next-number"); } catch (err) { handleError(err, "recipe-msg"); if (err.status === 401) return; }
+  await loadRecipes();
+}
+start();
+</script>
+<script>
+  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
+  (function () {
+    function repaint() { document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }
+    window.addEventListener('load', function () { repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); });
+    window.addEventListener('pageshow', repaint);
+  })();
+</script>
+</body>
+</html>

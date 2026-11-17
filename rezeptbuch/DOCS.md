@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.5.3:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.6.0:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -23,6 +23,7 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 |---------|-------|
 | `/admin` | Rohstoffe (PIN) |
 | `/admin/rezepte` | Rezepte, Rezeptgruppen, Import/Export (PIN); Aufträge folgen in späteren Modulen |
+| `/admin/berechnung` | Berechnung nachprüfen (PIN, speichert nichts) |
 
 Die Stationsadressen für die Tablets an den Waagen folgen in Modul 09/10 und sind in dieser Version noch nicht vorhanden.
 
@@ -70,6 +71,20 @@ Reiter **„Import/Export“**.
 - Zeilen: Zutat über den Rohstoffnamen, Unterrezept über die Import-ID. **Menge g = Menge Original × Faktor** (g = 1, kg = 1 000, sonst Blatt „Umrechnung“, Schlüssel „Einheit Zutat“, z. B. „Stück Ei“), auf ganze Gramm gerundet. Leere Menge = 0 g Handzugabe. Fehlt der Faktor, ist das ein Fehler.
 - Chargengröße „Gewicht“ ohne Wert (oder mit Formel) = Gesamtgewicht des Rezepts; „Stück“ braucht Wert und Stückgewicht-Bezeichnung.
 - **Export:** alle Rezepte (aktuelle Version) mit den verwendeten Rohstoffen im Format der Vorlage, auf Wunsch mit archivierten. Die Datei kann in eine leere Datenbank wieder importiert werden. Kein Ersatz für die Datensicherung.
+
+## Berechnung (Modul 06)
+
+Reiter **„Berechnung“**: Rezept wählen (auch gesperrte, auf Wunsch archivierte, auch alte Versionen), Bezugsgröße wählen, „Berechnen“. Die Seite speichert nichts; sie rechnet genau so, wie später die Waage rechnet.
+
+- **Bezugsgrößen** (je Teig): Gesamtteig (g/kg), Stückzahlen je Stückgewicht, Chargengröße, Mehl gesamt (nur bei Rezepten mit Mehl), Leitrohstoff (g/kg/l, 1 l = 1 000 g). Den Leitrohstoff gibt es einmal „gesamt“ (alle Zeilen inklusive Unterrezepten) und, wenn er mehrfach vorkommt, je Zeile des Hauptrezepts.
+- **Rundung:** jede Zutat auf das nächste ganze Gramm **aufgerundet** (312,1 g → 313 g); 0 g bleibt 0 g (Handzugabe). Die Summe kann dadurch etwas über dem Ziel liegen.
+- **Unterrezepte** werden mit ihrer gerundeten Menge als Gesamtteig gerechnet und erscheinen eingeklappt (▸ zum Aufklappen).
+- **Toleranz:** Gramm unverändert (0 g = nur quittieren); Prozent von der Sollmenge, auf ganze Gramm abgerundet, **mindestens 1 g** (0 % wird mit ±1 g gewogen). Bei Gebinde/Stück gilt die ganze Toleranz für den gewogenen Rest.
+- **Gebinde/Stück:** ganze Einheiten + Rest, z. B. „10 × Ei + 30 g wiegen“.
+- **Anteil** am Gesamtgewicht und **Bäckerprozent** (bezogen auf das ganze Mehl inklusive Unterrezepten) aus dem Grundrezept, eine Nachkommastelle.
+- **„Ergibt“:** Stückzahl je Stückgewicht, auf eine Nachkommastelle abgerundet (z. B. 12,4 Käsekuchen).
+- **Hinweise:** Zeilen mit „*“, archivierte Rohstoffe/Unterrezepte, Toleranz 0 %, Aufrunden um mehr als 5 %, Leitrohstoff „gesamt“ über der Eingabe, gesperrtes/archiviertes Rezept.
+- Schnittstelle ohne PIN (für die Stationen ab Modul 09/10): `GET /api/v1/recipes/{id}/basis-options`, `POST /api/v1/calculation`.
 
 ## Haftung
 

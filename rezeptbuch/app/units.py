@@ -24,6 +24,15 @@ def kg_to_grams(value: str | int | float | Decimal) -> int:
     return int(grams)
 
 
+def liters_to_grams(value: str | int | float | Decimal) -> int:
+    """Wandelt eine Liter-Angabe in ganze Gramm um, mit 1 l = 1 000 g (M02-1e).
+
+    Nur für die Eingabe beim Leitrohstoff (z. B. Wasser bei Literrezepten);
+    es wird keine Dichte gespeichert (M02-2).
+    """
+    return kg_to_grams(value)
+
+
 def grams_to_kg_text(grams: int) -> str:
     """Formatiert Gramm als kg-Text mit drei Nachkommastellen und Komma.
 

@@ -6,6 +6,7 @@ import sqlite3
 import pytest
 
 from app.db import MIGRATIONS_DIR, init_database
+from app.db.migrate import discover
 
 from conftest import add_item, add_order, add_raw_material, add_recipe
 
@@ -66,7 +67,7 @@ def test_migration_on_database_with_recipes(tmp_path):
     old.close()
 
     conn = init_database(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(discover())
     row = conn.execute("SELECT number, revision FROM recipe").fetchone()
     assert tuple(row) == (10, 0)
     assert len(list((tmp_path / "backups").glob("pre_migration_0002_*.db"))) == 1

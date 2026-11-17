@@ -64,7 +64,7 @@
 
   <!-- Ansicht 2: Rohstoffliste -->
   <section id="view-list" class="hidden">
-    <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a></div>
+    <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a><a id="tab-calc" href="#">Berechnung</a></div>
     <h1>Rohstoffe</h1>
     <div class="toolbar">
       <button id="btn-new">Neuer Rohstoff</button>
@@ -138,9 +138,10 @@
 // Adresse der Schnittstelle aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
 const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
 const API = BASE + "api/v1/";
-// Nach der Anmeldung zurück zur Rezeptseite, wenn sie die Anmeldung verlangt hat (Modul 05)
-const NEXT_RECIPES = new URLSearchParams(location.search).get("next") === "rezepte";
+// Nach der Anmeldung zurück zur Seite, die die Anmeldung verlangt hat (Rezepte Modul 05, Berechnung Modul 06)
+const NEXT_PAGE = { rezepte: "admin/rezepte", berechnung: "admin/berechnung" }[new URLSearchParams(location.search).get("next")] || null;
 document.getElementById("tab-recipes").href = BASE + "admin/rezepte";
+document.getElementById("tab-calc").href = BASE + "admin/berechnung";
 const SESSION_KEY = "rezeptbuch_admin_session";
 const $ = (id) => document.getElementById(id);
 
@@ -258,7 +259,7 @@ $("login-form").addEventListener("submit", async (event) => {
     setToken(result.session);
     show("probe", result.pin_is_default === true);
     $("pin").value = "";
-    if (NEXT_RECIPES) { location.href = BASE + "admin/rezepte"; return; }
+    if (NEXT_PAGE) { location.href = BASE + NEXT_PAGE; return; }
     showView("list");
     await loadList();
   } catch (err) {
@@ -605,7 +606,7 @@ $("form").addEventListener("submit", async (event) => {
 async function start() {
   buildKeypad();
   await loadInfo();
-  if (token && NEXT_RECIPES) { location.href = BASE + "admin/rezepte"; return; }
+  if (token && NEXT_PAGE) { location.href = BASE + NEXT_PAGE; return; }
   if (token) {
     showView("list");
     await loadList();       // bei abgelaufener Sitzung führt der Fehler zurück zur PIN-Eingabe

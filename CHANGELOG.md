@@ -1,5 +1,16 @@
 # Änderungen
 
+## 0.6.0 – Modul 06, Teil C1 (in Entwicklung, Zweig `modul06`)
+
+- **Rezeptberechnung** als eigenes Paket `app/calculation/` (Rechenkern ohne Datenbank, exakte Brüche, Rundung nur einmal je Zeile)
+- Bezugsgrößen Gesamtteig, Stückzahlen, Chargengröße, Mehl gesamt (inklusive Unterrezepten) und Leitrohstoff („gesamt“ oder je Zeile, Eingabe auch in kg oder Liter)
+- Jede Zutat auf ganze Gramm aufgerundet; Prozent-Toleranz abgerundet, mindestens 1 g; Gebinde/Stück + Rest; Anteil und Bäckerprozent; Hinweis „ergibt n Stück“; Plausibilitätsprüfungen und Hinweise
+- Schnittstelle ohne PIN: `GET /api/v1/recipes/{id}/basis-options`, `POST /api/v1/calculation`
+- Funktionen für den Wiegeablauf (Modul 09): `validate_basis` (Befund B4), `build_batch_items` (Befund B2), `tolerance_g`
+- Datenbank-Migration `0005_batch_item_version.sql`: Spalte `production_order.basis_item_position` (Leitrohstoff je Zeile) und Trigger gegen Chargenzeilen aus einer anderen Rezeptversion (Befund B2)
+- Prüfseite **„Berechnung“** unter `/admin/berechnung` mit Reiter auf den Seiten Rohstoffe und Rezepte; nach der Anmeldung geht es zur Prüfseite zurück
+- Migrationstests prüfen den neuesten Stand nicht mehr über eine feste Zahl
+
 ## 0.5.3 – Modul 05, Ergänzung C3-E1 (in Entwicklung)
 
 - **Sammelaktionen in der Rezeptliste:** Haken je Rezept und „alle auswählen“; sobald etwas angehakt ist, erscheint eine Leiste mit **Freischalten, Sperren, Archivieren, Löschen, Exportieren** und „Auswahl aufheben“
