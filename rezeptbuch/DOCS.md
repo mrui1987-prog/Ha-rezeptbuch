@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.5.1:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) unter `/admin/rezepte`. Rezeptimport aus der Importvorlage und Export folgen in 0.5.2. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.5.2:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -22,7 +22,7 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 | Adresse | Zweck |
 |---------|-------|
 | `/admin` | Rohstoffe (PIN) |
-| `/admin/rezepte` | Rezepte und Rezeptgruppen (PIN); Aufträge folgen in späteren Modulen |
+| `/admin/rezepte` | Rezepte, Rezeptgruppen, Import/Export (PIN); Aufträge folgen in späteren Modulen |
 
 Die Stationsadressen für die Tablets an den Waagen folgen in Modul 09/10 und sind in dieser Version noch nicht vorhanden.
 
@@ -48,12 +48,27 @@ Reiter **„Rezepte“** im Admin-Bereich.
 - **Neues Rezept:** Nummer wird vorgeschlagen (änderbar, solange das Rezept nirgends verwendet wurde). Der Name muss unter den nicht archivierten Rezepten eindeutig sein. Neue Rezepte starten **gesperrt** und erscheinen erst nach **„Freischalten“** in der Vorwahl.
 - **Zutaten:** Rohstoff oder Unterrezept über Nummer oder Name wählen, Menge in ganzen Gramm. **0 g = Handzugabe** (nur quittieren). Toleranz leer = Toleranz des Rohstoffs; 0 % wird gewogen (mindestens ±1 g). Archivierte Rohstoffe und Rezepte sind für neue Zeilen nicht wählbar. Ein Rezept darf sich nicht über Unterrezepte selbst enthalten.
 - **Speichern und Versionen:** Wurde die aktuelle Version schon produziert, entsteht automatisch eine neue Version. Sonst fragt das Rezeptbuch „Neue Version“ oder „Überschreiben“. Nur die Bestätigung einer „*“-Zeile mit „geprüft“ überschreibt ohne Rückfrage. Alte Versionen stehen als „old (n)“ in der Versionsliste und können nur angesehen werden.
-- Hat ein anderes Gerät das Rezept inzwischen gespeichert, wird nichts überschrieben: Meldung „bitte neu laden“.
-- **Stückgewichte und Chargengrößen** gehören zum Rezept und haben eine eigene Taste (keine neue Version). Wird ein Stückgewicht gelöscht, fallen die zugehörigen Chargengrößen nach Rückfrage mit weg.
+- Die Taste **„Zutaten speichern“** speichert Rezeptkopf, Schritte und Zutaten. **Hinweis an der Waage:** „am Anfang und am Ende“ oder „nur am Ende“; ein leerer Hinweistext erscheint nicht.
+- **Interne Notiz:** nur im Admin-Bereich sichtbar, nie an der Waage; Ändern legt keine neue Version an.
+- Hat ein anderes Gerät das Rezept inzwischen gespeichert, wird nichts überschrieben: Fenster „bitte neu laden“.
+- **Stückgewichte und Chargengrößen** gehören zum Rezept und haben eine eigene Taste im eigenen Kasten (keine neue Version). Ungespeicherte Änderungen dort werden deutlich angezeigt; „Zutaten speichern“ fragt dann „Beides speichern“ oder „Nur Zutaten speichern“. Wird ein Stückgewicht gelöscht, fragt das Rezeptbuch sofort nach den zugehörigen Chargengrößen, die mit wegfallen.
+- Der Haken **„mit archivierten Rohstoffen“** zeigt Rezepte, deren aktuelle Version einen archivierten Rohstoff enthält.
 - **Sperren** blendet ein Rezept nur in der Vorwahl aus; als Unterrezept bleibt es nutzbar. **Archivieren** geht nicht, solange das Rezept als Unterrezept in einem aktiven Rezept steckt. Archivierte Rezepte können wiederhergestellt, aber nicht bearbeitet werden. **Löschen** nur, wenn das Rezept nie verwendet wurde.
 - **Kopieren** übernimmt die aktuelle Version, Stückgewichte und Chargengrößen als „Kopie von …“ (gesperrt).
 - Gesamtgewicht und Summe Mehl zeigen den gespeicherten Stand der direkten Zeilen; Anteile und Bäckerprozent folgen mit Modul 06.
 - **Gruppen** im Reiter „Gruppen“: anlegen, umbenennen, Reihenfolge, löschen nur, wenn kein Rezept (auch kein archiviertes) darin ist.
+
+## Rezepte importieren und exportieren (.xlsx)
+
+Reiter **„Import/Export“**.
+
+- **Import** liest die Importvorlage: Blätter *Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen* und *Umrechnung*. Spalten werden an der Überschrift erkannt; Zusätze in Klammern zählen nicht, Spalten mit „(Formel)“ oder „(nicht importieren)“ werden nicht gelesen. Die Datei muss als `.xlsx` gespeichert sein (nicht `.xlsb`).
+- Ablauf wie beim CSV-Import: **Probelauf** → Bericht → **„Importieren“**; alles oder nichts.
+- Rohstoffe: wie der CSV-Import (Zuordnung über Nummer, sonst Name; vorhandene werden nach Bestätigung überschrieben; neue ohne Toleranz erhalten 0 %).
+- Rezepte: Rezeptnummer oder -name schon vorhanden = Fehler. Leere Nummer = nächste freie. Fehlende Gruppen werden angelegt. Importierte Rezepte sind **gesperrt**; Zeilen mit „*“ prüfen, dann freischalten.
+- Zeilen: Zutat über den Rohstoffnamen, Unterrezept über die Import-ID. **Menge g = Menge Original × Faktor** (g = 1, kg = 1 000, sonst Blatt „Umrechnung“, Schlüssel „Einheit Zutat“, z. B. „Stück Ei“), auf ganze Gramm gerundet. Leere Menge = 0 g Handzugabe. Fehlt der Faktor, ist das ein Fehler.
+- Chargengröße „Gewicht“ ohne Wert (oder mit Formel) = Gesamtgewicht des Rezepts; „Stück“ braucht Wert und Stückgewicht-Bezeichnung.
+- **Export:** alle Rezepte (aktuelle Version) mit den verwendeten Rohstoffen im Format der Vorlage, auf Wunsch mit archivierten. Die Datei kann in eine leere Datenbank wieder importiert werden. Kein Ersatz für die Datensicherung.
 
 ## Haftung
 

@@ -27,14 +27,16 @@ def _confirm(payload: dict, key: str) -> bool:
 
 @router.get("/recipes")
 def list_recipes(search: str | None = None, group_id: int | None = None, include_locked: bool = False,
-                 include_archived: bool = False, db: sqlite3.Connection = Depends(get_db)):
+                 include_archived: bool = False, archived_raw_materials: bool = False,
+                 db: sqlite3.Connection = Depends(get_db)):
     return service.list_recipes(db, search=search, group_id=group_id, include_locked=include_locked,
-                                include_archived=include_archived)
+                                include_archived=include_archived, archived_raw_materials=archived_raw_materials)
 
 
 @router.get("/recipes/{recipe_id}")
 def get_recipe(recipe_id: int, db: sqlite3.Connection = Depends(get_db)):
-    return service.get_recipe(db, recipe_id)
+    # ohne interne Notiz: die Stationen zeigen sie nie (KC2-2)
+    return service.get_recipe(db, recipe_id, include_internal=False)
 
 
 @router.get("/recipes/{recipe_id}/versions/{version_no}")
@@ -52,6 +54,12 @@ def list_groups(db: sqlite3.Connection = Depends(get_db)):
 @router.get("/admin/recipes/next-number", dependencies=admin)
 def next_number(db: sqlite3.Connection = Depends(get_db)):
     return {"number": service.next_number(db)}
+
+
+@router.get("/admin/recipes/{recipe_id}", dependencies=admin)
+def get_recipe_admin(recipe_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """Wie ``/recipes/{id}``, zusätzlich mit interner Notiz (nur Admin-Bereich)."""
+    return service.get_recipe(db, recipe_id)
 
 
 @router.post("/admin/recipes", status_code=201, dependencies=admin)

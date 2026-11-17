@@ -1,6 +1,6 @@
 """Schnittstellen der Importe (Modul 05, docs/rezepte.md Abschnitt 7).
 
-Die Datei kommt als Rohdaten im Anfragekörper (keine Bibliothek für Formular-Uploads
+Rohstoff-CSV (Teil C1) und Importvorlage .xlsx (Teil C3). Die Datei kommt als Rohdaten im Anfragekörper (keine Bibliothek für Formular-Uploads
 nötig). Ablauf: ``mode=check`` (Probelauf, Bericht) → ``mode=run`` mit derselben Datei;
 werden vorhandene Rohstoffe überschrieben, zusätzlich ``confirm_overwrite=true``.
 """
@@ -15,6 +15,7 @@ from ..auth.dependencies import require_admin
 from ..deps import get_db
 from ..errors import PayloadTooLargeError
 from .raw_materials_csv import MAX_BYTES, import_raw_materials_csv
+from .recipe_template import import_recipe_template
 
 router = APIRouter(prefix="/api/v1/admin/import", tags=["import"], dependencies=[Depends(require_admin)])
 
@@ -37,3 +38,10 @@ async def upload_body(request: Request) -> bytes:
 def import_raw_materials(mode: str = "check", confirm_overwrite: bool = False,
                          body: bytes = Depends(upload_body), db: sqlite3.Connection = Depends(get_db)):
     return import_raw_materials_csv(db, body, mode=mode, confirm_overwrite=confirm_overwrite)
+
+
+@router.post("/recipes")
+def import_recipes(mode: str = "check", confirm_overwrite: bool = False,
+                   body: bytes = Depends(upload_body), db: sqlite3.Connection = Depends(get_db)):
+    """Vorlagen-Import (.xlsx, Teil C3): Probelauf → Bericht → Import, alles oder nichts."""
+    return import_recipe_template(db, body, mode=mode, confirm_overwrite=confirm_overwrite)

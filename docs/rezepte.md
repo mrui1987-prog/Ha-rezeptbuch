@@ -1,6 +1,6 @@
 # Modul 05 – Rezeptverwaltung (Schritt B: Konzept)
 
-Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt, Praxisprüfung am 16.11.2026 bestanden**, Ergänzungen C1-E1 bis C1-E3 am 17.11.2026 von Michael bestätigt. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), am 17.11.2026 in `main` zusammengeführt; Praxisprüfung C2 offen. Teil C3 folgt (Abschnitt 12). Umsetzungshinweise und Abweichungen in Abschnitt 16.
+Status: **Konzept am 15.11.2026 von Michael freigegeben** (Konzeptfragen K05-1 bis K05-7, Abschnitt 13). **Teil C1 (0.5.0) am 15.11.2026 umgesetzt, Praxisprüfung am 16.11.2026 bestanden**, Ergänzungen C1-E1 bis C1-E3 am 17.11.2026 von Michael bestätigt. **Teil C2 (0.5.1) am 15.11.2026 auf dem Zweig `modul05-c2` umgesetzt** (vorgezogen vor der Praxisprüfung C1, Entscheidung Michael), am 17.11.2026 in `main` zusammengeführt, Praxisprüfung C2 am 17.11.2026 bestanden (Verbesserungen KC2-1 bis KC2-6). **Teil C3 (0.5.2) am 17.11.2026 umgesetzt** mit den Korrekturen KC2-1 bis KC2-6 und Migration `0004_recipe_note.sql` (interne Notiz); Praxisprüfung C3 offen. Umsetzungshinweise und Abweichungen in Abschnitt 16.
 Grundlage: Code-Stand `main` 807a198 (Add-on `rezeptbuch` 0.3.4), docs/datenmodell.md, docs/rohstoffe.md, docs/bedienkonzept.md, docs/importvorlage-rezepte.md, Entscheidungen M05-1 bis M05-15 und M05-13b vom 15.11.2026 (PROJEKTSTATUS Abschnitt 3).
 Zielversion: Add-on `rezeptbuch` **0.5.x** (Umsetzung in drei Teilen, Abschnitt 12).
 
@@ -182,7 +182,7 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 | Methode | Pfad | Inhalt |
 |---|---|---|
 | GET | `/recipes?search=&group_id=&include_locked=false&include_archived=false` | Liste: Nummer, Name, Gruppe, gesperrt, archiviert, Versionsnummer, Gesamtgewicht, Zeilen, Anzahl „*“. Vorgabe = was die Vorwahl zeigt (öffentlich, nicht archiviert). |
-| GET | `/recipes/{id}` | aktuelle Version mit Kopf, Schritten, Zeilen (je Rohstoffzeile `station_name`, Name, Nummer, Typ, wirksame Toleranz, Gebinde, archiviert; je Unterrezept Nummer, Name, gesperrt), Stückgewichte, Chargengrößen, Summen, `revision`, Versionsliste |
+| GET | `/recipes/{id}` | (ohne interne Notiz) aktuelle Version mit Kopf, Schritten, Zeilen (je Rohstoffzeile `station_name`, Name, Nummer, Typ, wirksame Toleranz, Gebinde, archiviert; je Unterrezept Nummer, Name, gesperrt), Stückgewichte, Chargengrößen, Summen, `revision`, Versionsliste |
 | GET | `/recipes/{id}/versions/{version_no}` | alte Version, nur lesen |
 | GET | `/recipe-groups` | Gruppen in Reihenfolge |
 
@@ -200,7 +200,8 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 | DELETE | `/admin/recipes/{id}` | R05-25 |
 | POST, PATCH, DELETE | `/admin/recipe-groups`, `/admin/recipe-groups/{id}` | Gruppen; `PUT /admin/recipe-groups/order` für die Reihenfolge |
 | POST | `/admin/import/raw-materials?mode=check` bzw. `mode=run&confirm_overwrite=true` | CSV-Import (6.1) – **umgesetzt in 0.5.0** |
-| POST | `/admin/import/recipes?mode=check` bzw. `mode=run&confirm_overwrite=true` | Vorlagen-Import (6.2) |
+| GET | `/admin/recipes/{id}` | wie `/recipes/{id}`, zusätzlich `internal_note` (0.5.2, KC2-2) |
+| POST | `/admin/import/recipes?mode=check` bzw. `mode=run&confirm_overwrite=true` | Vorlagen-Import (6.2) – **umgesetzt in 0.5.2** |
 | GET | `/admin/recipes/export.xlsx?include_archived=false` | Export (6.3, K05-1) |
 
 Fehlerantworten wie Modul 03 (`detail`, `field`, `code`): 400 ungültig, 401 nicht angemeldet, 404 nicht gefunden, 409 Konflikt (Name/Nummer, Kreis, Archivieren als Unterrezept, Löschen verwendet, `version_choice_required`, `changed_elsewhere`, `confirmation_required`, `overwrite_confirmation_required`), 413 Datei zu groß, 423 PIN gesperrt, 503 Datenbank nicht bereit.
@@ -268,7 +269,7 @@ Stand 0.5.0 (Teil C1): `text_rules.py`, `imports/` (`raw_materials_csv.py`, `rep
 |---|---|---|---|---|
 | C1 | Anpassungen Modul 03 (Abschnitt 5), Rohstoff-CSV-Import (6.1), Migration 0003, `text_rules.py` | 0.5.0 | Rohstoffe aus dem Blatt „Rohstoffe“ der Vorlage als CSV importieren, exportieren, in Excel ändern und wieder importieren (Überschreiben mit Warnhinweis) | umgesetzt 15.11.2026, Praxisprüfung offen |
 | C2 | Rezeptpflege, Gruppen, Versionen, Lese-API, Seite `/admin/rezepte` | 0.5.1 | Rezept anlegen, Versionen, Kopie, Archiv | umgesetzt 15.11.2026 auf Zweig `modul05-c2`, Praxisprüfung nach Zusammenführung |
-| C3 | Vorlagen-Import (6.2), Export (6.3) | 0.5.2 | Import der geprüften Vorlage, danach Prüfung „*“ und Freischalten | offen |
+| C3 | Vorlagen-Import (6.2), Export (6.3), Korrekturen KC2-1 bis KC2-6, Migration 0004 | 0.5.2 | Import der geprüften Vorlage, danach Prüfung „*“ und Freischalten; Export; KC2-Punkte | umgesetzt 17.11.2026, Praxisprüfung offen |
 
 Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 mit Freigabebericht wie bei Modul 03. C3 braucht die von Michael geprüfte Importvorlage nur für die Praxisprüfung, nicht für die Programmierung.
 
@@ -307,6 +308,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 15.11.2026 | Konzeptfragen K05-1 bis K05-7 entschieden und eingearbeitet: Export als .xlsx, Rohstoffe beim Import überschreiben (K05-2 mit 2a–2d, Abschnitt 6.1/6.2, Schnittstellen, Tests), übrige wie vorgeschlagen. |
 | 15.11.2026 | Konzept von Michael freigegeben. Teil C1 (0.5.0) umgesetzt; Umsetzungshinweise in Abschnitt 16. |
 | 15.11.2026 | Teil C2 (0.5.1) auf Zweig `modul05-c2` umgesetzt; Umsetzungshinweise in Abschnitt 16. |
+| 17.11.2026 | Teil C3 (0.5.2) umgesetzt: Vorlagen-Import, Export, KC2-1 bis KC2-6, interne Notiz (Migration 0004); Umsetzungshinweise in Abschnitt 16. |
 
 ## 16. Umsetzung und Abweichungen
 
@@ -356,3 +358,29 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 - Der Reiter „Import/Export“ folgt mit Teil C3; der Rohstoff-CSV-Import bleibt auf der Rohstoffseite.
 
 **Tests:** GitHub-Testlauf erfolgreich (Run 43739927541, Commit 64cd606): **424 Tests bestanden** (rezeptbuch 417, rezeptbuch_waage 7), 1 Warnung aus Fremdbibliothek. Der erste Lauf (Commit 562bb71) scheiterte nur am C1-Test, der die Version fest auf 0.5.0 prüfte; er vergleicht jetzt mit `config.yaml`. Lokal 353 bestanden, 4 übersprungen (API-Tests ohne FastAPI); neu 106 Fachtests (Service 72, Versionen 28, Gruppen 6) und 25 API-Tests (`test_recipe_api.py`). Zusätzlich lokaler Oberflächentest der Seite in Chrome (Testserver nur für die Prüfung, nicht im Repo): Anmeldung mit Rückkehr, Gruppe mit B2, Rezept anlegen, Versionsfrage, Stückgewichte/Chargengrößen, Freischalten mit 0-%-Warnung, alte Version ansehen, Kopie, „geprüft“, Unterrezept, Konflikt zweier Geräte, Archivieren als Unterrezept gesperrt; Darstellung am Handy (390 px) geprüft.
+
+### Teil C3 (0.5.2, 17.11.2026)
+
+**Neue Dateien:** `app/imports/recipe_template.py` (Vorlagen-Import), `app/exports/` (`recipe_template.py`, `router.py`), Migration `app/db/migrations/0004_recipe_note.sql`; Tests `test_import_recipes.py`, `test_export_recipes.py`, `test_import_export_api.py` (API, nur GitHub-Testlauf), Hilfsdatei `tests/template_factory.py` (erzeugt Testvorlagen mit den Spalten der echten Vorlage, ohne Betriebsdaten). `openpyxl` in `requirements.txt`. Geändert: `recipes/service.py` und `models.py` (interne Notiz, Filter, Stückgewichte/Chargengrößen zusätzlich als Funktionen für eine offene Transaktion `set_piece_weights_in_tx`, `set_batch_sizes_in_tx` – Verhalten der bisherigen Funktionen unverändert), `recipes/router.py`, `imports/report.py` und `router.py`, `main.py` (Export-Router vor dem Rezept-Router), `recipes.html`; Migrationstests auf Stand 4.
+
+**Interne Notiz (KC2-2, Entscheidung Michael 17.11.2026):** Spalte `recipe.internal_note` (höchstens 2 000 Zeichen) per Migration `0004` (`ADD COLUMN`). Gehört zum Rezept, nicht zur Version: Ändern erzeugt nie eine neue Version, wird als `update` protokolliert und erhöht den Bearbeitungsstand. Fehlt das Feld beim Speichern, bleibt die Notiz unverändert. Kopie, Export und Vorlagen-Import (Spalte „Notiz intern“, optional) übernehmen sie. Die Lese-Schnittstelle der Stationen `GET /recipes/{id}` liefert sie **nicht**; die Admin-Seite lädt über `GET /admin/recipes/{id}`.
+
+**Vorlagen-Import – Präzisierungen der Umsetzung** (im Rahmen von 6.2):
+- Spalten werden an der Überschrift erkannt, ein Zusatz in Klammern zählt nicht („Rezeptnummer (Vorschlag)“ = „Rezeptnummer“, „Toleranz (Pflicht)“ = „Toleranz“). Spalten mit „(Formel)“ oder „(nicht importieren)“ sowie Bemerkungen werden nicht gelesen; unbekannte Spalten erscheinen als Hinweis. Pflicht sind die Blätter „Rezepte“ und „Rezeptzeilen“; die übrigen sind optional.
+- Fußnoten unter den Tabellen (nur erste Zelle mit einem Satz gefüllt, wie in der Vorlage) werden mit Hinweis übersprungen.
+- Die Datei wird zweimal geöffnet: mit gespeicherten Werten und mit Formeln. So wird erkannt, ob „Wert“ einer Chargengröße eine Formel ist (dann = Gesamtgewicht, wie leer), und der gespeicherte Wert von „Menge g (Formel)“ dient nur dem Vergleich (Hinweis bei Abweichung, K05-6).
+- Einheit leer = g. Schlüssel der Umrechnung „Einheit Zutat“ ohne Groß-/Kleinschreibung. Mengen auch als Text mit Komma („0,75“). Rundung kaufmännisch (2,5 → 3).
+- Zeilenart leer = Rohstoff, bei nur „Unterrezept Import-ID“ = Unterrezept. Werte „Rohstoff/Unterrezept“, „Beginn/Ende“ (auch „am Anfang und am Ende“/„nur am Ende“), „Gewicht/Stück“, Toleranzeinheit „g/percent/%“; „Prüfen“ = „*“ (auch x/ja/1).
+- Zutaten werden über den **Namen** dem Rohstoffstamm nach Schritt 1 zugeordnet (aktive Rohstoffe, ohne Groß-/Kleinschreibung); ein Rohstoff muss daher nicht im Blatt „Rohstoffe“ stehen, wenn er schon in der Datenbank ist. Archivierter Rohstoff = Fehler.
+- Zeilen werden nach „Position“ sortiert (ohne Position in Blattreihenfolge). Toleranzeinheit ohne Wert = Fehler.
+- Leere Rezeptnummern erhalten fortlaufend Nummern nach der höchsten vorhandenen **bzw. in der Datei genannten** Nummer (kein Zusammenstoß mit später in der Datei genannten Nummern).
+- Doppelte Import-ID, Nummer oder Name innerhalb der Datei werden vorab gemeldet. Unterrezepte werden zuerst angelegt; ein Rezept, dessen Unterrezept Fehler hat, wird mit Meldung nicht angelegt. Fehler der Service-Schicht werden Blatt und Zeile zugeordnet (z. B. Toleranz über 100 % → Blatt Rezeptzeilen, Zeile n).
+- Eine Formel in einer Eingabespalte (z. B. Rezeptname) wird mit ihrem gespeicherten Wert gelesen.
+- Schutz: höchstens 5 MB, entpackt höchstens 100 MB, 5 000 Zeilen je Blatt; `.xlsb` wird mit Hinweis „als .xlsx speichern“ abgelehnt.
+- Antworten wie beim CSV-Import (Probelauf 200; Import mit Fehlern 400 `import_failed`; Überschreiben ohne Bestätigung 409 `overwrite_confirmation_required`; jeweils mit Bericht). Der Bericht enthält zusätzlich die neuen Rezepte (Nummer, Name, Zeilen, Gesamtgewicht, Anzahl „*“) und neuen Gruppen.
+
+**Export – Präzisierungen:** Blatt „Info“ vorne, danach Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen, Rohstoffe (nur in den exportierten Versionen verwendete, mit Nummer), leere Umrechnung. Archivierte Unterrezepte exportierter Rezepte kommen immer mit. Rezepte-Blatt mit Status und Version „(nicht importieren)“. Eigene Zeilentoleranzen werden mitgegeben, die Toleranz des Rohstoffs nicht. Dateiname `rezepte_JJJJ-MM-TT.xlsx`. Ein Re-Import in dieselbe Datenbank meldet erwartungsgemäß „Nummer schon vergeben“ (M05-11).
+
+**Korrekturen KC2-1 bis KC2-6** (Seite `recipes.html`): „Kurzname: …“ statt „Station: …“; Auswahl „am Anfang und am Ende“ (`start`) / „nur am Ende“ (`end`) mit Satz „Ist der Hinweistext leer, erscheint an der Waage kein Hinweis.“; Taste „Zutaten speichern“ mit Erläuterung; Kasten Stückgewichte/Chargengrößen bei ungespeicherten Änderungen farbig umrandet mit Warnzeile, „Zutaten speichern“ fragt dann „Beides speichern / Nur Zutaten speichern“, ungespeicherte Stückgewichte bleiben nach dem Speichern der Zutaten stehen (bisher stillschweigend verworfen); Rückfrage beim Klick auf ✕ eines Stückgewichts mit den betroffenen Chargengrößen (Rückfrage des Servers beim Speichern bleibt); Haken „mit archivierten Rohstoffen“ (API `GET /recipes?archived_raw_materials=true`, Listenfeld `archived_raw_material_count`, Spalte „Hinweis“); Konflikt „bitte neu laden“ als Fenster mit „Neu laden“ (auch beim Speichern der Stückgewichte).
+
+**Tests:** lokal 411 bestanden, 5 übersprungen (API-Tests ohne FastAPI); neu 45 Import-, 7 Export- und 6 Servicetests, 9 API-Tests (nur GitHub-Testlauf). Zusätzlich lokaler Oberflächentest in Chrome mit einem Prüfserver (nur für die Prüfung, nicht im Repo): Probelauf und Import einer Testvorlage, Export-Download, Filter „mit archivierten Rohstoffen“, Kurzname-Hinweis, interne Notiz, KC2-4-Rückfrage, KC2-3 „Beides speichern“ mit Server-Sicherung, KC2-6-Fenster mit „Neu laden“, Handy-Ansicht (390 px).

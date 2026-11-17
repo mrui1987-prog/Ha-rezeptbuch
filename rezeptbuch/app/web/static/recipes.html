@@ -53,6 +53,11 @@
   #ask-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 30rem; width: 100%; color: #222; max-height: 85vh; overflow-y: auto; }
   #ask-text { white-space: pre-line; }
   #ask-box .row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+  .panel.unsaved { border: 2px solid #d48a00; background: #fffaf0; }
+  .unsaved-note { background: #fde7c4; color: #7a4a00; padding: .4rem .6rem; border-radius: 4px; margin: .4rem 0; font-weight: bold; }
+  #io-report h3 { font-size: 1rem; margin: .8rem 0 .3rem; }
+  #io-report ul { margin: .2rem 0; padding-left: 1.3rem; }
+  #io-report li { margin: .15rem 0; }
 </style>
 </head>
 <body>
@@ -62,6 +67,7 @@
   <a id="nav-raw" href="#">Rohstoffe</a>
   <button type="button" id="nav-recipes" class="active">Rezepte</button>
   <button type="button" id="nav-groups">Gruppen</button>
+  <button type="button" id="nav-io">Import/Export</button>
   <span class="grow"></span>
   <button type="button" id="nav-logout">Abmelden</button>
 </nav>
@@ -76,11 +82,12 @@
       <select id="filter-group" aria-label="Gruppe"><option value="">alle Gruppen</option></select>
       <label class="inline"><input id="show-locked" type="checkbox" checked> gesperrte zeigen</label>
       <label class="inline"><input id="show-archived" type="checkbox"> archivierte zeigen</label>
+      <label class="inline" title="nur Rezepte, deren aktuelle Version einen archivierten Rohstoff enthält"><input id="only-archived-rm" type="checkbox"> mit archivierten Rohstoffen</label>
     </div>
     <div id="list-msg" class="msg hidden" role="alert"></div>
     <div class="scroll">
       <table>
-        <thead><tr><th>Nr.</th><th>Name</th><th>Gruppe</th><th>Status</th><th>Version</th><th class="num">Gesamt g</th><th class="num">Zeilen</th><th>„*“</th><th></th></tr></thead>
+        <thead><tr><th>Nr.</th><th>Name</th><th>Gruppe</th><th>Status</th><th>Version</th><th class="num">Gesamt g</th><th class="num">Zeilen</th><th>„*“</th><th>Hinweis</th><th></th></tr></thead>
         <tbody id="list-rows"></tbody>
       </table>
     </div>
@@ -110,8 +117,12 @@
       </div>
       <label for="f-note">Hinweistext (optional)</label>
       <textarea id="f-note" rows="3" maxlength="2000" style="width:100%"></textarea>
-      <label class="inline">Anzeige des Hinweises:
-        <select id="f-note-display"><option value="end">am Ende der Verwiegung</option><option value="start">zu Beginn der Verwiegung</option></select></label>
+      <label class="inline">Hinweis an der Waage anzeigen:
+        <select id="f-note-display"><option value="start">am Anfang und am Ende</option><option value="end">nur am Ende</option></select></label>
+      <p class="small">Ist der Hinweistext leer, erscheint an der Waage kein Hinweis.</p>
+      <label for="f-internal-note">Interne Notiz (nur hier im Admin-Bereich, nie an der Waage)</label>
+      <textarea id="f-internal-note" rows="2" maxlength="2000" style="width:100%"></textarea>
+      <p class="small">Die interne Notiz gehört zum Rezept: Ändern legt keine neue Version an.</p>
     </div>
 
     <div class="panel">
@@ -138,13 +149,15 @@
     </div>
 
     <div class="toolbar">
-      <button type="button" id="edit-save"><b>Speichern</b></button>
+      <button type="button" id="edit-save"><b>Zutaten speichern</b></button>
       <span id="dirty" class="warn hidden">ungespeicherte Änderungen</span>
+      <span class="small">speichert Rezeptkopf, Schritte und Zutaten – nicht die Stückgewichte und Chargengrößen unten</span>
     </div>
 
     <div id="portion-panel" class="panel">
       <h2>Stückgewichte und Chargengrößen</h2>
-      <p class="small">Gehören zum Rezept (keine neue Version) und werden mit einer eigenen Taste gespeichert.</p>
+      <p class="small">Gehören zum Rezept (keine neue Version) und werden <b>nur mit der Taste in diesem Kasten</b> gespeichert.</p>
+      <div id="portion-unsaved" class="unsaved-note hidden">Ungespeicherte Änderungen bei Stückgewichten oder Chargengrößen – bitte mit der Taste unten in diesem Kasten speichern.</div>
       <div class="scroll"><table>
         <thead><tr><th>Stückgewicht (Bezeichnung)</th><th>Gewicht g</th><th></th></tr></thead>
         <tbody id="piece-rows"></tbody></table></div>
@@ -165,6 +178,34 @@
         <tbody id="version-rows"></tbody></table></div>
       <div id="version-view" class="hidden" style="margin-top:.8rem"></div>
     </div>
+  </section>
+
+  <!-- Ansicht: Import/Export (Teil C3) -->
+  <section id="view-io" class="hidden">
+    <h1>Import/Export</h1>
+    <div class="panel">
+      <h2>Rezepte aus der Importvorlage importieren (.xlsx)</h2>
+      <p class="small">Gelesen werden die Blätter Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen und Umrechnung.
+        Erst „Probelauf“ (ändert nichts, zeigt den Bericht), dann „Importieren“. Alles oder nichts: Bei einem Fehler wird nichts gespeichert.
+        Rezeptnummer oder Rezeptname schon vorhanden = Fehler. Vorhandene Rohstoffe werden mit den Werten der Datei überschrieben (mit Rückfrage).
+        Importierte Rezepte starten <b>gesperrt</b>; Zeilen mit „*“ bitte prüfen und dann freischalten.</p>
+      <input id="io-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div class="toolbar">
+        <button type="button" id="io-check">Probelauf</button>
+        <button type="button" id="io-run" disabled>Importieren</button>
+      </div>
+      <div id="io-msg" class="msg hidden" role="alert"></div>
+      <div id="io-report"></div>
+    </div>
+    <div class="panel">
+      <h2>Rezepte exportieren (.xlsx)</h2>
+      <p class="small">Alle Rezepte (aktuelle Version) im Format der Importvorlage, mit den verwendeten Rohstoffen.
+        Die Datei kann wieder importiert werden, z. B. in eine neue Installation. Kein Ersatz für die Datensicherung.</p>
+      <label class="inline"><input id="io-archived" type="checkbox"> archivierte Rezepte mit exportieren</label>
+      <div class="toolbar"><button type="button" id="io-export">Export herunterladen</button></div>
+      <div id="io-export-msg" class="msg hidden" role="alert"></div>
+    </div>
+    <p class="small">Der CSV-Import und -Export nur der Rohstoffe liegt auf der Seite „Rohstoffe“.</p>
   </section>
 
   <!-- Ansicht: Gruppen -->
@@ -214,13 +255,15 @@ async function api(path, options) {
   const headers = {};
   if (token) headers["X-Rezeptbuch-Session"] = token;
   let body;
-  if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+  if (opts.file !== undefined) { headers["Content-Type"] = "application/octet-stream"; body = opts.file; }
+  else if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
   let res;
   try {
     res = await fetch(API + path, { method: opts.method || "GET", headers: headers, body: body });
   } catch (e) {
     const err = new Error("Keine Verbindung zum Rezeptserver."); err.status = 0; err.data = {}; throw err;
   }
+  if (opts.raw && res.ok) return res;
   let data = null;
   if (res.status !== 204) { try { data = await res.json(); } catch (e) { data = null; } }
   if (!res.ok) {
@@ -287,20 +330,27 @@ function showView(name) {
   show("view-list", name === "list");
   show("view-edit", name === "edit");
   show("view-groups", name === "groups");
-  $("nav-recipes").classList.toggle("active", name !== "groups");
+  show("view-io", name === "io");
+  $("nav-recipes").classList.toggle("active", name === "list" || name === "edit");
   $("nav-groups").classList.toggle("active", name === "groups");
+  $("nav-io").classList.toggle("active", name === "io");
   window.scrollTo(0, 0);
 }
 
 async function leaveEditor() {
   if (!$("view-edit").classList.contains("hidden") && (dirty || portionDirty)) {
-    return (await ask("Ungespeicherte Änderungen verwerfen?", [{ label: "Verwerfen", value: true }])) === true;
+    const what = [];
+    if (dirty) what.push("Rezeptkopf/Zutaten");
+    if (portionDirty) what.push("Stückgewichte/Chargengrößen");
+    return (await ask("Ungespeicherte Änderungen (" + what.join(", ") + ") verwerfen?",
+      [{ label: "Verwerfen", value: true }])) === true;
   }
   return true;
 }
 
 $("nav-recipes").addEventListener("click", async () => { if (await leaveEditor()) { showView("list"); loadList(); } });
 $("nav-groups").addEventListener("click", async () => { if (await leaveEditor()) { showView("groups"); loadGroups(); } });
+$("nav-io").addEventListener("click", async () => { if (await leaveEditor()) { showView("io"); } });
 $("nav-raw").addEventListener("click", async (ev) => { if (!(await leaveEditor())) ev.preventDefault(); });
 $("nav-logout").addEventListener("click", async () => {
   try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
@@ -357,6 +407,7 @@ async function loadList() {
   if ($("filter-group").value) q.set("group_id", $("filter-group").value);
   if ($("show-locked").checked) q.set("include_locked", "true");
   if ($("show-archived").checked) q.set("include_archived", "true");
+  if ($("only-archived-rm").checked) q.set("archived_raw_materials", "true");
   try {
     await loadGroupsData();
     const items = await api("recipes?" + q.toString());
@@ -366,6 +417,8 @@ async function loadList() {
       td(tr, String(r.number)); td(tr, r.name); td(tr, r.group_name || ""); td(tr, statusBadge(r));
       td(tr, String(r.version_no)); td(tr, String(r.total_g), "num"); td(tr, String(r.item_count), "num");
       td(tr, r.review_count ? r.review_count + " „*“" : "", r.review_count ? "warn" : "");
+      const n = r.archived_raw_material_count;
+      td(tr, n ? n + " archivierte" + (n === 1 ? "r Rohstoff" : " Rohstoffe") : "", n ? "warn" : "");
       td(tr, button("Bearbeiten", () => openRecipe(r.id)));
       body.appendChild(tr);
     });
@@ -374,7 +427,7 @@ async function loadList() {
 }
 
 $("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 300); });
-["filter-group", "show-locked", "show-archived"].forEach((id) => $(id).addEventListener("change", loadList));
+["filter-group", "show-locked", "show-archived", "only-archived-rm"].forEach((id) => $(id).addEventListener("change", loadList));
 
 // ---- Editor: Laden ------------------------------------------------------------------
 
@@ -382,7 +435,7 @@ function fromServer(r) {
   return {
     id: r.id, revision: r.revision, number: r.number, numberLocked: r.number_locked,
     name: r.name, group_id: r.group_id, knead_slow_min: r.knead_slow_min, knead_fast_min: r.knead_fast_min,
-    note: r.note || "", note_display: r.note_display,
+    note: r.note || "", note_display: r.note_display, internal_note: r.internal_note || "",
     steps: r.steps.map((s) => ({ name: s.name })),
     items: r.items.map((i) => ({
       id: i.id, type: i.type,
@@ -402,7 +455,7 @@ function fromServer(r) {
 
 function emptyRecipe(number) {
   return { id: null, revision: null, number: number, numberLocked: false, name: "", group_id: null,
-           knead_slow_min: null, knead_fast_min: null, note: "", note_display: "end",
+           knead_slow_min: null, knead_fast_min: null, note: "", note_display: "end", internal_note: "",
            steps: [], items: [], pieces: [], batches: [] };
 }
 
@@ -414,7 +467,7 @@ async function openRecipe(id) {
       const next = await api("admin/recipes/next-number");
       loaded = null; rec = emptyRecipe(next.number);
     } else {
-      loaded = await api("recipes/" + id);
+      loaded = await api("admin/recipes/" + id);       // mit interner Notiz
       rec = fromServer(loaded);
     }
     await loadChoices();
@@ -429,7 +482,11 @@ $("btn-new").addEventListener("click", () => openRecipe(null));
 // ---- Editor: Darstellung ---------------------------------------------------------------
 
 function markDirty() { dirty = true; show("dirty", true); }
-function markPortionDirty() { portionDirty = true; show("portion-dirty", true); }
+function markPortionDirty() { portionDirty = true; showPortionDirty(); }
+function showPortionDirty() {
+  show("portion-dirty", portionDirty); show("portion-unsaved", portionDirty);
+  $("portion-panel").classList.toggle("unsaved", portionDirty);
+}
 
 function renderEditor() {
   const isNew = rec.id === null;
@@ -446,7 +503,8 @@ function renderEditor() {
   $("f-knead-fast").value = rec.knead_fast_min === null || rec.knead_fast_min === undefined ? "" : String(rec.knead_fast_min);
   $("f-note").value = rec.note;
   $("f-note-display").value = rec.note_display;
-  show("dirty", dirty); show("portion-dirty", portionDirty);
+  $("f-internal-note").value = rec.internal_note;
+  show("dirty", dirty); showPortionDirty();
   renderStatus(); renderSteps(); renderItems(); renderSums(); renderPieces(); renderBatches(); renderVersions();
   show("portion-panel", !isNew); show("version-panel", !isNew);
 }
@@ -534,7 +592,7 @@ function renderItems() {
         const m = rawById(it.ref_id);
         if (m) {
           const parts = [];
-          if (m.display_name) parts.push("Station: " + m.display_name);
+          if (m.display_name) parts.push("Kurzname: " + m.display_name);
           if (m.type === "flour") parts.push("Mehl");
           if (m.archived) parts.push("Rohstoff archiviert");
           hint.textContent = parts.join(" · ");
@@ -618,7 +676,7 @@ function renderSums() {
 }
 
 // Felder des Kopfs
-[["f-number", "number"], ["f-name", "name"], ["f-note", "note"]].forEach(([id, key]) => {
+[["f-number", "number"], ["f-name", "name"], ["f-note", "note"], ["f-internal-note", "internal_note"]].forEach(([id, key]) => {
   $(id).addEventListener("input", () => { rec[key] = $(id).value; markDirty(); });
 });
 $("f-knead-slow").addEventListener("input", () => { rec.knead_slow_min = $("f-knead-slow").value; markDirty(); });
@@ -646,6 +704,7 @@ function payload() {
     knead_fast_min: blankToNull(rec.knead_fast_min),
     note: rec.note,
     note_display: rec.note_display,
+    internal_note: rec.internal_note,
     steps: rec.steps.map((s) => ({ name: s.name })),
     items: rec.items.map((it) => {
       const item = { id: it.id, type: it.type, amount_g: blankToNull(it.amount_g), step_no: it.step_no,
@@ -663,17 +722,37 @@ function payload() {
 
 async function afterLoad(result, message) {
   loaded = result;
+  const keep = portionDirty && rec && rec.id === result.id ? { pieces: rec.pieces, batches: rec.batches } : null;
   rec = fromServer(result);
+  if (keep) { rec.pieces = keep.pieces; rec.batches = keep.batches; }   // ungespeicherte Stückgewichte bleiben stehen (KC2-3)
+  else portionDirty = false;
   await loadChoices();
   dirty = false;
   renderEditor();
   if (message) showMsg("edit-msg", message, "info");
 }
 
+// Konflikt zweier Geräte: Fenster in der Mitte mit „Neu laden“ (KC2-6)
+async function conflictDialog(err) {
+  const choice = await ask(err.message + "\n\nIhre Eingaben auf diesem Gerät sind nicht gespeichert. „Neu laden“ holt den "
+    + "aktuellen Stand und verwirft sie.", [{ label: "Neu laden", value: true }]);
+  if (choice) { dirty = false; portionDirty = false; openRecipe(rec.id); }
+  else showMsg("edit-msg", err.message + "\nIhre Eingaben sind noch nicht gespeichert.");
+}
+
 $("edit-save").addEventListener("click", async () => {
   showMsg("edit-msg", "");
   let body;
   try { body = payload(); } catch (e) { showMsg("edit-msg", e.message); return; }
+  let alsoPortions = false;
+  if (portionDirty && rec.id !== null) {
+    // KC2-3: Stückgewichte/Chargengrößen werden mit dieser Taste nicht gespeichert – nicht stillschweigend übergehen
+    const choice = await ask("Bei Stückgewichten oder Chargengrößen gibt es ungespeicherte Änderungen. "
+      + "Die Taste „Zutaten speichern“ speichert diese nicht.",
+      [{ label: "Beides speichern", value: "both" }, { label: "Nur Zutaten speichern", value: "items" }]);
+    if (!choice) return;
+    alsoPortions = choice === "both";
+  }
   $("edit-save").disabled = true;
   try {
     if (rec.id === null) {
@@ -695,12 +774,11 @@ $("edit-save").addEventListener("click", async () => {
       } else { throw err; }
     }
     await afterLoad(result, result.save_result ? result.save_result.message : "Gespeichert.");
+    if (alsoPortions) await savePortions();
+    else if (portionDirty) showMsg("portion-msg", "Stückgewichte/Chargengrößen sind noch nicht gespeichert.");
   } catch (err) {
-    if (err.status === 409 && err.data.code === "changed_elsewhere") {
-      showMsg("edit-msg", err.message + "\nIhre Eingaben sind noch nicht gespeichert. „Neu laden“ verwirft sie.");
-      const reload = button("Neu laden", () => { dirty = false; portionDirty = false; openRecipe(rec.id); }, "");
-      $("edit-msg").appendChild(el("br")); $("edit-msg").appendChild(reload);
-    } else { handleError(err, "edit-msg"); }
+    if (err.status === 409 && err.data.code === "changed_elsewhere") await conflictDialog(err);
+    else handleError(err, "edit-msg");
   } finally { $("edit-save").disabled = false; }
 });
 
@@ -778,9 +856,24 @@ function renderPieces() {
     const w = el("input"); w.className = "w-num"; w.inputMode = "numeric"; w.value = p.weight_g;
     w.addEventListener("input", () => { p.weight_g = w.value; markPortionDirty(); });
     td(tr, w);
-    td(tr, button("✕", () => { rec.pieces.splice(idx, 1); markPortionDirty(); renderPieces(); renderBatches(); }));
+    td(tr, button("✕", () => deletePiece(idx)));
     body.appendChild(tr);
   });
+}
+
+// KC2-4: Hinweis auf betroffene Chargengrößen schon beim Löschen (die Rückfrage beim Speichern bleibt als Sicherung)
+async function deletePiece(idx) {
+  const label = rec.pieces[idx].label.trim().toLowerCase();
+  const affected = label ? rec.batches.filter((b) => b.kind === "pieces" && b.piece_label.trim().toLowerCase() === label) : [];
+  if (affected.length) {
+    const names = affected.map((b) => "„" + (b.label || "ohne Bezeichnung") + "“").join(", ");
+    const ok = await ask("Mit dem Stückgewicht „" + rec.pieces[idx].label + "“ werden auch diese Chargengrößen gelöscht: "
+      + names + ".", [{ label: "Löschen", value: true }]);
+    if (!ok) return;
+    rec.batches = rec.batches.filter((b) => affected.indexOf(b) < 0);
+  }
+  rec.pieces.splice(idx, 1);
+  markPortionDirty(); renderPieces(); renderBatches();
 }
 
 function renderBatches() {
@@ -813,7 +906,9 @@ function renderBatches() {
 $("piece-add").addEventListener("click", () => { rec.pieces.push({ id: null, label: "", weight_g: "" }); markPortionDirty(); renderPieces(); });
 $("batch-add").addEventListener("click", () => { rec.batches.push({ id: null, label: "", kind: "weight", value: "", piece_label: "" }); markPortionDirty(); renderBatches(); });
 
-$("portion-save").addEventListener("click", async () => {
+$("portion-save").addEventListener("click", () => savePortions());
+
+async function savePortions() {
   showMsg("portion-msg", "");
   $("portion-save").disabled = true;
   try {
@@ -840,14 +935,14 @@ $("portion-save").addEventListener("click", async () => {
     // Kopf/Zeilen-Eingaben bleiben erhalten, nur Bearbeitungsstand und Stückgewichte übernehmen
     loaded = r; rec.revision = r.revision;
     const fresh = fromServer(r); rec.pieces = fresh.pieces; rec.batches = fresh.batches;
-    portionDirty = false; show("portion-dirty", false);
+    portionDirty = false; showPortionDirty();
     renderPieces(); renderBatches();
     showMsg("portion-msg", "Stückgewichte und Chargengrößen gespeichert.", "info");
   } catch (err) {
-    if (err.status === 409 && err.data.code === "changed_elsewhere") showMsg("portion-msg", err.message);
+    if (err.status === 409 && err.data.code === "changed_elsewhere") await conflictDialog(err);
     else handleError(err, "portion-msg");
   } finally { $("portion-save").disabled = false; }
-});
+}
 
 // ---- Versionen ---------------------------------------------------------------------------
 
@@ -871,7 +966,7 @@ async function viewVersion(no) {
     const facts = [];
     if (v.knead) facts.push("Knetzeit " + v.knead);
     facts.push("Gesamtgewicht " + v.sums.total_g + " g, Mehl " + v.sums.flour_g + " g");
-    if (v.note) facts.push("Hinweis (" + (v.note_display === "start" ? "zu Beginn" : "am Ende") + "): " + v.note);
+    if (v.note) facts.push("Hinweis (" + (v.note_display === "start" ? "am Anfang und am Ende" : "nur am Ende") + "): " + v.note);
     box.appendChild(el("p", facts.join(" · "), "small"));
     const steps = {}; v.steps.forEach((s) => { steps[s.step_no] = s.name; });
     const table = el("table");
@@ -940,6 +1035,100 @@ $("group-add").addEventListener("click", async () => {
     $("group-new-name").value = "";
     await loadGroups();
   } catch (err) { handleError(err, "group-msg"); }
+});
+
+// ---- Import/Export (Teil C3) ---------------------------------------------------------------
+
+let ioFile = null;          // dieselbe Datei für Probelauf und Import
+let ioReport = null;
+
+function where(entry) {
+  const parts = [];
+  if (entry.sheet) parts.push("Blatt " + entry.sheet);
+  if (entry.line) parts.push("Zeile " + entry.line);
+  if (entry.column) parts.push(entry.column);
+  return parts.length ? parts.join(", ") + ": " : "";
+}
+
+function addList(box, title, items, render) {
+  if (!items || !items.length) return;
+  box.appendChild(el("h3", title));
+  const ul = el("ul");
+  items.forEach((item) => ul.appendChild(render(item)));
+  box.appendChild(ul);
+}
+
+function renderIoReport(report) {
+  ioReport = report;
+  const box = $("io-report"); box.textContent = "";
+  box.appendChild(el("p", report.summary, report.ok ? "" : "warn"));
+  addList(box, "Fehler (Import nicht möglich)", report.errors, (e) => el("li", where(e) + e.message, "warn"));
+  addList(box, "Rezepte neu (" + report.recipes.length + ")", report.recipes, (r) =>
+    el("li", "Nr. " + r.number + " " + r.name + " (" + r.import_id + ", " + r.lines + " Zeilen, " + r.total_g + " g"
+      + (r.review_count ? ", " + r.review_count + " „*“" : "") + ")"));
+  addList(box, "Gruppen neu (" + report.groups_created.length + ")", report.groups_created, (g) => el("li", g));
+  addList(box, "Rohstoffe werden überschrieben (" + report.changes.length + ")", report.changes, (c) => {
+    const li = el("li");
+    li.appendChild(el("b", "Nr. " + c.number + " " + c.name + ": "));
+    li.appendChild(document.createTextNode(c.fields.map((f) => f.field + " " + f.old + " → " + f.new).join("; ")));
+    if (c.type_change_recipes) li.appendChild(el("span", " – Typwechsel betrifft " + c.type_change_recipes + " Rezept(e)", "warn"));
+    return li;
+  });
+  addList(box, "Rohstoffe neu (" + report.created.length + ")", report.created, (c) => el("li", "Nr. " + c.number + " " + c.name));
+  addList(box, "Toleranz 0 % – wird auf ±1 g genau gewogen, bitte prüfen (" + report.zero_percent.length + ")",
+    report.zero_percent, (z) => el("li", "Nr. " + z.number + " " + z.name + " (" + z.reason + ")"));
+  addList(box, "Hinweise", report.hints, (h) => el("li", where(h) + h.message));
+  $("io-run").disabled = !(report.ok && !report.imported);
+}
+
+$("io-file").addEventListener("change", () => {
+  ioFile = $("io-file").files[0] || null; ioReport = null;
+  $("io-report").textContent = ""; $("io-run").disabled = true; showMsg("io-msg", "");
+});
+
+$("io-check").addEventListener("click", async () => {
+  showMsg("io-msg", "");
+  if (!ioFile) { showMsg("io-msg", "Bitte zuerst die Importvorlage (.xlsx) wählen."); return; }
+  $("io-check").disabled = true;
+  try { renderIoReport(await api("admin/import/recipes?mode=check", { method: "POST", file: ioFile })); }
+  catch (err) { $("io-report").textContent = ""; handleError(err, "io-msg"); }
+  finally { $("io-check").disabled = false; }
+});
+
+$("io-run").addEventListener("click", async () => {
+  if (!ioFile || !ioReport || !ioReport.ok) return;
+  const n = ioReport.counts.overwritten;
+  let path = "admin/import/recipes?mode=run";
+  const r = ioReport.counts.recipes;
+  let text = r + (r === 1 ? " Rezept wird" : " Rezepte werden") + " angelegt (gesperrt).";
+  if (n > 0) {
+    text += "\n" + n + (n === 1 ? " Rohstoff wird" : " Rohstoffe werden") + " mit den Werten der Datei überschrieben.";
+    path += "&confirm_overwrite=true";
+  }
+  if (!(await ask(text + "\nImportieren?", [{ label: "Importieren", value: true }]))) return;
+  $("io-run").disabled = true;
+  try {
+    renderIoReport(await api(path, { method: "POST", file: ioFile }));
+    showMsg("io-msg", "Import abgeschlossen. Die Rezepte sind gesperrt: bitte „*“ prüfen und freischalten.", "info");
+  } catch (err) {
+    if (err.data && err.data.report) renderIoReport(err.data.report);   // Server prüft erneut
+    handleError(err, "io-msg");
+  }
+});
+
+$("io-export").addEventListener("click", async () => {
+  showMsg("io-export-msg", "");
+  try {
+    const res = await api("admin/recipes/export.xlsx" + ($("io-archived").checked ? "?include_archived=true" : ""), { raw: true });
+    const blob = await res.blob();
+    const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = match ? match[1] : "rezepte.xlsx";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showMsg("io-export-msg", "Export erstellt.", "info");
+  } catch (err) { handleError(err, "io-export-msg"); }
 });
 
 // ---- Start -------------------------------------------------------------------------------

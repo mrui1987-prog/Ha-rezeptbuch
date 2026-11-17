@@ -1,7 +1,8 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.5.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
-und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2). Beim Start wird die Datenbank geöffnet, geprüft und
+Stand 0.5.2: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
+Vorlagen-Import und Export .xlsx (Modul 05, Teil C3). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -18,6 +19,7 @@ from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
 from .db import DatabaseError, default_db_path, init_database
 from .errors import ServiceError
+from .exports.router import router as exports_router
 from .imports.router import router as imports_router
 from .raw_materials.router import router as raw_materials_router
 from .recipes.router import router as recipes_router
@@ -68,6 +70,7 @@ async def database_busy_handler(request: Request, exc: sqlite3.OperationalError)
 app.include_router(auth_router)
 app.include_router(raw_materials_router)
 app.include_router(imports_router)
+app.include_router(exports_router)      # vor recipes_router: /admin/recipes/export.xlsx ist keine Rezept-ID
 app.include_router(recipes_router)
 app.include_router(web_router)
 

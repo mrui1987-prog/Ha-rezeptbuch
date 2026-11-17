@@ -81,7 +81,7 @@ def test_migration_on_database_with_data(tmp_path):
     conn = init_database(db)
     rows = conn.execute("SELECT number, name, display_name FROM raw_material ORDER BY number").fetchall()
     assert [tuple(r) for r in rows] == [(1, "Weizenmehl 550", None), (2, "Ei", None)]
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     backups = list((tmp_path / "backups").glob("pre_migration_0001_*.db"))
     assert len(backups) == 1
     conn.close()

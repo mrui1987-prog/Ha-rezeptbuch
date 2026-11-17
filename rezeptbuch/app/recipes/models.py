@@ -165,6 +165,13 @@ def validate_recipe(data: dict) -> dict:
     note = note_raw.strip() if isinstance(note_raw, str) else ""
     if len(note) > MAX_NOTE:
         raise ValidationError(f"Hinweistext darf höchstens {MAX_NOTE} Zeichen lang sein.", field="note")
+    # Interne Notiz (KC2-2): nur Admin-Bereich, gehört zum Rezept, erzeugt keine Version
+    internal_raw = data.get("internal_note")
+    if internal_raw is not None and not isinstance(internal_raw, str):
+        raise ValidationError("Interne Notiz muss ein Text sein.", field="internal_note")
+    internal_note = internal_raw.strip() if isinstance(internal_raw, str) else ""
+    if len(internal_note) > MAX_NOTE:
+        raise ValidationError(f"Interne Notiz darf höchstens {MAX_NOTE} Zeichen lang sein.", field="internal_note")
     note_display = data.get("note_display") or "end"
     if note_display not in NOTE_DISPLAY:
         raise ValidationError("Anzeige des Hinweistexts muss „start“ oder „end“ sein.", field="note_display")
@@ -195,6 +202,7 @@ def validate_recipe(data: dict) -> dict:
         "knead_fast_min": knead_fast,
         "note": note or None,
         "note_display": note_display,
+        "internal_note": internal_note or None,
         "steps": steps,
         "items": items,
     }

@@ -1,5 +1,17 @@
 # Änderungen
 
+## 0.5.2 – Modul 05, Teil C3 (in Entwicklung)
+
+- **Rezeptimport aus der Importvorlage (.xlsx)** im neuen Reiter „Import/Export“: Blätter Rohstoffe, Rezepte, Rezeptzeilen, Stückgewichte, Chargengrößen und Umrechnung; erst Probelauf mit Bericht, dann Import; alles oder nichts
+- Rohstoffe aus der Vorlage wie beim CSV-Import (vorhandene werden nach Bestätigung überschrieben, neue ohne Toleranz erhalten 0 %)
+- Rezeptnummer oder Rezeptname schon vorhanden = Fehler; fehlende Gruppen werden angelegt; importierte Rezepte starten **gesperrt**, Zeilen mit „*“ behalten die Prüfmarkierung
+- Menge g rechnet der Import selbst (Menge Original × Faktor aus g/kg/Blatt „Umrechnung“, kaufmännisch gerundet); leere Menge = 0 g Handzugabe; fehlender Faktor = Fehler; Abweichung zum Formelwert der Datei als Hinweis
+- Unterrezepte innerhalb der Datei (werden zuerst angelegt), Kreise werden mit Weg gemeldet
+- **Export der Rezepte als .xlsx** im Format der Vorlage (aktuelle Versionen, verwendete Rohstoffe, auf Wunsch mit archivierten Rezepten); wieder importierbar in eine leere Datenbank; Texte werden nie als Formel geschrieben
+- **Interne Notiz** je Rezept (nur Admin-Bereich, nie an der Station; Ändern ohne neue Version; in Kopie, Export und Import enthalten); Datenbank-Migration `0004_recipe_note.sql`
+- Rezeptseite nach der Praxisprüfung C2: Beschriftung „Kurzname“ statt „Station“; Hinweis-Anzeige „am Anfang und am Ende“ / „nur am Ende“ mit Erklärung zum leeren Hinweis; Taste „Zutaten speichern“; Stückgewichte/Chargengrößen mit deutlichem Warnhinweis bei ungespeicherten Änderungen und Rückfrage „Beides speichern / Nur Zutaten speichern“ (Änderungen gehen nicht mehr still verloren); Rückfrage zu betroffenen Chargengrößen schon beim Löschen eines Stückgewichts; Haken „mit archivierten Rohstoffen“ in der Rezeptliste; Konflikt zweier Geräte als Fenster mit „Neu laden“
+- Neue Bibliothek `openpyxl`
+
 ## 0.5.1 – Modul 05, Teil C2 (in Entwicklung, Zweig `modul05-c2`)
 
 - **Rezeptverwaltung** unter `/admin/rezepte` (Reiter „Rohstoffe | Rezepte | Gruppen“): Rezepte anlegen, bearbeiten, kopieren, sperren/freischalten, archivieren, wiederherstellen und löschen (nur nie verwendete)

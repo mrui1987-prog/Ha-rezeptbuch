@@ -66,7 +66,7 @@ def test_migration_on_database_with_recipes(tmp_path):
     old.close()
 
     conn = init_database(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     row = conn.execute("SELECT number, revision FROM recipe").fetchone()
     assert tuple(row) == (10, 0)
     assert len(list((tmp_path / "backups").glob("pre_migration_0002_*.db"))) == 1

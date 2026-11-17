@@ -41,10 +41,10 @@ def migrations_copy(tmp_path):
 
 def test_fresh_database_has_full_schema(conn):
     assert tables(conn) == EXPECTED_TABLES
-    assert current_version(conn) == 3
+    assert current_version(conn) == 4
     log = conn.execute("SELECT version, file_name, backup_file FROM migration_log ORDER BY version").fetchall()
     assert [tuple(r) for r in log] == [(1, "0001_initial.sql", None), (2, "0002_raw_material.sql", None),
-                                       (3, "0003_recipe.sql", None)]
+                                       (3, "0003_recipe.sql", None), (4, "0004_recipe_note.sql", None)]
 
 
 def test_connection_settings(conn):
@@ -61,34 +61,34 @@ def test_stations_prepared(conn):
 def test_restart_changes_nothing(db_path, tmp_path):
     init_database(db_path).close()
     conn = init_database(db_path)
-    assert current_version(conn) == 3
-    assert conn.execute("SELECT count(*) FROM migration_log").fetchone()[0] == 3
+    assert current_version(conn) == 4
+    assert conn.execute("SELECT count(*) FROM migration_log").fetchone()[0] == 4
     assert not (tmp_path / "backups").exists()  # keine Sicherung ohne neue Migration
     conn.close()
 
 
 def test_new_migration_creates_backup_first(db_path, tmp_path, migrations_copy):
     init_database(db_path, migrations_dir=migrations_copy).close()
-    (migrations_copy / "0004_test_column.sql").write_text(
+    (migrations_copy / "0005_test_column.sql").write_text(
         "ALTER TABLE recipe_group ADD COLUMN color TEXT;", encoding="utf-8"
     )
     conn = init_database(db_path, migrations_dir=migrations_copy)
-    assert current_version(conn) == 4
+    assert current_version(conn) == 5
 
-    backups = list((tmp_path / "backups").glob("pre_migration_0003_*.db"))
+    backups = list((tmp_path / "backups").glob("pre_migration_0004_*.db"))
     assert len(backups) == 1
     old = sqlite3.connect(backups[0])
-    assert old.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 4
     old.close()
 
-    backup_file = conn.execute("SELECT backup_file FROM migration_log WHERE version = 4").fetchone()[0]
+    backup_file = conn.execute("SELECT backup_file FROM migration_log WHERE version = 5").fetchone()[0]
     assert backup_file == str(backups[0])
     conn.close()
 
 
 def test_failing_migration_is_rolled_back(db_path, tmp_path, migrations_copy):
     init_database(db_path, migrations_dir=migrations_copy).close()
-    (migrations_copy / "0004_broken.sql").write_text(
+    (migrations_copy / "0005_broken.sql").write_text(
         "CREATE TABLE half_done (id INTEGER PRIMARY KEY);\n"
         "INSERT INTO table_that_does_not_exist VALUES (1);",
         encoding="utf-8",
@@ -97,7 +97,7 @@ def test_failing_migration_is_rolled_back(db_path, tmp_path, migrations_copy):
         init_database(db_path, migrations_dir=migrations_copy)
 
     conn = connect(db_path)
-    assert current_version(conn) == 3
+    assert current_version(conn) == 4
     assert "half_done" not in tables(conn)
     assert len(list((tmp_path / "backups").glob("pre_migration_*.db"))) == 1
     conn.close()
@@ -113,7 +113,7 @@ def test_database_newer_than_addon_is_refused(db_path):
 
 
 def test_migration_files_must_be_numbered_without_gap(migrations_copy):
-    (migrations_copy / "0005_gap.sql").write_text("SELECT 1;", encoding="utf-8")
+    (migrations_copy / "0006_gap.sql").write_text("SELECT 1;", encoding="utf-8")
     with pytest.raises(MigrationError, match="lückenlos"):
         discover(migrations_copy)
 
@@ -129,6 +129,7 @@ def test_shipped_migrations_are_valid():
     assert migrations[0].path.name == "0001_initial.sql"
     assert migrations[1].path.name == "0002_raw_material.sql"
     assert migrations[2].path.name == "0003_recipe.sql"
+    assert migrations[3].path.name == "0004_recipe_note.sql"
 
 
 def test_prune_keeps_newest_five(tmp_path):

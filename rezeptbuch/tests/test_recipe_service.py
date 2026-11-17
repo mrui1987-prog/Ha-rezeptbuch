@@ -609,3 +609,56 @@ def test_change_log_for_create(conn, rm):
     assert len(rows) == 1 and rows[0]["action"] == "create" and rows[0]["entity_id"] == r["id"]
     new = json.loads(rows[0]["new_values"])
     assert new["name"] == "Weizenbrot" and new["locked"] == 1 and new["items"][0]["amount_g"] == 1000
+
+
+# -- Teil C3: interne Notiz (KC2-2) und Filter „mit archivierten Rohstoffen“ (KC2-5) ------------
+
+def test_internal_note_create_and_public_view(conn, rm):
+    r = make(conn, items=[line(rm["mehl"])], internal_note="  Ofen 2 nehmen  ")
+    assert r["internal_note"] == "Ofen 2 nehmen"
+    assert "internal_note" not in get_recipe(conn, r["id"], include_internal=False)   # Stationen sehen sie nie
+
+
+def test_internal_note_change_creates_no_version(conn, rm):
+    r = make(conn, items=[line(rm["mehl"])])
+    unlock_recipe(conn, r["id"])
+    conn.execute("UPDATE recipe_version SET frozen_at = CURRENT_TIMESTAMP WHERE id = "
+                 "(SELECT current_version_id FROM recipe WHERE id = ?)", (r["id"],))   # schon gewogen
+    data = {"name": r["name"], "items": [line(rm["mehl"], id=r["items"][0]["id"])], "internal_note": "neu"}
+    result = save_recipe(conn, r["id"], data, revision=r["revision"])
+    assert result["internal_note"] == "neu"
+    assert result["version_no"] == 1 and result["save_result"]["result"] == "unchanged"
+    assert result["revision"] == r["revision"] + 1
+    log = conn.execute("SELECT old_values, new_values FROM change_log WHERE entity = 'recipe' AND action = 'update' "
+                       "ORDER BY id DESC LIMIT 1").fetchone()
+    assert json.loads(log[1]) == {"internal_note": "neu"}
+
+
+def test_internal_note_missing_field_unchanged(conn, rm):
+    r = make(conn, items=[line(rm["mehl"])], internal_note="bleibt")
+    data = {"name": r["name"], "items": [line(rm["mehl"], id=r["items"][0]["id"])]}
+    assert save_recipe(conn, r["id"], data, revision=r["revision"])["internal_note"] == "bleibt"
+    data["internal_note"] = ""
+    assert save_recipe(conn, r["id"], data, revision=r["revision"])["internal_note"] is None
+
+
+def test_internal_note_too_long(conn, rm):
+    with pytest.raises(ValidationError, match="Interne Notiz"):
+        make(conn, internal_note="x" * 2001)
+
+
+def test_internal_note_copied(conn, rm):
+    r = make(conn, items=[line(rm["mehl"])], internal_note="Notiz")
+    assert copy_recipe(conn, r["id"])["internal_note"] == "Notiz"
+
+
+def test_filter_archived_raw_materials(conn, rm):
+    a = make(conn, "Mit Salz", items=[line(rm["mehl"]), line(rm["salz"], 20)])
+    make(conn, "Ohne Salz", items=[line(rm["mehl"])])
+    assert list_recipes(conn, include_locked=True, archived_raw_materials=True) == []
+    archive_raw_material(conn, rm["salz"])
+    hits = list_recipes(conn, include_locked=True, archived_raw_materials=True)
+    assert [h["id"] for h in hits] == [a["id"]]
+    assert hits[0]["archived_raw_material_count"] == 1
+    assert {r["name"]: r["archived_raw_material_count"] for r in list_recipes(conn, include_locked=True)} == \
+        {"Mit Salz": 1, "Ohne Salz": 0}

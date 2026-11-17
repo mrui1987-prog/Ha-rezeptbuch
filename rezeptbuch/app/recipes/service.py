@@ -57,7 +57,7 @@ def name_key(name: str) -> str:
 
 _RECIPE_SELECT = (
     "SELECT r.id, r.number, r.group_id, r.current_version_id, r.locked, r.archived, r.created_at, "
-    "       r.revision, v.version_no, v.name, v.knead_slow_min, v.knead_fast_min, v.note, v.note_display, "
+    "       r.revision, r.internal_note, v.version_no, v.name, v.knead_slow_min, v.knead_fast_min, v.note, v.note_display, "
     "       v.created_at AS version_created_at, v.frozen_at, g.name AS group_name "
     "FROM recipe r "
     "LEFT JOIN recipe_version v ON v.id = r.current_version_id "
@@ -265,8 +265,12 @@ def _version_view(conn, recipe_id: int, version_row) -> dict:
     }
 
 
-def get_recipe(conn: sqlite3.Connection, recipe_id: int) -> dict:
-    """Rezept mit aktueller Version, Stückgewichten, Chargengrößen, Summen und Versionsliste."""
+def get_recipe(conn: sqlite3.Connection, recipe_id: int, include_internal: bool = True) -> dict:
+    """Rezept mit aktueller Version, Stückgewichten, Chargengrößen, Summen und Versionsliste.
+
+    Die interne Notiz (KC2-2) steht nur mit ``include_internal`` im Ergebnis; die Lese-
+    Schnittstelle der Stationen (ohne PIN) ruft ohne sie auf.
+    """
     row = _fetch(conn, recipe_id)
     version = conn.execute("SELECT * FROM recipe_version WHERE id = ?", (row["current_version_id"],)).fetchone()
     use = usage(conn, recipe_id)
@@ -285,6 +289,8 @@ def get_recipe(conn: sqlite3.Connection, recipe_id: int) -> dict:
         "versions": _versions(conn, recipe_id, row["current_version_id"]),
         "usage": use,
     }
+    if include_internal:
+        result["internal_note"] = row["internal_note"]
     result.update(_version_view(conn, recipe_id, version))
     return result
 
@@ -304,10 +310,22 @@ def get_version(conn: sqlite3.Connection, recipe_id: int, version_no: int) -> di
     return result
 
 
+_ARCHIVED_RM_COUNT = (
+    "(SELECT count(*) FROM recipe_item ai JOIN raw_material am ON am.id = ai.raw_material_id "
+    " WHERE ai.recipe_version_id = v.id AND am.archived = 1)")
+
+
 def list_recipes(conn: sqlite3.Connection, search: str | None = None, group_id: int | None = None,
-                 include_locked: bool = False, include_archived: bool = False) -> list[dict]:
-    """Liste nach Nummer. Vorgabe = was die Vorwahl zeigt: freigeschaltet, nicht archiviert (M05-5)."""
+                 include_locked: bool = False, include_archived: bool = False,
+                 archived_raw_materials: bool = False) -> list[dict]:
+    """Liste nach Nummer. Vorgabe = was die Vorwahl zeigt: freigeschaltet, nicht archiviert (M05-5).
+
+    ``archived_raw_materials``: nur Rezepte, deren aktuelle Version einen archivierten Rohstoff
+    enthält (KC2-5).
+    """
     where, params = [], []
+    if archived_raw_materials:
+        where.append(_ARCHIVED_RM_COUNT + " > 0")
     if not include_locked:
         where.append("r.locked = 0")
     if not include_archived:
@@ -320,7 +338,8 @@ def list_recipes(conn: sqlite3.Connection, search: str | None = None, group_id: 
         "       v.version_no, v.name, v.knead_slow_min, v.knead_fast_min, "
         "       (SELECT COALESCE(SUM(amount_g), 0) FROM recipe_item WHERE recipe_version_id = v.id) AS total_g, "
         "       (SELECT count(*) FROM recipe_item WHERE recipe_version_id = v.id) AS item_count, "
-        "       (SELECT count(*) FROM recipe_item WHERE recipe_version_id = v.id AND needs_review = 1) AS review_count "
+        "       (SELECT count(*) FROM recipe_item WHERE recipe_version_id = v.id AND needs_review = 1) AS review_count, "
+        "       " + _ARCHIVED_RM_COUNT + " AS archived_rm_count "
         "FROM recipe r JOIN recipe_version v ON v.id = r.current_version_id "
         "LEFT JOIN recipe_group g ON g.id = r.group_id "
         + ("WHERE " + " AND ".join(where) + " " if where else "") + "ORDER BY r.number")
@@ -330,6 +349,7 @@ def list_recipes(conn: sqlite3.Connection, search: str | None = None, group_id: 
         "locked": bool(r["locked"]), "archived": bool(r["archived"]),
         "version_no": r["version_no"], "knead": knead_text(r["knead_slow_min"], r["knead_fast_min"]),
         "total_g": r["total_g"], "item_count": r["item_count"], "review_count": r["review_count"],
+        "archived_raw_material_count": r["archived_rm_count"],
     } for r in conn.execute(sql, params)]
     if search and search.strip():
         needle = normalize_text(search).casefold()
@@ -540,15 +560,16 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
     _check_references(conn, None, clean, [])
     for item in clean["items"]:
         item["needs_review"] = item["needs_review"] and source == "import"   # „*“ setzt nur der Import
-    recipe_id = conn.execute("INSERT INTO recipe (number, group_id, locked) VALUES (?, ?, 1)",
-                             (number, clean["group_id"])).lastrowid
+    recipe_id = conn.execute("INSERT INTO recipe (number, group_id, locked, internal_note) VALUES (?, ?, 1, ?)",
+                             (number, clean["group_id"], clean["internal_note"])).lastrowid
     _check_cycle(conn, recipe_id, clean["name"],
                  [i["sub_recipe_id"] for i in clean["items"] if i["sub_recipe_id"] is not None])
     content = _content(clean)
     version_id = _insert_version(conn, recipe_id, 1, content)
     conn.execute("UPDATE recipe SET current_version_id = ? WHERE id = ?", (version_id, recipe_id))
     _log(conn, "create", recipe_id, None,
-         {"number": number, "group_id": clean["group_id"], "locked": 1, "version_no": 1, **content}, source)
+         {"number": number, "group_id": clean["group_id"], "locked": 1, "internal_note": clean["internal_note"],
+          "version_no": 1, **content}, source)
     return recipe_id
 
 
@@ -601,6 +622,8 @@ def save_in_tx(conn: sqlite3.Connection, recipe_id: int, data: dict, *, revision
     if group_id != row["group_id"]:
         _check_group(conn, group_id)
         header_old["group_id"], header_new["group_id"] = row["group_id"], group_id
+    if "internal_note" in data and clean["internal_note"] != row["internal_note"]:
+        header_old["internal_note"], header_new["internal_note"] = row["internal_note"], clean["internal_note"]
 
     # Inhalt der Version
     if clean["name"] != stored["name"]:
@@ -684,53 +707,60 @@ def set_piece_weights(conn: sqlite3.Connection, recipe_id: int, data, *, revisio
     clean = validate_piece_weights(data)
     try:
         with transaction(conn):
-            row = _fetch(conn, recipe_id)
-            _check_revision_optional(row, revision)
-            existing = {r["id"]: r for r in conn.execute(
-                "SELECT id, label, weight_g, sort_order FROM recipe_piece_weight WHERE recipe_id = ?", (recipe_id,))}
-            keep_ids = {p["id"] for p in clean if p["id"] in existing}
-            for p in clean:
-                if p["id"] not in existing:
-                    p["id"] = None
-            removed = [i for i in existing if i not in keep_ids]
-            affected = [dict(r) for r in conn.execute(
-                "SELECT b.id, b.label, p.label AS piece_label FROM recipe_batch_size b "
-                "JOIN recipe_piece_weight p ON p.id = b.piece_weight_id "
-                f"WHERE b.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY b.sort_order",
-                removed)]
-            if affected and not confirm_delete_batch_sizes:
-                labels = ", ".join(f"„{a['label']}“" for a in affected)
-                raise ConflictError(
-                    f"Mit dem Stückgewicht werden auch diese Chargengrößen gelöscht: {labels}. Bitte bestätigen.",
-                    code="confirmation_required", batch_sizes=affected)
-            old_labels = {r["label"] for r in existing.values()}
-            for index, p in enumerate(clean, start=1):
-                before = existing.get(p["id"])
-                if (before is None and p["label"] not in old_labels) or (before is not None and before["label"] != p["label"]):
-                    check_no_formula_start(p["label"], field=f"piece_weights.{index}.label",
-                                           label=f"Stückgewicht {index}: Bezeichnung")
-            old_list = _piece_weights(conn, recipe_id)
-            for pid in removed:
-                conn.execute("DELETE FROM recipe_piece_weight WHERE id = ?", (pid,))
-            # Zwischenbezeichnung, damit ein Tausch von Bezeichnungen nicht an UNIQUE scheitert
-            for p in clean:
-                if p["id"] is not None:
-                    conn.execute("UPDATE recipe_piece_weight SET label = ? WHERE id = ?", (f"\u0001{p['id']}", p["id"]))
-            for order, p in enumerate(clean, start=1):
-                if p["id"] is None:
-                    conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g, sort_order) "
-                                 "VALUES (?, ?, ?, ?)", (recipe_id, p["label"], p["weight_g"], order))
-                else:
-                    conn.execute("UPDATE recipe_piece_weight SET label = ?, weight_g = ?, sort_order = ? WHERE id = ?",
-                                 (p["label"], p["weight_g"], order, p["id"]))
-            new_list = _piece_weights(conn, recipe_id)
-            if [(p["label"], p["weight_g"]) for p in old_list] != [(p["label"], p["weight_g"]) for p in new_list] \
-                    or removed:
-                _log(conn, "update", recipe_id, {"piece_weights": old_list}, {"piece_weights": new_list}, source)
-                conn.execute("UPDATE recipe SET revision = revision + 1 WHERE id = ?", (recipe_id,))
+            set_piece_weights_in_tx(conn, recipe_id, clean, revision=revision,
+                                    confirm_delete_batch_sizes=confirm_delete_batch_sizes, source=source)
     except sqlite3.IntegrityError as exc:
         raise _integrity(exc) from exc
     return get_recipe(conn, recipe_id)
+
+
+def set_piece_weights_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: list[dict], *, revision=None,
+                            confirm_delete_batch_sizes: bool = False, source: str = "admin") -> None:
+    """Wie ``set_piece_weights``, in einer bereits offenen Transaktion (``clean`` aus ``validate_piece_weights``)."""
+    row = _fetch(conn, recipe_id)
+    _check_revision_optional(row, revision)
+    existing = {r["id"]: r for r in conn.execute(
+        "SELECT id, label, weight_g, sort_order FROM recipe_piece_weight WHERE recipe_id = ?", (recipe_id,))}
+    keep_ids = {p["id"] for p in clean if p["id"] in existing}
+    for p in clean:
+        if p["id"] not in existing:
+            p["id"] = None
+    removed = [i for i in existing if i not in keep_ids]
+    affected = [dict(r) for r in conn.execute(
+        "SELECT b.id, b.label, p.label AS piece_label FROM recipe_batch_size b "
+        "JOIN recipe_piece_weight p ON p.id = b.piece_weight_id "
+        f"WHERE b.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY b.sort_order",
+        removed)]
+    if affected and not confirm_delete_batch_sizes:
+        labels = ", ".join(f"„{a['label']}“" for a in affected)
+        raise ConflictError(
+            f"Mit dem Stückgewicht werden auch diese Chargengrößen gelöscht: {labels}. Bitte bestätigen.",
+            code="confirmation_required", batch_sizes=affected)
+    old_labels = {r["label"] for r in existing.values()}
+    for index, p in enumerate(clean, start=1):
+        before = existing.get(p["id"])
+        if (before is None and p["label"] not in old_labels) or (before is not None and before["label"] != p["label"]):
+            check_no_formula_start(p["label"], field=f"piece_weights.{index}.label",
+                                   label=f"Stückgewicht {index}: Bezeichnung")
+    old_list = _piece_weights(conn, recipe_id)
+    for pid in removed:
+        conn.execute("DELETE FROM recipe_piece_weight WHERE id = ?", (pid,))
+    # Zwischenbezeichnung, damit ein Tausch von Bezeichnungen nicht an UNIQUE scheitert
+    for p in clean:
+        if p["id"] is not None:
+            conn.execute("UPDATE recipe_piece_weight SET label = ? WHERE id = ?", (f"\u0001{p['id']}", p["id"]))
+    for order, p in enumerate(clean, start=1):
+        if p["id"] is None:
+            conn.execute("INSERT INTO recipe_piece_weight (recipe_id, label, weight_g, sort_order) "
+                         "VALUES (?, ?, ?, ?)", (recipe_id, p["label"], p["weight_g"], order))
+        else:
+            conn.execute("UPDATE recipe_piece_weight SET label = ?, weight_g = ?, sort_order = ? WHERE id = ?",
+                         (p["label"], p["weight_g"], order, p["id"]))
+    new_list = _piece_weights(conn, recipe_id)
+    if [(p["label"], p["weight_g"]) for p in old_list] != [(p["label"], p["weight_g"]) for p in new_list] \
+            or removed:
+        _log(conn, "update", recipe_id, {"piece_weights": old_list}, {"piece_weights": new_list}, source)
+        conn.execute("UPDATE recipe SET revision = revision + 1 WHERE id = ?", (recipe_id,))
 
 
 def set_batch_sizes(conn: sqlite3.Connection, recipe_id: int, data, *, revision=None,
@@ -742,53 +772,59 @@ def set_batch_sizes(conn: sqlite3.Connection, recipe_id: int, data, *, revision=
     clean = validate_batch_sizes(data)
     try:
         with transaction(conn):
-            row = _fetch(conn, recipe_id)
-            _check_revision_optional(row, revision)
-            pieces = {r["id"]: r for r in conn.execute(
-                "SELECT id, label FROM recipe_piece_weight WHERE recipe_id = ?", (recipe_id,))}
-            by_label = {r["label"].casefold(): r["id"] for r in pieces.values()}
-            existing = {r["id"]: r for r in conn.execute(
-                "SELECT id, label FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,))}
-            old_labels = {r["label"] for r in existing.values()}
-            for index, b in enumerate(clean, start=1):
-                if b["kind"] == "pieces":
-                    pid = b["piece_weight_id"] if b["piece_weight_id"] in pieces else None
-                    if pid is None and b["piece_weight_label"]:
-                        pid = by_label.get(b["piece_weight_label"].casefold())
-                    if pid is None:
-                        raise ValidationError(f"Chargengröße {index}: Das Stückgewicht gibt es bei diesem Rezept nicht.",
-                                              field=f"batch_sizes.{index}.piece_weight_id", code="piece_weight_missing")
-                    b["piece_weight_id"] = pid
-                else:
-                    b["piece_weight_id"] = None
-                if b["id"] not in existing:
-                    b["id"] = None
-                before = existing.get(b["id"])
-                if (before is None and b["label"] not in old_labels) or (before is not None and before["label"] != b["label"]):
-                    check_no_formula_start(b["label"], field=f"batch_sizes.{index}.label",
-                                           label=f"Chargengröße {index}: Bezeichnung")
-            old_list = _batch_sizes(conn, recipe_id)
-            keep = {b["id"] for b in clean if b["id"] is not None}
-            for bid in existing:
-                if bid not in keep:
-                    conn.execute("DELETE FROM recipe_batch_size WHERE id = ?", (bid,))
-            for order, b in enumerate(clean, start=1):
-                if b["id"] is None:
-                    conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id, sort_order) "
-                                 "VALUES (?, ?, ?, ?, ?, ?)",
-                                 (recipe_id, b["label"], b["kind"], b["value"], b["piece_weight_id"], order))
-                else:
-                    conn.execute("UPDATE recipe_batch_size SET label = ?, kind = ?, value = ?, piece_weight_id = ?, "
-                                 "sort_order = ? WHERE id = ?",
-                                 (b["label"], b["kind"], b["value"], b["piece_weight_id"], order, b["id"]))
-            new_list = _batch_sizes(conn, recipe_id)
-            strip = lambda items: [(i["label"], i["kind"], i["value"], i["piece_weight_id"]) for i in items]  # noqa: E731
-            if strip(old_list) != strip(new_list):
-                _log(conn, "update", recipe_id, {"batch_sizes": old_list}, {"batch_sizes": new_list}, source)
-                conn.execute("UPDATE recipe SET revision = revision + 1 WHERE id = ?", (recipe_id,))
+            set_batch_sizes_in_tx(conn, recipe_id, clean, revision=revision, source=source)
     except sqlite3.IntegrityError as exc:
         raise _integrity(exc) from exc
     return get_recipe(conn, recipe_id)
+
+
+def set_batch_sizes_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: list[dict], *, revision=None,
+                          source: str = "admin") -> None:
+    """Wie ``set_batch_sizes``, in einer bereits offenen Transaktion (``clean`` aus ``validate_batch_sizes``)."""
+    row = _fetch(conn, recipe_id)
+    _check_revision_optional(row, revision)
+    pieces = {r["id"]: r for r in conn.execute(
+        "SELECT id, label FROM recipe_piece_weight WHERE recipe_id = ?", (recipe_id,))}
+    by_label = {r["label"].casefold(): r["id"] for r in pieces.values()}
+    existing = {r["id"]: r for r in conn.execute(
+        "SELECT id, label FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,))}
+    old_labels = {r["label"] for r in existing.values()}
+    for index, b in enumerate(clean, start=1):
+        if b["kind"] == "pieces":
+            pid = b["piece_weight_id"] if b["piece_weight_id"] in pieces else None
+            if pid is None and b["piece_weight_label"]:
+                pid = by_label.get(b["piece_weight_label"].casefold())
+            if pid is None:
+                raise ValidationError(f"Chargengröße {index}: Das Stückgewicht gibt es bei diesem Rezept nicht.",
+                                      field=f"batch_sizes.{index}.piece_weight_id", code="piece_weight_missing")
+            b["piece_weight_id"] = pid
+        else:
+            b["piece_weight_id"] = None
+        if b["id"] not in existing:
+            b["id"] = None
+        before = existing.get(b["id"])
+        if (before is None and b["label"] not in old_labels) or (before is not None and before["label"] != b["label"]):
+            check_no_formula_start(b["label"], field=f"batch_sizes.{index}.label",
+                                   label=f"Chargengröße {index}: Bezeichnung")
+    old_list = _batch_sizes(conn, recipe_id)
+    keep = {b["id"] for b in clean if b["id"] is not None}
+    for bid in existing:
+        if bid not in keep:
+            conn.execute("DELETE FROM recipe_batch_size WHERE id = ?", (bid,))
+    for order, b in enumerate(clean, start=1):
+        if b["id"] is None:
+            conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id, sort_order) "
+                         "VALUES (?, ?, ?, ?, ?, ?)",
+                         (recipe_id, b["label"], b["kind"], b["value"], b["piece_weight_id"], order))
+        else:
+            conn.execute("UPDATE recipe_batch_size SET label = ?, kind = ?, value = ?, piece_weight_id = ?, "
+                         "sort_order = ? WHERE id = ?",
+                         (b["label"], b["kind"], b["value"], b["piece_weight_id"], order, b["id"]))
+    new_list = _batch_sizes(conn, recipe_id)
+    strip = lambda items: [(i["label"], i["kind"], i["value"], i["piece_weight_id"]) for i in items]  # noqa: E731
+    if strip(old_list) != strip(new_list):
+        _log(conn, "update", recipe_id, {"batch_sizes": old_list}, {"batch_sizes": new_list}, source)
+        conn.execute("UPDATE recipe SET revision = revision + 1 WHERE id = ?", (recipe_id,))
 
 
 # -- Status, Archiv, Kopie, Löschen ---------------------------------------------------------
@@ -888,8 +924,8 @@ def copy_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin")
             content = _stored_content(conn, row["current_version_id"])
             content["name"] = _copy_name(conn, row["name"])
             number = next_number(conn)
-            new_id = conn.execute("INSERT INTO recipe (number, group_id, locked) VALUES (?, ?, 1)",
-                                  (number, row["group_id"])).lastrowid
+            new_id = conn.execute("INSERT INTO recipe (number, group_id, locked, internal_note) VALUES (?, ?, 1, ?)",
+                                  (number, row["group_id"], row["internal_note"])).lastrowid
             version_id = _insert_version(conn, new_id, 1, content)
             conn.execute("UPDATE recipe SET current_version_id = ? WHERE id = ?", (version_id, new_id))
             mapping = {}
@@ -904,8 +940,8 @@ def copy_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin")
                              "VALUES (?, ?, ?, ?, ?, ?)",
                              (new_id, b["label"], b["kind"], b["value"], mapping.get(b["piece_weight_id"]), b["sort_order"]))
             _log(conn, "create", new_id, None,
-                 {"number": number, "group_id": row["group_id"], "locked": 1, "version_no": 1,
-                  "copied_from": {"id": recipe_id, "number": row["number"], "version_no": row["version_no"]},
+                 {"number": number, "group_id": row["group_id"], "locked": 1, "internal_note": row["internal_note"],
+                  "version_no": 1, "copied_from": {"id": recipe_id, "number": row["number"], "version_no": row["version_no"]},
                   **content}, source)
     except sqlite3.IntegrityError as exc:
         raise _integrity(exc) from exc

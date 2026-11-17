@@ -6,6 +6,7 @@ Der Bericht ist für Probelauf und Import gleich. Er unterscheidet:
 * **Änderungen** – vorhandene Rohstoffe, die überschrieben werden („alt → neu“ je Feld, K05-2d)
 * **Hinweise** – Import möglich (ähnliche Namen, Typwechsel, nicht ausgewertete Spalten …)
 * **Toleranz 0 %** – Rohstoffe, die 0 % erhalten (M05-13b)
+* **Rezepte** – beim Vorlagen-Import neu angelegte Rezepte und Gruppen (Teil C3)
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ class ImportReport:
         self.errors: list[dict] = []
         self.hints: list[dict] = []
         self.zero_percent: list[dict] = []
+        self.recipes: list[dict] = []        # Vorlagen-Import: neu angelegte Rezepte
+        self.groups_created: list[str] = []  # Vorlagen-Import: neu angelegte Gruppen
         self.imported = False
 
     # -- Einträge --------------------------------------------------------------
@@ -55,9 +58,24 @@ class ImportReport:
             return f"Import nicht möglich: {n} Fehler. Es wurde nichts gespeichert."
         parts = [f"{len(self.created)} neu", f"{self.overwritten} überschrieben", f"{self.unchanged} unverändert"]
         verb = "importiert" if self.imported else "Probelauf"
+        if self.kind == "recipes":
+            n = len(self.recipes)
+            return (f"{verb}: {n} Rezept{'e' if n != 1 else ''} neu; Rohstoffe " + ", ".join(parts) + ".")
         return f"{verb}: " + ", ".join(parts) + "."
 
     def to_dict(self) -> dict:
+        result = self._base_dict()
+        if self.kind == "recipes":
+            result["counts"].update({
+                "recipes": len(self.recipes),
+                "groups": len(self.groups_created),
+                "review_lines": sum(r.get("review_count", 0) for r in self.recipes),
+            })
+            result["recipes"] = self.recipes
+            result["groups_created"] = self.groups_created
+        return result
+
+    def _base_dict(self) -> dict:
         return {
             "kind": self.kind,
             "mode": self.mode,
