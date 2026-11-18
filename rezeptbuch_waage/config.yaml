@@ -1,7 +1,7 @@
 name: HA-Rezeptbuch Waage
-version: "0.1.0"
+version: "0.7.0"
 slug: rezeptbuch_waage
-description: Liest bis zu zwei Waagen über RS-232/Netzwerk-Konverter und meldet Gewicht per MQTT
+description: Liest bis zu zwei KERN-Waagen über Waveshare-Konverter und meldet Gewicht, Stabilität und Status per MQTT
 url: https://github.com/mrui1987-prog/ha-rezeptbuch
 arch:
   - aarch64
@@ -9,17 +9,67 @@ arch:
 init: false
 services:
   - mqtt:need
+# Felder flach je Waage (K07-4, docs/waage.md Abschnitt 7). Adresse des
+# Waveshare trägt Michael in HA ein – keine IP-Adressen im Repo.
 options:
-  stations:
-    - station: 1
-      driver: kern
-      host: "192.168.1.200"
-      port: 4196
+  scale1_enabled: true
+  scale1_driver: kern
+  scale1_connection: tcp
+  scale1_port: 8899
+  scale1_raw_topic: rezeptbuch/test/waage1/raw
+  scale1_cmd_topic: rezeptbuch/test/waage1/cmd
+  scale1_baud: 9600
+  scale1_format: "8n1"
+  scale1_mode: CONT
+  scale1_stable_window_ms: 1000
+  scale1_stable_span_g: 2
+  scale1_offline_after_s: 5
+  scale1_capacity_g: 30000
+  scale1_resolution_g: 1
+  scale2_enabled: false
+  scale2_driver: kern
+  scale2_connection: tcp
+  scale2_port: 8899
+  scale2_raw_topic: rezeptbuch/test/waage2/raw
+  scale2_cmd_topic: rezeptbuch/test/waage2/cmd
+  scale2_baud: 9600
+  scale2_format: "8n1"
+  scale2_mode: CONT
+  scale2_stable_window_ms: 1000
+  scale2_stable_span_g: 2
+  scale2_offline_after_s: 5
+  scale2_capacity_g: 30000
+  scale2_resolution_g: 1
   log_level: info
 schema:
-  stations:
-    - station: int(1,2)
-      driver: list(kern|simulator)
-      host: str
-      port: port
+  scale1_enabled: bool
+  scale1_driver: list(kern|simulator)
+  scale1_connection: list(tcp|mqtt)
+  scale1_host: str?
+  scale1_port: port
+  scale1_raw_topic: str?
+  scale1_cmd_topic: str?
+  scale1_baud: int(1200,115200)
+  scale1_format: list(7E1|7o1|8n1)
+  scale1_mode: list(CONT|STC)
+  scale1_stable_window_ms: int(200,5000)
+  scale1_stable_span_g: int(0,50)
+  scale1_offline_after_s: int(2,30)
+  scale1_capacity_g: int(1,1000000)
+  scale1_resolution_g: int(1,1000)
+  scale2_enabled: bool
+  scale2_driver: list(kern|simulator)
+  scale2_connection: list(tcp|mqtt)
+  scale2_host: str?
+  scale2_port: port
+  scale2_raw_topic: str?
+  scale2_cmd_topic: str?
+  scale2_baud: int(1200,115200)
+  scale2_format: list(7E1|7o1|8n1)
+  scale2_mode: list(CONT|STC)
+  scale2_stable_window_ms: int(200,5000)
+  scale2_stable_span_g: int(0,50)
+  scale2_offline_after_s: int(2,30)
+  scale2_capacity_g: int(1,1000000)
+  scale2_resolution_g: int(1,1000)
   log_level: list(debug|info|warning|error)

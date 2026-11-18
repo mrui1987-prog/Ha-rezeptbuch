@@ -1,9 +1,94 @@
 configuration:
-  stations:
-    name: Waagestationen
-    description: >-
-      Je Station: Nummer (1 oder 2), Treiber, IP-Adresse und Port des
-      RS-232/Netzwerk-Konverters (Waveshare-Standardport 4196).
+  scale1_enabled:
+    name: "Waage 1 – aktiv (Standard ja)"
+    description: "Diese Waagestation verwenden."
+  scale1_driver:
+    name: "Waage 1 – Treiber (Standard kern)"
+    description: "kern = echte KERN-Waage, simulator = Testbetrieb ohne Waage (erzeugt einen Wiegeverlauf)."
+  scale1_connection:
+    name: "Waage 1 – Anbindung (Standard tcp)"
+    description: "tcp = Add-on verbindet sich direkt mit dem Waveshare (empfohlen); mqtt = Add-on liest das Roh-Topic der MQTT-Funktion des Waveshare (wie im Feldtest)."
+  scale1_host:
+    name: "Waage 1 – Adresse des Waveshare (Standard leer)"
+    description: "IP-Adresse oder Name des Waveshare-Konverters, nur bei Anbindung tcp. Bitte selbst eintragen."
+  scale1_port:
+    name: "Waage 1 – TCP-Port (Standard 8899)"
+    description: "TCP-Server-Port des Waveshare, ab Werk 8899. Nur bei Anbindung tcp."
+  scale1_raw_topic:
+    name: "Waage 1 – Roh-Topic (Standard rezeptbuch/test/waage1/raw)"
+    description: "„Pub Topic“ des Waveshare, auf dem er die Zeilen der Waage sendet. Nur bei Anbindung mqtt."
+  scale1_cmd_topic:
+    name: "Waage 1 – Befehls-Topic (Standard rezeptbuch/test/waage1/cmd)"
+    description: "„Sub Topic“ des Waveshare für Befehle an die Waage (Tara, Null). Nur bei Anbindung mqtt."
+  scale1_baud:
+    name: "Waage 1 – Baudrate (Info) (Standard 9600)"
+    description: "Nur Anzeige und Prüfhilfe. Eingestellt wird sie an Waage und Waveshare."
+  scale1_format:
+    name: "Waage 1 – Datenformat (Info) (Standard 8n1)"
+    description: "Nur Anzeige und Prüfhilfe. Eingestellt wird es an Waage und Waveshare."
+  scale1_mode:
+    name: "Waage 1 – Sendemodus (Info) (Standard CONT)"
+    description: "Nur Anzeige und Prüfhilfe, eingestellt an der Waage. CONT sendet auch instabile Werte; ASK wird nicht unterstützt."
+  scale1_stable_window_ms:
+    name: "Waage 1 – Stabil: Zeitfenster in ms (Standard 1000)"
+    description: "So lange (200–5000 ms) muss das Gewicht ruhig sein, damit es als stabil gilt."
+  scale1_stable_span_g:
+    name: "Waage 1 – Stabil: erlaubte Schwankung in g (Standard 2)"
+    description: "Höchstens so viele Gramm (0–50) darf das Gewicht im Zeitfenster schwanken."
+  scale1_offline_after_s:
+    name: "Waage 1 – Offline nach s (Standard 5)"
+    description: "Nach so vielen Sekunden (2–30) ohne Zeile von der Waage gilt sie als getrennt."
+  scale1_capacity_g:
+    name: "Waage 1 – Höchstlast in g (Standard 30000)"
+    description: "Höchstlast der Waage in Gramm, für die Warnung im Wiegeablauf."
+  scale1_resolution_g:
+    name: "Waage 1 – Auflösung in g (Standard 1)"
+    description: "Kleinster Gewichtsschritt der Waage in Gramm."
+  scale2_enabled:
+    name: "Waage 2 – aktiv (Standard nein)"
+    description: "Diese Waagestation verwenden."
+  scale2_driver:
+    name: "Waage 2 – Treiber (Standard kern)"
+    description: "kern = echte KERN-Waage, simulator = Testbetrieb ohne Waage (erzeugt einen Wiegeverlauf)."
+  scale2_connection:
+    name: "Waage 2 – Anbindung (Standard tcp)"
+    description: "tcp = Add-on verbindet sich direkt mit dem Waveshare (empfohlen); mqtt = Add-on liest das Roh-Topic der MQTT-Funktion des Waveshare (wie im Feldtest)."
+  scale2_host:
+    name: "Waage 2 – Adresse des Waveshare (Standard leer)"
+    description: "IP-Adresse oder Name des Waveshare-Konverters, nur bei Anbindung tcp. Bitte selbst eintragen."
+  scale2_port:
+    name: "Waage 2 – TCP-Port (Standard 8899)"
+    description: "TCP-Server-Port des Waveshare, ab Werk 8899. Nur bei Anbindung tcp."
+  scale2_raw_topic:
+    name: "Waage 2 – Roh-Topic (Standard rezeptbuch/test/waage2/raw)"
+    description: "„Pub Topic“ des Waveshare, auf dem er die Zeilen der Waage sendet. Nur bei Anbindung mqtt."
+  scale2_cmd_topic:
+    name: "Waage 2 – Befehls-Topic (Standard rezeptbuch/test/waage2/cmd)"
+    description: "„Sub Topic“ des Waveshare für Befehle an die Waage (Tara, Null). Nur bei Anbindung mqtt."
+  scale2_baud:
+    name: "Waage 2 – Baudrate (Info) (Standard 9600)"
+    description: "Nur Anzeige und Prüfhilfe. Eingestellt wird sie an Waage und Waveshare."
+  scale2_format:
+    name: "Waage 2 – Datenformat (Info) (Standard 8n1)"
+    description: "Nur Anzeige und Prüfhilfe. Eingestellt wird es an Waage und Waveshare."
+  scale2_mode:
+    name: "Waage 2 – Sendemodus (Info) (Standard CONT)"
+    description: "Nur Anzeige und Prüfhilfe, eingestellt an der Waage. CONT sendet auch instabile Werte; ASK wird nicht unterstützt."
+  scale2_stable_window_ms:
+    name: "Waage 2 – Stabil: Zeitfenster in ms (Standard 1000)"
+    description: "So lange (200–5000 ms) muss das Gewicht ruhig sein, damit es als stabil gilt."
+  scale2_stable_span_g:
+    name: "Waage 2 – Stabil: erlaubte Schwankung in g (Standard 2)"
+    description: "Höchstens so viele Gramm (0–50) darf das Gewicht im Zeitfenster schwanken."
+  scale2_offline_after_s:
+    name: "Waage 2 – Offline nach s (Standard 5)"
+    description: "Nach so vielen Sekunden (2–30) ohne Zeile von der Waage gilt sie als getrennt."
+  scale2_capacity_g:
+    name: "Waage 2 – Höchstlast in g (Standard 30000)"
+    description: "Höchstlast der Waage in Gramm, für die Warnung im Wiegeablauf."
+  scale2_resolution_g:
+    name: "Waage 2 – Auflösung in g (Standard 1)"
+    description: "Kleinster Gewichtsschritt der Waage in Gramm."
   log_level:
-    name: Protokollstufe
-    description: Wie ausführlich das Add-on protokolliert.
+    name: "Protokollstufe (Standard info)"
+    description: "Wie ausführlich das Add-on protokolliert. debug zeigt jede Zeile der Waage und die Schwankung im Zeitfenster."
