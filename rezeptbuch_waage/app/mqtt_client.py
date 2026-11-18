@@ -29,13 +29,36 @@ class CredentialsError(RuntimeError):
     pass
 
 
+TOKEN_FILES = (
+    "/run/s6/container_environment/SUPERVISOR_TOKEN",
+    "/var/run/s6/container_environment/SUPERVISOR_TOKEN",
+)
+
+
+def read_supervisor_token(environ: dict | None = None, files: tuple = TOKEN_FILES) -> str | None:
+    """Token aus der Umgebung, sonst aus der s6-Umgebungsdatei (init: false)."""
+    env = os.environ if environ is None else environ
+    token = env.get("SUPERVISOR_TOKEN")
+    if token:
+        return token
+    for path in files:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                token = handle.read().strip()
+        except OSError:
+            continue
+        if token:
+            return token
+    return None
+
+
 def fetch_credentials(
     token: str | None = None,
     url: str = SUPERVISOR_MQTT_URL,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> dict:
     """Fragt den Supervisor nach Adresse und Zugang des MQTT-Dienstes."""
-    token = token if token is not None else os.environ.get("SUPERVISOR_TOKEN")
+    token = token if token is not None else read_supervisor_token()
     if not token:
         raise CredentialsError("SUPERVISOR_TOKEN fehlt (Add-on läuft nicht unter HA?)")
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})

@@ -129,3 +129,25 @@ def test_real_paho_client_if_installed():
     from app.mqtt_client import _default_client_factory
     client = _default_client_factory()
     client.will_set(AVAILABILITY_TOPIC, "offline", qos=1, retain=True)
+
+
+def test_token_aus_s6_datei(tmp_path):
+    from app.mqtt_client import read_supervisor_token
+
+    datei = tmp_path / "SUPERVISOR_TOKEN"
+    datei.write_text("abc123\n", encoding="utf-8")
+    assert read_supervisor_token({}, (str(tmp_path / "fehlt"), str(datei))) == "abc123"
+
+
+def test_token_umgebung_hat_vorrang(tmp_path):
+    from app.mqtt_client import read_supervisor_token
+
+    datei = tmp_path / "SUPERVISOR_TOKEN"
+    datei.write_text("aus-datei", encoding="utf-8")
+    assert read_supervisor_token({"SUPERVISOR_TOKEN": "aus-env"}, (str(datei),)) == "aus-env"
+
+
+def test_token_fehlt_ganz(tmp_path):
+    from app.mqtt_client import read_supervisor_token
+
+    assert read_supervisor_token({}, (str(tmp_path / "fehlt"),)) is None

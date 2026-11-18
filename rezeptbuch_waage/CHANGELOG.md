@@ -1,5 +1,10 @@
 # Änderungen – HA-Rezeptbuch Waage
 
+## 0.7.1 – Korrektur aus der Praxisprüfung C1
+
+- **MQTT-Zugangsdaten:** Das Add-on findet das Supervisor-Token jetzt auch in der s6-Umgebungsdatei (`/run/s6/container_environment`); in 0.7.0 meldete es bei `init: false` „SUPERVISOR_TOKEN fehlt“
+- **Hinweis beim Update von 0.1.0:** Die alte Konfiguration (`stations`) passt nicht mehr; im Reiter Konfiguration über ⋮ „Auf Standardwerte zurücksetzen“ wählen
+
 ## 0.7.0 – Modul 07, Teil C1 (in Entwicklung)
 
 - **KERN-Treiber:** liest die Zeilen der KFB-TM im Sendemodus CONT (`ST`/`US`, brutto/netto, `-----`) und rechnet exakt in ganze Gramm um; Längenschutz gegen Datenmüll
