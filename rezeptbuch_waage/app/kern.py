@@ -17,7 +17,7 @@ INVALID = "invalid"        # `-----`: kein gültiger Wert, aber Lebenszeichen
 UNREADABLE = "unreadable"  # alles andere
 
 _LINE = re.compile(
-    r"^(?P<flag>ST|US),(?P<mode>GS|NT|G|N)\s*(?P<value>[+-]?\s*\d+(?:\.\d+)?)\s*(?P<unit>[A-Za-z]+)$"
+    r"^(?P<flag>ST|US),(?P<mode>GS|NT|G|N)\s*,?\s*(?P<value>[+-]?\s*\d+(?:\.\d+)?)\s*(?P<unit>[A-Za-z]+)$"
 )
 _DASHES = re.compile(r"^-{3,}$")
 

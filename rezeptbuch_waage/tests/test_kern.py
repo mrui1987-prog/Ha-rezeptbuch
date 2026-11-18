@@ -21,6 +21,8 @@ from app.kern import (
     ("ST,G   30.000kg", 30000, True, False),
     ("ST,G   -0.077kg", -77, True, False),      # Minus wird angenommen
     ("ST,G-   0.010kg", -10, True, False),      # Vorzeichen direkt hinter G
+    ("ST,G ,   0.000kg", 0, True, False),      # Praxisprüfung C1: Komma nach G
+    ("US,G ,   0.091kg", 91, False, False),
     ("ST,G    0.0.1kg", None, None, None),      # kaputte Zahl
 ])
 def test_parse_weight(line, grams, stable, net):

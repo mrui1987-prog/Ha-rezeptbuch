@@ -1,5 +1,9 @@
 # Änderungen – HA-Rezeptbuch Waage
 
+## 0.7.2 – Korrektur aus der Praxisprüfung C1
+
+- **Telegramm:** Zeilen mit einem Komma nach dem Modus (`ST,G ,   0.000kg`) werden gelesen; sie galten bisher als unlesbar
+
 ## 0.7.1 – Korrektur aus der Praxisprüfung C1
 
 - **MQTT-Zugangsdaten:** Das Add-on findet das Supervisor-Token jetzt auch in der s6-Umgebungsdatei (`/run/s6/container_environment`); in 0.7.0 meldete es bei `init: false` „SUPERVISOR_TOKEN fehlt“
