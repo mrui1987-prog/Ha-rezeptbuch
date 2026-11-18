@@ -55,11 +55,16 @@
   .ask { background: #fff7e0; border: 1px solid #e6c56b; padding: .6rem .8rem; margin: .6rem 0; border-radius: 4px; }
   .ask b { display: block; margin-bottom: .3rem; }
   .row { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; margin: .3rem 0; }
+  button.info { padding: 0 .3rem; margin: 0 0 0 .1rem; font-size: .95rem; border: none; background: none; color: #2563eb; cursor: pointer; }
+  #help-box { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; align-items: center; justify-content: center; padding: 1rem; }
+  #help-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 30rem; width: 100%; color: #222; max-height: 85vh; overflow-y: auto; }
+  #help-text { white-space: pre-line; }
   .batch-count { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .3rem 1rem; }
 </style>
 </head>
 <body>
 <div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<div id="help-box" role="dialog" aria-modal="true"><div class="dlg"><p id="help-text"></p><button type="button" id="help-ok">OK</button></div></div>
 <nav>
   <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
   <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
@@ -168,7 +173,7 @@
         <button type="button" id="scope-order">Ganzer Auftrag</button>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Rohstoff</th><th class="num">Menge</th><th class="num">Anteil</th><th class="num" id="th-sum-baker">Bäcker-%</th></tr></thead>
+        <thead><tr><th>Rohstoff</th><th class="num">Menge</th><th class="num">Anteil <button type="button" class="info pct-info" aria-label="Erklärung Anteil">ⓘ</button></th><th class="num" id="th-sum-baker">Bäcker-% <button type="button" class="info pct-info" aria-label="Erklärung Bäcker-%">ⓘ</button></th></tr></thead>
         <tbody id="sum-rows"></tbody></table></div>
       <p id="flour-mix" class="small"></p>
     </div>
@@ -179,7 +184,7 @@
     </div>
     <div class="scroll"><table>
       <thead><tr><th class="num">Pos.</th><th>Schritt</th><th>Zutat</th><th class="num">Menge</th><th class="num">Toleranz</th>
-        <th>Gebinde / Stück</th><th class="num">Anteil</th><th class="num" id="th-baker">Bäcker-%</th></tr></thead>
+        <th>Gebinde / Stück</th><th class="num">Anteil <button type="button" class="info pct-info" aria-label="Erklärung Anteil">ⓘ</button></th><th class="num" id="th-baker">Bäcker-% <button type="button" class="info pct-info" aria-label="Erklärung Bäcker-%">ⓘ</button></th></tr></thead>
       <tbody id="rows"></tbody></table></div>
     </div>
     <div class="facts" id="facts"></div>
@@ -284,6 +289,20 @@ function td(row, content, cls) {
   row.appendChild(cell);
   return cell;
 }
+// Erklärung zu „Anteil“ und „Bäcker-%“ (Wunsch Michael 13:29, entschieden 18.11.2026, 15:36), eigenes Fenster
+const PCT_HELP = "Bäcker % = Anteil der Zutat am gesamten Mehl. Das Mehl (inklusive Unterrezepte) ist immer 100 %, " +
+  "die Summe aller Zutaten kann über 100 % liegen. Beispiel: Zucker 79,2 % heißt etwa 79 g Zucker auf 100 g Mehl.\n\n" +
+  "Mehr als ein Mehl: Die Mehlzeilen ergeben zusammen 100 % und zeigen das Mischungsverhältnis " +
+  "(z. B. Mehl 90,5 % + Weizenmehl 9,5 %).\n\n" +
+  "Zutaten eines Unterrezepts beziehen sich auf dasselbe Gesamt-Mehl.\n\n" +
+  "Anteil % = Anteil am Teiggewicht, die Summe ergibt 100 %.\n\n" +
+  "Nur Rohstoffe vom Typ „Mehl“ zählen in die 100 %. Andere Rohstoffe wie Weizenpuder oder Weizenschrot " +
+  "(wenn nicht als Mehl geführt) bekommen einen Bäcker %, zählen aber nicht im Nenner.";
+document.querySelectorAll(".pct-info").forEach((b) => b.addEventListener("click", () => {
+  $("help-text").textContent = PCT_HELP; $("help-box").style.display = "flex";
+}));
+$("help-ok").addEventListener("click", () => { $("help-box").style.display = "none"; });
+
 function fmtG(n) { return Number(n).toLocaleString("de-DE") + " g"; }
 function fmtDec(text) {          // „312.125“ → „312,125“ mit Tausenderpunkten
   const parts = String(text).split(".");

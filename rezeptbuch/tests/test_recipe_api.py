@@ -195,3 +195,22 @@ def test_recipes_page_is_served(client):
     assert "Rezepte" in page.text and "api/v1/" in page.text
     assert page.headers["cache-control"] == "no-store"
     assert "Rezepte" in client.get("/admin/rohstoffe").text            # Reiter auf der Rohstoffseite
+
+
+# -- Alte Version wiederherstellen (0.6.3) -------------------------------------------------
+
+def test_restore_version_via_api(client, auth, mehl):
+    rec = create(client, auth, mehl)
+    body = body_of(rec, version_mode="new")
+    body["items"][0]["amount_g"] = 1200
+    r = client.put(f"/api/v1/admin/recipes/{rec['id']}", headers=auth, json=body)
+    assert r.status_code == 200, r.text
+    v2 = r.json()
+    url = f"/api/v1/admin/recipes/{rec['id']}/versions/1/restore"
+    assert client.post(url, json={"revision": v2["revision"]}).status_code == 401
+    r = client.post(url, headers=auth, json={"revision": v2["revision"]})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["version_no"] == 3 and data["items"][0]["amount_g"] == 1000
+    assert data["save_result"]["result"] == "new_version"
+    assert client.post(url, headers=auth, json={"revision": v2["revision"]}).status_code == 409   # Stand veraltet

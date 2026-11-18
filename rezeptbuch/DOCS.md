@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.6.2:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.6.3:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -59,6 +59,9 @@ Reiter **„Rezepte“** im Admin-Bereich.
 - **Sperren** blendet ein Rezept nur in der Vorwahl aus; als Unterrezept bleibt es nutzbar. **Archivieren** geht nicht, solange das Rezept als Unterrezept in einem aktiven Rezept steckt. Archivierte Rezepte können wiederhergestellt, aber nicht bearbeitet werden; enthält die aktuelle Version ein archiviertes Unterrezept, muss zuerst das Unterrezept wiederhergestellt werden. **Löschen** nur, wenn das Rezept nie verwendet wurde.
 - **Rohstoff austauschen** (Taste über der Rezeptliste): auszutauschenden Rohstoff, neuen Rohstoff und Faktor wählen (neue Menge = alte Menge × Faktor, auf ganze Gramm gerundet; 0 g bleibt 0 g, sonst mindestens 1 g), dazu höchstens zwei Zusatzzutaten mit Faktor auf die alte Menge (z. B. Butter 1 000 g → Margarine × 0,82 = 820 g + Wasser × 0,16 = 160 g; die Zusatzzeilen kommen direkt unter die getauschte Zeile im selben Schritt). „Rezepte anzeigen“ listet alle nicht archivierten Rezepte, deren aktuelle Version den Rohstoff direkt enthält, mit „alt → neu“; einzelne Rezepte abwählen, dann „Austauschen“. **Jedes geänderte Rezept bekommt eine neue Version**; öffentlich/gesperrt bleibt. Eine eigene Zeilentoleranz bleibt erhalten. Wahlweise: geänderte Zeilen mit „*“ markieren; alten Rohstoff archivieren, wenn er danach in keinem Rezept mehr vorkommt. Wurde ein Rezept inzwischen an einem anderen Gerät geändert, wird es übersprungen und genannt.
 - **Alte Versionen ansehen:** Neben jeder Menge steht kursiv die Menge der aktuellen Version („aktuell: …“, gelb = abweichend, „entfällt“ = nicht mehr enthalten); Zeilen, die nur die aktuelle Version hat, stehen kursiv am Ende. Am Handy steht der Wert unter der Menge.
+- **Rohstoff öffnen ↗ / Unterrezept öffnen ↗** in jeder gespeicherten Zeile: springt zum Rohstoff (Rohstoffseite, „← Zurück zum Rezept“) bzw. ins Unterrezept („← Zurück zu …“). Bei ungespeicherten Änderungen kommt zuerst die Rückfrage „verwerfen?“.
+- **Alte Version wiederherstellen:** in der Ansicht einer alten Version; legt sie als neue aktuelle Version an (die alte bleibt). Übernimmt „*“-Markierungen und archivierte Rohstoffe; nicht möglich, solange ein Unterrezept der alten Version archiviert ist. Stückgewichte, Chargengrößen, Gruppe und Status bleiben.
+- **„ⓘ“ an „Anteil %“ und „Bäcker %“** erklärt, wie die Prozente zu lesen sind (auch auf der Prüfseite).
 - **Kopieren** übernimmt die aktuelle Version, Stückgewichte und Chargengrößen als „Kopie von …“ (gesperrt); nicht möglich, solange ein Unterrezept archiviert ist.
 - Spalten **Anteil %** und **Bäcker %** sowie „Mehl gesamt (mit Unterrezepten)“ zeigen den gespeicherten Stand; geänderte oder neue Zeilen zeigen „–“ bis zum Speichern. Bäckerprozent bezieht sich auf das ganze Mehl inklusive Unterrezepten.
 - **Gruppen** im Reiter „Gruppen“: anlegen, umbenennen, Reihenfolge, löschen nur, wenn kein Rezept (auch kein archiviertes) darin ist.

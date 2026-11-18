@@ -475,3 +475,22 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 **B2 – Meldetext:** „1 Rohstoff **wird** überschrieben“ beim CSV-Import und beim Vorlagen-Import. Mitgenommen: Vorschau der Sammelaktionen „1 Rezept **wird** archiviert“ (vorher „werden“).
 
 **Tests:** `test_recipe_service.py` (+6: Wiederherstellen gesperrt und Reihenfolge, mehrere Unterrezepte, alte Version zählt nicht, gesperrtes Unterrezept erlaubt, Kopie gesperrt, Kopie mit aktivem Unterrezept), `test_recipe_bulk.py` (+3: Haupt- und Unterrezept gemeinsam, Unterrezept nicht angehakt, Einzahl in der Vorschau), Textprüfung in `test_import_raw_materials.py` und `test_import_recipes.py`, 1 API-Test (nur GitHub). Lokal 519 bestanden, 5 übersprungen (API-Tests ohne FastAPI); `rezeptbuch_waage` 7 bestanden. **GitHub-Testlauf erfolgreich** (Run 44214489848, Commit 2b8e958): 609 Tests (rezeptbuch 602, rezeptbuch_waage 7). **Praxisprüfung (t) am 18.11.2026 von Michael bestanden** (Meldung beim Wiederherstellen und Kopieren, Sammelaktion nur Hauptrezept → übersprungen, Haupt- und Unterrezept gemeinsam → wiederhergestellt, Einzahl „1 Rezept“).
+
+## Ergänzung 0.6.3 – Sprung zum Rohstoff/Unterrezept, alte Version wiederherstellen (18.11.2026)
+
+Wünsche Michael aus der Praxisprüfung Modul 06 Teil C2 (13:30, 13:32, Klärung 13:36), am 18.11.2026, 15:36 für 0.6.3 entschieden (mit Modul 06, vor dessen Freigabe). Änderung am freigegebenen Modul 05.
+
+**Sprung aus einer Rezeptzeile**
+- In jeder Zeile mit gewähltem Rohstoff bzw. Unterrezept (gespeichertes Rezept) eine Taste **„Rohstoff öffnen ↗“** bzw. **„Unterrezept öffnen ↗“**.
+- Rohstoff: Die Rohstoffseite öffnet mit `?edit=<Rohstoff-ID>&back=<Rezept-ID>` das Formular dieses Rohstoffs und zeigt **„← Zurück zum Rezept“** mit Nummer und Name des Rezepts. Ist das Formular offen, fragt die Taste zuerst „Formular schließen, ohne zu speichern?“. Zurück geht es mit `?open=<Rezept-ID>` zur Rezeptseite (aktuelle Version im Editor).
+- Unterrezept: öffnet das Unterrezept im Editor; **„← Zurück zu <Nummer – Name>“** führt zum Hauptrezept (auch über mehrere Ebenen).
+- **Ungespeicherte Änderungen** (Zutaten oder Stückgewichte/Chargengrößen): zuerst Rückfrage „verwerfen?“ (Entscheidung 15:36), wie beim Reiterwechsel.
+- Abgelaufene Sitzung: Nach der Anmeldung geht es weiter zum Ziel (`next=rezepte&open=<ID>` bzw. dieselbe Rohstoffseite).
+
+**Alte Version wiederherstellen**
+- In der Ansicht einer alten Version die Taste **„Diese Version wiederherstellen“**, Rückfrage im eigenen Fenster; legt den Inhalt als **neue aktuelle Version** an, die alte bleibt unverändert. Geht immer, auch bei produzierten Versionen (13:36).
+- Übernommen werden Name, Knetzeit, Hinweis, Schritte und Zeilen genau wie gespeichert, **„*“-Markierungen wie in der alten Version** und **archivierte Rohstoffe** (Entscheidungen 15:36). Stückgewichte, Chargengrößen, Gruppe, Nummer, Status und interne Notiz gehören nicht zur Version und bleiben.
+- **Archiviertes Unterrezept** in der alten Version: Meldung „… enthält das archivierte Unterrezept … – bitte zuerst wiederherstellen“ (R05-23, Freigabebericht Modul 05 B1; Michael hatte 15:36 „trotzdem wiederherstellen“ gewählt, der Widerspruch zu R05-23 ist zur Rückfrage offen).
+- Weitere Prüfungen wie beim Speichern: Name nicht inzwischen an ein anderes Rezept vergeben, keine Kreise (R05-10), Bearbeitungsstand (R05-17). Gleicher Inhalt wie die aktuelle Version: „entspricht der aktuellen Version – nichts geändert“. Protokoll: `new_version` mit `restored_from`.
+- Schnittstelle `POST /api/v1/admin/recipes/{id}/versions/{n}/restore` mit `{revision}` (PIN).
+- Tests: `test_recipe_restore_version.py` (8), API-Test in `test_recipe_api.py`; Oberfläche lokal mit Ersatzserver geprüft (Rechner, iPhone-Größe).

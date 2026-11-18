@@ -52,6 +52,8 @@
              align-items: center; justify-content: center; padding: 1rem; }
   #ask-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 30rem; width: 100%; color: #222; max-height: 85vh; overflow-y: auto; }
   #ask-text { white-space: pre-line; max-height: 60vh; overflow-y: auto; }
+  button.info { padding: 0 .3rem; margin: 0 0 0 .1rem; font-size: .95rem; border: none; background: none; color: #2563eb; cursor: pointer; }
+  button.jump { padding: .1rem .4rem; margin: .2rem 0 0; font-size: .85rem; }
   #bulk-bar { background: #e8f0fe; border: 1px solid #9bb7e8; border-radius: 4px; padding: .5rem .6rem; margin: .5rem 0; }
   td.sel, th.sel { width: 2.2rem; text-align: center; }
   td.sel input, th.sel input { width: 1.3rem; height: 1.3rem; }
@@ -125,6 +127,7 @@
   <section id="view-edit" class="hidden">
     <div class="toolbar">
       <button type="button" id="edit-back">← Zur Liste</button>
+      <button type="button" id="edit-return" class="hidden"></button>
       <h1 id="edit-title" class="grow" style="margin:0">Rezept</h1>
     </div>
     <div id="edit-status" class="toolbar"></div>
@@ -168,7 +171,7 @@
       <datalist id="dl-rec"></datalist>
       <div class="scroll">
         <table>
-          <thead><tr><th>Pos.</th><th>Art</th><th>Rohstoff / Unterrezept (Nummer oder Name)</th><th>Menge g</th><th class="num" title="Anteil am Gesamtgewicht (gespeicherter Stand)">Anteil %</th><th class="num" title="Bäckerprozent: bezogen auf das Mehl inklusive Unterrezepten (gespeicherter Stand)">Bäcker %</th><th>Toleranz</th><th>Schritt</th><th>„*“</th><th></th></tr></thead>
+          <thead><tr><th>Pos.</th><th>Art</th><th>Rohstoff / Unterrezept (Nummer oder Name)</th><th>Menge g</th><th class="num" title="Anteil am Gesamtgewicht (gespeicherter Stand)">Anteil % <button type="button" class="info pct-info" aria-label="Erklärung Anteil %">ⓘ</button></th><th class="num" title="Bäckerprozent: bezogen auf das Mehl inklusive Unterrezepten (gespeicherter Stand)">Bäcker % <button type="button" class="info pct-info" aria-label="Erklärung Bäcker %">ⓘ</button></th><th>Toleranz</th><th>Schritt</th><th>„*“</th><th></th></tr></thead>
           <tbody id="item-rows"></tbody>
         </table>
       </div>
@@ -312,6 +315,7 @@ let recipesAll = [];         // alle Rezepte (für Unterrezepte)
 let rec = null;              // Rezept im Editor
 let loaded = null;           // Rezept, wie es vom Server kam
 let dirty = false, portionDirty = false;
+let backStack = [];          // Sprung ins Unterrezept: Rezepte, zu denen „Zurück zu …“ führt (0.6.3)
 let searchTimer = null;
 
 $("nav-raw").href = BASE + "admin/rohstoffe";
@@ -319,7 +323,8 @@ $("nav-calc").href = BASE + "admin/berechnung";
 
 function toLogin(next) {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
-  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "rezepte"));
+  const open = (!next || next === "rezepte") && rec && rec.id ? "&open=" + rec.id : "";
+  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "rezepte") + open);
 }
 
 async function api(path, options) {
@@ -408,6 +413,45 @@ function ask(text, choices, cancelLabel) {
 
 // Hinweisfenster in der Mitte (wie Speichern-/Löschen-Rückfrage), nur mit „OK“
 function notify(text) { return ask(text, [], "OK"); }
+
+// Erklärung zu „Anteil %“ und „Bäcker %“ (Wunsch Michael 13:29, entschieden 18.11.2026, 15:36; Text aus docs/modulstatus-06.md)
+const PCT_HELP = "Bäcker % = Anteil der Zutat am gesamten Mehl. Das Mehl (inklusive Unterrezepte) ist immer 100 %, " +
+  "die Summe aller Zutaten kann über 100 % liegen. Beispiel: Zucker 79,2 % heißt etwa 79 g Zucker auf 100 g Mehl.\n\n" +
+  "Mehr als ein Mehl: Die Mehlzeilen ergeben zusammen 100 % und zeigen das Mischungsverhältnis " +
+  "(z. B. Mehl 90,5 % + Weizenmehl 9,5 %).\n\n" +
+  "Zutaten eines Unterrezepts beziehen sich auf dasselbe Gesamt-Mehl.\n\n" +
+  "Anteil % = Anteil am Teiggewicht, die Summe ergibt 100 %.\n\n" +
+  "Nur Rohstoffe vom Typ „Mehl“ zählen in die 100 %. Andere Rohstoffe wie Weizenpuder oder Weizenschrot " +
+  "(wenn nicht als Mehl geführt) bekommen einen Bäcker %, zählen aber nicht im Nenner.";
+function pctHelp(ev) { if (ev) ev.stopPropagation(); return notify(PCT_HELP); }
+document.querySelectorAll(".pct-info").forEach((b) => b.addEventListener("click", pctHelp));
+
+// Sprung aus einer Rezeptzeile (Wunsch Michael 13:30, entschieden 18.11.2026, 15:36): Rohstoff auf der
+// Rohstoffseite öffnen und zurück; Unterrezept hier öffnen und mit „Zurück zu …“ zum Hauptrezept.
+// Ungespeicherte Änderungen: erst Rückfrage „verwerfen?“ (wie beim Reiterwechsel).
+async function jumpTo(type, id) {
+  if (!(await leaveEditor())) return;
+  if (type === "raw_material") {
+    if (!(await checkSession("rohstoffe"))) return;
+    dirty = false; portionDirty = false;
+    location.href = BASE + "admin/rohstoffe?edit=" + id + "&back=" + rec.id;
+    return;
+  }
+  backStack.push({ id: rec.id, label: loaded.number + " – " + loaded.name });
+  await openRecipe(id, true);
+}
+
+function renderReturn() {
+  const b = $("edit-return");
+  const top = backStack[backStack.length - 1];
+  show("edit-return", Boolean(top));
+  if (top) b.textContent = "← Zurück zu " + top.label;
+}
+$("edit-return").addEventListener("click", async () => {
+  if (!(await leaveEditor())) return;
+  const top = backStack.pop();
+  if (top) await openRecipe(top.id, true);
+});
 
 // ---- Ansichten -----------------------------------------------------------------
 
@@ -653,7 +697,8 @@ function emptyRecipe(number) {
            steps: [], items: [], pieces: [], batches: [] };
 }
 
-async function openRecipe(id) {
+async function openRecipe(id, keepStack) {
+  if (!keepStack) backStack = [];
   showMsg("edit-msg", ""); showMsg("portion-msg", "");
   try {
     await loadGroupsData();
@@ -667,6 +712,7 @@ async function openRecipe(id) {
     await loadChoices();
     dirty = false; portionDirty = false;
     renderEditor();
+    renderReturn();
     showView("edit");
   } catch (err) { handleError(err, id === null ? "list-msg" : "list-msg"); }
 }
@@ -815,7 +861,12 @@ function renderItems() {
       if (found) { it.ref_text = found.number + " – " + found.name; ref.value = it.ref_text; }
       updateHint(); updateTolPlaceholder();
     });
-    refCell.appendChild(ref); refCell.appendChild(hint); tr.appendChild(refCell);
+    refCell.appendChild(ref); refCell.appendChild(hint);
+    if (it.ref_id && rec.id !== null) {
+      const label = it.type === "raw_material" ? "Rohstoff öffnen ↗" : "Unterrezept öffnen ↗";
+      refCell.appendChild(button(label, () => jumpTo(it.type, it.ref_id), "jump"));
+    }
+    tr.appendChild(refCell);
 
     const amount = el("input"); amount.className = "w-num"; amount.inputMode = "numeric"; amount.value = it.amount_g;
     amount.setAttribute("aria-label", "Menge Zeile " + (idx + 1));
@@ -1199,7 +1250,11 @@ async function viewVersion(no) {
       + "); gelb = abweichend.", "small"));
     const steps = {}; v.steps.forEach((s) => { steps[s.step_no] = s.name; });
     const table = el("table");
-    const head = el("tr"); ["Pos.", "Rohstoff / Unterrezept", "Menge g", "Anteil %", "Bäcker %", "Toleranz", "Schritt", "„*“"].forEach((h) => head.appendChild(el("th", h)));
+    const head = el("tr"); ["Pos.", "Rohstoff / Unterrezept", "Menge g", "Anteil %", "Bäcker %", "Toleranz", "Schritt", "„*“"].forEach((h) => {
+      const th = el("th", h);
+      if (h.endsWith("%")) { const b = button("ⓘ", pctHelp, "info"); b.setAttribute("aria-label", "Erklärung " + h); th.appendChild(b); }
+      head.appendChild(th);
+    });
     table.appendChild(head);
     v.items.forEach((i) => {
       const tr = el("tr"); if (i.type === "sub_recipe") tr.className = "sub";
@@ -1228,9 +1283,27 @@ async function viewVersion(no) {
       });
     }
     const wrap = el("div", null, "scroll"); wrap.appendChild(table); box.appendChild(wrap);
+    if (!v.current) box.appendChild(button("Diese Version wiederherstellen", () => restoreVersion(no), ""));
     box.appendChild(button("Schließen", () => show("version-view", false), ""));
     show("version-view", true);
   } catch (err) { handleError(err, "edit-msg"); }
+}
+
+// Alte Version wiederherstellen (Wunsch Michael 13:32, geht immer 13:36; 0.6.3): legt eine neue Version an
+async function restoreVersion(no) {
+  if (!(await leaveEditor())) return;
+  const ok = await ask("Version " + no + " als neue aktuelle Version anlegen?\n\nDie alte Version bleibt unverändert. " +
+    "Stückgewichte, Chargengrößen, Gruppe und Status bleiben, wie sie sind.", [{ label: "Wiederherstellen", value: true }]);
+  if (ok !== true) return;
+  try {
+    const result = await api("admin/recipes/" + rec.id + "/versions/" + no + "/restore", { method: "POST",
+      body: { revision: loaded.revision } });
+    portionDirty = false;
+    await afterLoad(result, result.save_result.message);
+  } catch (err) {
+    if (err.status === 409 && err.data.code === "changed_elsewhere") { await conflictDialog(err); return; }
+    handleError(err, "edit-msg");
+  }
 }
 
 // ---- Rohstoff austauschen (C3-E9) -----------------------------------------------------------
@@ -1556,6 +1629,12 @@ async function start() {
   if (!(await checkSession())) return;
   showView("list");
   await loadList();
+  // Rückkehr von der Rohstoffseite oder nach der Anmeldung: ?open=<Rezept-ID> (0.6.3)
+  const open = new URLSearchParams(location.search).get("open");
+  if (open && /^[0-9]{1,9}$/.test(open)) {
+    try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ }
+    await openRecipe(Number(open));
+  }
 }
 window.addEventListener("beforeunload", (ev) => { if (dirty || portionDirty) { ev.preventDefault(); ev.returnValue = ""; } });
 start();

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.6.3 – Wünsche aus der Praxisprüfung C2 (in Entwicklung)
+
+- **Erklärung zu „Anteil %“ und „Bäcker %“:** Taste „ⓘ“ an den Spalten auf der Rezeptseite (Zutaten und alte Versionen) und auf der Prüfseite „Berechnung“ (Zeilen und Zusammenfassung); eigenes Fenster, kein Browser-Dialog
+- **Sprung aus einer Rezeptzeile:** „Rohstoff öffnen ↗“ öffnet den Rohstoff auf der Rohstoffseite, „← Zurück zum Rezept“ führt zurück; „Unterrezept öffnen ↗“ öffnet das Unterrezept, „← Zurück zu …“ zum Hauptrezept. Ungespeicherte Änderungen: zuerst Rückfrage „verwerfen?“. Die Rezeptseite öffnet mit `?open=<id>` direkt ein Rezept (auch nach der Anmeldung)
+- **Alte Version wiederherstellen:** Taste „Diese Version wiederherstellen“ in der Ansicht einer alten Version; legt den Inhalt als neue aktuelle Version an, die alte bleibt unverändert. Geht auch bei produzierten Versionen; „*“-Markierungen und archivierte Rohstoffe werden übernommen; ein archiviertes Unterrezept verhindert es weiterhin (R05-23). Schnittstelle `POST /api/v1/admin/recipes/{id}/versions/{n}/restore`
+
 ## 0.6.2 – Modul 06, Teil C3, und Preis je kg (in Entwicklung)
 
 - **Bezugsarten kombinieren** (V06-1): Gesamtteig, Stückzahlen, Chargengrößen (auch dieselbe mehrmals) und **Faktor × Grundrezept** (neu, VC06-e) in einem Auftrag, in Gramm zusammengezählt; „Mehl gesamt“ und Leitrohstoff nur allein

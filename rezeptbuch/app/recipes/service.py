@@ -792,6 +792,63 @@ def save_recipe(conn: sqlite3.Connection, recipe_id: int, data: dict, *, revisio
     return result
 
 
+# -- Alte Version wiederherstellen (Wunsch Michael 18.11.2026, 13:32/13:36; Teil 0.6.3) -----------------
+
+def restore_version(conn: sqlite3.Connection, recipe_id: int, version_no: int, *, revision,
+                    source: str = "admin") -> dict:
+    """Legt den Inhalt einer alten Version als **neue aktuelle Version** an; die alte bleibt unverändert.
+
+    Geht immer (auch wenn die alte oder aktuelle Version schon produziert wurde, 13:36). Übernommen werden
+    Name, Knetzeit, Hinweis, Schritte und Zeilen genau wie gespeichert, auch „*“-Markierungen und
+    archivierte Rohstoffe (Entscheidung Michael 18.11.2026, 15:36). Stückgewichte, Chargengrößen, Gruppe, Nummer, Status und
+    interne Notiz gehören nicht zur Version und bleiben. Ein archiviertes Unterrezept verhindert das
+    Wiederherstellen weiter (R05-23, Freigabebericht Modul 05 B1). Der Name darf nicht inzwischen einem
+    anderen Rezept gehören, und es dürfen keine Kreise entstehen (R05-10).
+    """
+    try:
+        with transaction(conn):
+            row = _fetch(conn, recipe_id)
+            _check_revision(row, revision)
+            if row["archived"]:
+                raise ConflictError("Das Rezept ist archiviert. Bitte zuerst wiederherstellen.", code="archived")
+            version = conn.execute("SELECT id, version_no FROM recipe_version WHERE recipe_id = ? AND version_no = ?",
+                                   (recipe_id, version_no)).fetchone()
+            if version is None:
+                raise NotFoundError("Version nicht gefunden.", code="not_found")
+            if version["id"] == row["current_version_id"]:
+                raise ConflictError("Das ist bereits die aktuelle Version.", code="already_current")
+            content = _stored_content(conn, version["id"])
+            stored = _stored_content(conn, row["current_version_id"])
+            if content == stored:
+                outcome = {"result": "unchanged",
+                           "message": f"Version {version_no} entspricht der aktuellen Version – nichts geändert."}
+            else:
+                _check_name_free(conn, content["name"], exclude_id=recipe_id)
+                sub_ids = [i["sub_recipe_id"] for i in content["items"] if i["sub_recipe_id"] is not None]
+                for sub_id in sub_ids:
+                    sub = conn.execute("SELECT r.archived, v.name FROM recipe r JOIN recipe_version v "
+                                       "ON v.id = r.current_version_id WHERE r.id = ?", (sub_id,)).fetchone()
+                    if sub is not None and sub["archived"]:
+                        raise ConflictError(f"Version {version_no} enthält das archivierte Unterrezept „{sub['name']}“ "
+                                            "– bitte zuerst wiederherstellen.", code="archived_sub_recipe")
+                _check_cycle(conn, recipe_id, content["name"], sub_ids)
+                new_no = conn.execute("SELECT MAX(version_no) + 1 FROM recipe_version WHERE recipe_id = ?",
+                                      (recipe_id,)).fetchone()[0]
+                new_id = _insert_version(conn, recipe_id, new_no, content)
+                conn.execute("UPDATE recipe SET current_version_id = ?, revision = revision + 1 WHERE id = ?",
+                             (new_id, recipe_id))
+                _log(conn, "new_version", recipe_id, {"version_no": row["version_no"]},
+                     {"version_no": new_no, "restored_from": version_no, **content}, source)
+                outcome = {"result": "new_version",
+                           "message": f"Version {version_no} als neue Version {new_no} angelegt "
+                                      f"(Version {version_no} bleibt unverändert)."}
+    except sqlite3.IntegrityError as exc:
+        raise _integrity(exc) from exc
+    result = get_recipe(conn, recipe_id)
+    result["save_result"] = outcome
+    return result
+
+
 # -- Stückgewichte und Chargengrößen (R05-20, ohne Version) ---------------------------------
 
 def _check_revision_optional(row, revision) -> None:

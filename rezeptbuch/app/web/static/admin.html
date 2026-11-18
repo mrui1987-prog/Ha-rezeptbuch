@@ -66,6 +66,8 @@
   <section id="view-list" class="hidden">
     <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a><a id="tab-calc" href="#">Berechnung</a></div>
     <h1>Rohstoffe</h1>
+    <div class="toolbar hidden" id="back-bar"><button type="button" id="btn-back-recipe">← Zurück zum Rezept</button>
+      <span class="small" id="back-info"></span></div>
     <div class="toolbar">
       <button id="btn-new">Neuer Rohstoff</button>
       <input id="search" class="grow" type="search" placeholder="Suchen (Nummer, Name, Kurzname)" aria-label="Suchen">
@@ -143,7 +145,15 @@
 const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
 const API = BASE + "api/v1/";
 // Nach der Anmeldung zurück zur Seite, die die Anmeldung verlangt hat (Rezepte Modul 05, Berechnung Modul 06)
-const NEXT_PAGE = { rezepte: "admin/rezepte", berechnung: "admin/berechnung" }[new URLSearchParams(location.search).get("next")] || null;
+const PARAMS = new URLSearchParams(location.search);
+const NEXT_PAGE = { rezepte: "admin/rezepte", berechnung: "admin/berechnung" }[PARAMS.get("next")] || null;
+// Sprung aus einer Rezeptzeile (0.6.3): ?edit=<Rohstoff-ID>&back=<Rezept-ID> öffnet den Rohstoff,
+// „Zurück zum Rezept“ führt zur Rezeptseite mit diesem Rezept; ?open=<Rezept-ID> beim Weiterleiten nach der Anmeldung
+const ID_RE = /^[0-9]{1,9}$/;
+const EDIT_ID = ID_RE.test(PARAMS.get("edit") || "") ? Number(PARAMS.get("edit")) : null;
+const BACK_ID = ID_RE.test(PARAMS.get("back") || "") ? Number(PARAMS.get("back")) : null;
+const OPEN_ID = ID_RE.test(PARAMS.get("open") || "") ? PARAMS.get("open") : null;
+const NEXT_URL = NEXT_PAGE ? NEXT_PAGE + (NEXT_PAGE === "admin/rezepte" && OPEN_ID ? "?open=" + OPEN_ID : "") : null;
 document.getElementById("tab-recipes").href = BASE + "admin/rezepte";
 document.getElementById("tab-calc").href = BASE + "admin/berechnung";
 const SESSION_KEY = "rezeptbuch_admin_session";
@@ -285,9 +295,10 @@ $("login-form").addEventListener("submit", async (event) => {
     setToken(result.session);
     show("probe", result.pin_is_default === true);
     $("pin").value = "";
-    if (pendingPage || NEXT_PAGE) { location.href = pendingPage || BASE + NEXT_PAGE; return; }
+    if (pendingPage || NEXT_URL) { location.href = pendingPage || BASE + NEXT_URL; return; }
     showView("list");
     await loadList();
+    await openFromRecipe();
   } catch (err) {
     $("pin").value = "";
     showMsg("login-msg", err.message);
@@ -652,15 +663,39 @@ $("form").addEventListener("submit", async (event) => {
   }
 });
 
+// ---- Sprung aus dem Rezept (0.6.3) -------------------------------------------------
+
+async function openFromRecipe() {
+  if (BACK_ID !== null) {
+    show("back-bar", true);
+    try {
+      const r = await api("recipes/" + BACK_ID);
+      $("back-info").textContent = "Rezept " + r.number + " – " + r.name;
+    } catch (e) { /* Name ist nur Anzeige */ }
+  }
+  if (EDIT_ID === null) return;
+  try {
+    const item = await api("raw-materials/" + EDIT_ID);
+    await openForm(item);
+  } catch (err) { handleError(err); }
+}
+
+$("btn-back-recipe").addEventListener("click", async () => {
+  // ungespeicherte Eingaben im offenen Formular: nachfragen (eigenes Fenster, keine Browser-Dialoge)
+  if (!$("form-panel").classList.contains("hidden") && !(await askConfirm("Formular schließen, ohne zu speichern?", "Zurück zum Rezept"))) return;
+  location.href = BASE + "admin/rezepte?open=" + BACK_ID;
+});
+
 // ---- Start ----------------------------------------------------------------------
 
 async function start() {
   buildKeypad();
   await loadInfo();
   if (token && await checkSession()) {
-    if (NEXT_PAGE) { location.href = BASE + NEXT_PAGE; return; }
+    if (NEXT_URL) { location.href = BASE + NEXT_URL; return; }
     showView("list");
     await loadList();
+    await openFromRecipe();
   } else if (!token) {
     showView("login");
     $("pin").focus();

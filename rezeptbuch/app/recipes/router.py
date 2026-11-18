@@ -92,6 +92,12 @@ def save(recipe_id: int, payload: dict = Body(...), db: sqlite3.Connection = Dep
     return service.save_recipe(db, recipe_id, data, revision=revision, version_mode=version_mode)
 
 
+@router.post("/admin/recipes/{recipe_id}/versions/{version_no}/restore", dependencies=admin)
+def restore_version(recipe_id: int, version_no: int, payload: dict | None = Body(default=None),
+                    db: sqlite3.Connection = Depends(get_db)):
+    return service.restore_version(db, recipe_id, version_no, revision=(payload or {}).get("revision"))
+
+
 @router.put("/admin/recipes/{recipe_id}/piece-weights", dependencies=admin)
 def piece_weights(recipe_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
     return service.set_piece_weights(db, recipe_id, payload.get("piece_weights"),
