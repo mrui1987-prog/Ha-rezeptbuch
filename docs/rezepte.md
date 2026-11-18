@@ -207,7 +207,7 @@ Lesen (ohne PIN, die Stationen brauchen das in Modul 09/10):
 | GET | `/admin/recipes/template.xlsx` | Mustervorlage (0.5.4, C3-E2) |
 | GET | `/admin/recipes/export.xlsx?include_archived=false` | Export (6.3, K05-1) |
 
-Fehlerantworten wie Modul 03 (`detail`, `field`, `code`): 400 ungültig, 401 nicht angemeldet, 404 nicht gefunden, 409 Konflikt (Name/Nummer, Kreis, Archivieren als Unterrezept, Löschen verwendet, `version_choice_required`, `changed_elsewhere`, `confirmation_required`, `overwrite_confirmation_required`), 413 Datei zu groß, 423 PIN gesperrt, 503 Datenbank nicht bereit.
+Fehlerantworten wie Modul 03 (`detail`, `field`, `code`): 400 ungültig, 401 nicht angemeldet, 404 nicht gefunden, 409 Konflikt (Name/Nummer, Kreis, Archivieren als Unterrezept, Löschen verwendet, `archived_sub_recipe` (seit 0.5.11), `version_choice_required`, `changed_elsewhere`, `confirmation_required`, `overwrite_confirmation_required`), 413 Datei zu groß, 423 PIN gesperrt, 503 Datenbank nicht bereit.
 
 ## 8. Seiten (schlicht, M05-1)
 
@@ -459,9 +459,9 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 - Neue Funktion `archived_sub_recipes(conn, recipe_id)` in `app/recipes/service.py`: archivierte Unterrezepte der **aktuellen** Version (je Rezept einmal, nach Nummer). Alte Versionen zählen nicht; gesperrte Unterrezepte sind erlaubt (M05-5).
 - `restore_in_tx` prüft nach der Namensprüfung, `copy_recipe` vor dem Anlegen: sonst 409 `archived_sub_recipe` mit Meldung („enthält das archivierte Unterrezept „Vorteig“ (Nr. 1) – bitte zuerst wiederherstellen“, bei mehreren „die archivierten Unterrezepte …“) und Liste `sub_recipes`. Ein **archiviertes** Rezept kann weiterhin kopiert werden, wenn seine Unterrezepte aktiv sind.
 - Sammelaktion „Wiederherstellen“ (`bulk.py`) wiederholt wie Archivieren und Löschen, bis nichts mehr vorangeht; ist das Unterrezept nicht angehakt, wird das Hauptrezept mit Grund übersprungen.
-- Freischalten und Vorwahl brauchen keine eigene Prüfung: Ein aktives Rezept mit archiviertem Unterrezept kann nicht mehr entstehen (Archivieren sperrt M05-6, Wiederherstellen jetzt R05-23, neue Zeilen R05-12). **Hinweis:** Ein solcher Zustand, der vor 0.5.11 schon entstanden ist, bleibt bestehen, bis das Unterrezept wiederhergestellt oder die Zeile geändert wird.
+- Freischalten und Vorwahl brauchen keine eigene Prüfung: Ein aktives Rezept mit archiviertem Unterrezept kann nicht mehr entstehen (Archivieren sperrt M05-6, Wiederherstellen jetzt R05-23, neue Unterrezeptzeilen R05-9). **Hinweis:** Ein solcher Zustand, der vor 0.5.11 schon entstanden ist, bleibt bestehen, bis das Unterrezept wiederhergestellt oder die Zeile geändert wird.
 - Die Seite zeigt die Servermeldung unverändert an (keine Änderung an `recipes.html`).
 
 **B2 – Meldetext:** „1 Rohstoff **wird** überschrieben“ beim CSV-Import und beim Vorlagen-Import. Mitgenommen: Vorschau der Sammelaktionen „1 Rezept **wird** archiviert“ (vorher „werden“).
 
-**Tests:** `test_recipe_service.py` (+6: Wiederherstellen gesperrt und Reihenfolge, mehrere Unterrezepte, alte Version zählt nicht, gesperrtes Unterrezept erlaubt, Kopie gesperrt, Kopie mit aktivem Unterrezept), `test_recipe_bulk.py` (+3: Haupt- und Unterrezept gemeinsam, Unterrezept nicht angehakt, Einzahl in der Vorschau), Textprüfung in `test_import_raw_materials.py` und `test_import_recipes.py`, 1 API-Test (nur GitHub). Lokal 519 bestanden, 5 übersprungen (API-Tests ohne FastAPI); `rezeptbuch_waage` 7 bestanden.
+**Tests:** `test_recipe_service.py` (+6: Wiederherstellen gesperrt und Reihenfolge, mehrere Unterrezepte, alte Version zählt nicht, gesperrtes Unterrezept erlaubt, Kopie gesperrt, Kopie mit aktivem Unterrezept), `test_recipe_bulk.py` (+3: Haupt- und Unterrezept gemeinsam, Unterrezept nicht angehakt, Einzahl in der Vorschau), Textprüfung in `test_import_raw_materials.py` und `test_import_recipes.py`, 1 API-Test (nur GitHub). Lokal 519 bestanden, 5 übersprungen (API-Tests ohne FastAPI); `rezeptbuch_waage` 7 bestanden. **GitHub-Testlauf erfolgreich** (Run 44214489848, Commit 2b8e958): 609 Tests (rezeptbuch 602, rezeptbuch_waage 7).
