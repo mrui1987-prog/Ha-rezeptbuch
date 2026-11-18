@@ -1,6 +1,6 @@
 # Modul 07 – Waagenkommunikation (Schritt B: Konzept)
 
-Status: **Konzept erstellt am 18.11.2026, 21:00 – Freigabe durch Michael offen.** Konzeptfragen K07-1 bis K07-9 (Abschnitt 13) sind Vorschläge Claude – offen.
+Status: **Konzept erstellt am 18.11.2026, 21:00, von Michael am 18.11.2026, 21:12 freigegeben.** Konzeptfragen K07-1 bis K07-9 (Abschnitt 13) wie vorgeschlagen entschieden.
 Grundlage: Entscheidungen M07-1 bis M07-14 und Test CONT (18.11.2026, docs/modulstatus-07.md Abschnitt 6), docs/feldtest.md (12./13.11.2026), docs/architektur.md (Abschnitte 2, 5, 6), docs/bedienkonzept.md (R4–R6, Handbetrieb), Code-Stand `main` 29aa529 (Add-on `rezeptbuch_waage` 0.1.0, Gerüst aus Modul 01).
 Zielversion: Add-on `rezeptbuch_waage` **0.7.0** (Zweig `modul07`). Add-on 1 `rezeptbuch` bleibt unverändert.
 
@@ -242,9 +242,9 @@ Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (n
 
 **Verbleibende kurze Tests aus Schritt A (Vorschlag K07-8):** `W`/`S` entfallen (CONT sendet von selbst); `0rAGE` nur ablesen und in feldtest.md notieren; schnelle Befehle und Startwerte Stabilität in der Praxisprüfung.
 
-## 13. Konzeptfragen (Vorschlag Claude – offen, Entscheidung Michael)
+## 13. Konzeptfragen (entschieden 18.11.2026, 21:12, Michael: „Vorschläge passen, Konzept freigeben“)
 
-| Nr. | Frage | Vorschlag Claude – offen |
+| Nr. | Frage | Entscheidung (wie vorgeschlagen) |
 |---|---|---|
 | K07-1 | **Schema-Erweiterung (M07-5)** – berührt Modul 08 | **Schema 2** wie Abschnitt 6.1: neuer Status `invalid`, neue Felder `scale_stable`, `net`, `capacity_g`, `resolution_g`; Topic-Präfix bleibt `rezeptbuch/v1`. Modul 08 ist noch nicht begonnen, Add-on 1 liest noch nichts – die Änderung kostet dort nichts. `messages.py` verlangt bei Formatänderung eine neue Schema-Nummer. |
 | K07-2 | **Verfügbarkeit (Letzter Wille)** | Ein gemeinsames Topic `rezeptbuch/v1/scale_bridge/availability` (`online`/`offline`, retained), weil eine MQTT-Verbindung nur einen Letzten Willen hat. |
@@ -269,3 +269,4 @@ Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (n
 | Datum | Änderung |
 |---|---|
 | 18.11.2026, 21:00 | Konzept erstellt (Schritt B), Konzeptfragen K07-1 bis K07-9 offen. |
+| 18.11.2026, 21:12 | **Konzept von Michael freigegeben**, K07-1 bis K07-9 wie vorgeschlagen entschieden. Damit gilt Schema 2 auch als Abstimmung mit Modul 08 (K07-1 bis K07-3). |
