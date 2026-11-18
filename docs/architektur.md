@@ -39,7 +39,7 @@ Status: **freigegeben am 12.11.2026** (2 Add-ons)
 
 **Add-on 1 – `rezeptbuch`:** Datenbank, Rohstoffe, Rezepte, Berechnung, Produktionsliste, Wiegeablauf, Chargen, PIN-Prüfung, Web-Oberfläche.
 
-**Add-on 2 – `rezeptbuch_waage`:** liest die Waagen über die Waveshare-Konverter und veröffentlicht Gewicht und Stabilität per MQTT. Kennt keine Rezepte. Kann ohne Add-on 1 getestet werden (Simulator).
+**Add-on 2 – `rezeptbuch_waage`:** liest die Waagen über die Waveshare-Konverter und veröffentlicht Gewicht und Stabilität per MQTT. Kennt keine Rezepte. Kann ohne Add-on 1 getestet werden (Simulator). *Seit Modul 07 (M07-1, 18.11.2026): Anbindung je Station per TCP (Standard) oder über das Roh-Topic der MQTT-Funktion des Waveshare; Einzelheiten in docs/waage.md.*
 
 **Warum eigene Web-Oberfläche statt Lovelace-Dashboards:** Die Bedienung nach optidos-Vorbild (Ampelbalken, Sperren zwischen Stationen, Pause-Übergabe) lässt sich mit Lovelace-Karten nur mit vielen Hilfsentitäten bauen. Eine eigene Oberfläche bleibt übersichtlich und wird mit dem Add-on ausgeliefert. Home Assistant liefert Anmeldung (Ingress), Seitenleiste und Backup.
 
@@ -127,7 +127,7 @@ Englische Bezeichner im Code sind der übliche Standard und erleichtern anderen 
 ## 8. Offene Punkte
 
 1. **GitHub:** Kontoname, und gibt es das Repo `ha-rezeptbuch` schon?
-2. **Waagen:** genaues KERN-Modell der ersten Waage (für den Treiber in Modul 07).
+2. ~~**Waagen:** genaues KERN-Modell der ersten Waage (für den Treiber in Modul 07).~~ Geklärt im Feldtest 12./13.11.2026: **KERN IFB 30K-3 mit Anzeigegerät KFB-TM**, 9600 Baud, 8n1, Sendemodus CONT (docs/waage.md).
 3. **Tablets:** welches Gerät/Betriebssystem (für den Kiosk-Modus)?
 
 ## 9. Änderungen
@@ -136,3 +136,4 @@ Englische Bezeichner im Code sind der übliche Standard und erleichtern anderen 
 |-------|----------|
 | 12.11.2026 | Konzept freigegeben (2 Add-ons). |
 | 12.11.2026 | Abschnitt 5 an Review-Entscheidungen R2–R6 angepasst (Versionsfixierung, automatische/manuelle Quittung, Tara, Unterrezepte, Waagenausfall, Zeitwerte, Quittierungsart). |
+| 18.11.2026 | Modul 07: Abschnitt 8 Punkt 2 (KERN-Modell) erledigt; Hinweis zur Anbindung (M07-1) in Abschnitt 2. Präzisierungen zu R4–R6 aus Modul 07 (Stabilität in der Software, Tara in der Software, 45 s ab „offline“) stehen in docs/modulstatus-07.md und docs/waage.md. |
