@@ -166,7 +166,8 @@ def test_restore_version_with_archived_sub_recipe_confirm(client, auth, mehl):
     assert answer.json()["sub_recipes"][0]["name"] == "Vorteig"
     done = client.post(url, headers=auth, json={"revision": v2.json()["revision"], "restore_sub_recipes": True})
     assert done.status_code == 200, done.text
-    assert client.get(f"/api/v1/admin/recipes/{vorteig['id']}").json()["archived"] is False
+    again = client.post(f"/api/v1/admin/recipes/{vorteig['id']}/restore", headers=auth)
+    assert again.status_code == 409 and again.json()["code"] == "not_archived"     # Vorteig ist schon wieder aktiv
 
 
 def test_unlock_confirmation(client, auth):
