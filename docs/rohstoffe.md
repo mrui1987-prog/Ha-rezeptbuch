@@ -190,6 +190,7 @@ Konzeptfragen zur Ergänzung VC03-a (K03-5 bis K03-8, entschieden 18.11.2026): A
 | 18.11.2026, 12:44 | **Abschnitt 15 „Ergänzung VC03-a – Preis je kg“ geschrieben** (Auftrag Michael „ergänze Konzept Rohstoffe“); Hinweise in Abschnitt 1, 4, 6, 11, 12. Keine bestehende Regel geändert. |
 | 18.11.2026, 13:13 | **K03-5 bis K03-8 entschieden** und eingearbeitet (R03-13, 15.4, 15.6, 15.7, 15.9, 15.11); **K03-8 abweichend vom Vorschlag: runden statt Fehler.** Freigabe der Ergänzung offen. |
 | 18.11.2026, 14:44 | **Ergänzung VC03-a (Abschnitt 15) von Michael freigegeben** (Freigabe zum Programmieren); Umsetzung mit Modul 06 Teil C3 (0.6.2). Inhalt unverändert. |
+| 18.11.2026, 14:52 | **Redaktionell nachgezogen (keine Regel geändert):** 15.1 und 15.10 (Zeile 04) – datenlink liefert keine Preise (Prüfung der Auswirkungen des Kennzeichnungspass-Lesers am 18.11.2026, 13:50, docs/modulstatus-03.md); statt „sofern der Datenlink sie liefert“. |
 | 18.11.2026 | **VC03-a umgesetzt mit Modul 06 Teil C3 (0.6.2)**, Präzisierungen in 15.12. Keine Regel geändert. |
 
 ## 14. Abweichungen der Umsetzung vom freigegebenen Konzept
@@ -222,7 +223,7 @@ Grundlage: Entscheidung VC03-a vom 18.11.2026, 10:51 (docs/modulstatus-03.md): *
 
 **Enthalten:** Feld „Preis je kg“ und „Preis geändert am“ am Rohstoff; Eingabe und Anzeige auf der Rohstoffseite; Lese- und Admin-Schnittstelle; CSV-Export und CSV-Import (docs/rezepte.md 6.1); Protokoll in `change_log`; Tests.
 
-**Nicht enthalten:** Kosten je Rezept, je Teig oder je Stück (Rezeptkalkulation, später in Modul 06, eigener Vorschlag); Preisverlauf; Preis je Gebinde oder je Stück; Mehrwertsteuer; Anzeige an der Station (Modul 09/10 zeigen den Preis nicht an); Preise aus dem BÄKO-Datenlink (Modul 04); Importvorlage `.xlsx` und Rezept-Export `.xlsx` (K03-7).
+**Nicht enthalten:** Kosten je Rezept, je Teig oder je Stück (Rezeptkalkulation, später in Modul 06, eigener Vorschlag); Preisverlauf; Preis je Gebinde oder je Stück; Mehrwertsteuer; Anzeige an der Station (Modul 09/10 zeigen den Preis nicht an); Importvorlage `.xlsx` und Rezept-Export `.xlsx` (K03-7). **Preise aus dem BÄKO-Datenlink gibt es nicht:** Kennzeichnungspass und datenlink-XML enthalten keine Preise (geprüft 18.11.2026, 13:50); der Preis kommt nur aus Handeingabe und CSV-Import.
 
 ### 15.2 Datenbank (Teil von Migration `0006`)
 
@@ -293,7 +294,7 @@ Zwei neue Spalten **am Ende** (die bisherigen Spalten behalten ihre Lage): **„
 | 02 | zwei Spalten in Migration 0006 (docs/berechnung.md 17.9) |
 | 05 | Rohstoff-CSV-Import (`app/imports/`) liest die Preisspalte (vom freigegebenen Modul 05, abgedeckt durch VC03-a „CSV-Import“); Importvorlage und Rezept-Export unverändert (K03-7) |
 | 06 | keine Rechnung mit dem Preis in Teil C3; Rezeptkalkulation (Kosten je Rezept/Stück) später als eigener Vorschlag |
-| 04 | BÄKO-Preise ins selbe Feld, sofern der Datenlink sie liefert; Vorrang Handpreis/BÄKO-Preis dort klären; Rundung nach R03-13 |
+| 04 | **datenlink liefert keine Preise** (Kennzeichnungspass und XSD geprüft 18.11.2026, 13:50); der spätere Kennzeichnungs-Import lässt das Preisfeld unberührt. Andere BÄKO-Preisquellen (z. B. Preisliste) sind offen; falls es sie gibt, gilt die Rundung nach R03-13 |
 | 09/10 | keine Anzeige des Preises an der Station; Gestaltung der Seite in Modul 10 |
 | 12 | zur Kenntnis: Preise ohne PIN lesbar (R03-16) |
 | 13 | Preise sind Teil der Datenbanksicherung und des CSV-Exports |
