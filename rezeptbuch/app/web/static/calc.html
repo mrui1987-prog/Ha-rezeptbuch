@@ -52,6 +52,10 @@
   .indent { display: inline-block; }
   .toggle { min-width: 2rem; }
   #warnings li { margin: .2rem 0; }
+  .ask { background: #fff7e0; border: 1px solid #e6c56b; padding: .6rem .8rem; margin: .6rem 0; border-radius: 4px; }
+  .ask b { display: block; margin-bottom: .3rem; }
+  .row { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; margin: .3rem 0; }
+  .batch-count { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .3rem 1rem; }
 </style>
 </head>
 <body>
@@ -88,9 +92,13 @@
       <button type="button" data-basis="total">Gesamtteig</button>
       <button type="button" data-basis="pieces">Stückzahlen</button>
       <button type="button" data-basis="batch_size">Chargengröße</button>
+      <button type="button" data-basis="factor">Faktor</button>
+      <button type="button" data-basis="combined">Kombiniert</button>
       <button type="button" data-basis="flour_total">Mehl gesamt</button>
       <button type="button" data-basis="raw_material">Leitrohstoff</button>
     </div>
+    <p id="combined-help" class="small hidden">Kombiniert: Gesamtteig, Stückzahlen, Chargengrößen (auch mehrmals) und
+      Faktor werden in Gramm zusammengezählt. „Mehl gesamt“ und Leitrohstoff gehen nur allein.</p>
 
     <div id="in-amount" class="hidden">
       <div id="in-leading" class="hidden">
@@ -105,6 +113,24 @@
     </div>
     <div id="in-pieces" class="hidden"><div class="pieces" id="pieces"></div></div>
     <div id="in-batch" class="hidden"><div class="bases" id="batch-sizes"></div></div>
+    <div id="in-batch-count" class="hidden">
+      <label>Chargengrößen (Anzahl)</label>
+      <div class="batch-count" id="batch-counts"></div>
+    </div>
+    <div id="in-factor" class="hidden">
+      <label for="factor" id="factor-label">Faktor × Grundrezept</label>
+      <input id="factor" class="w-count" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 1,5">
+      <span class="small">0,01 bis 100, höchstens 2 Nachkommastellen</span>
+    </div>
+
+    <div id="limit-box">
+      <label for="order-limit">Obergrenze nur für diesen Auftrag (optional)</label>
+      <div class="toolbar">
+        <input id="order-limit" class="w-num" type="text" inputmode="decimal" autocomplete="off">
+        <select id="order-limit-unit" aria-label="Einheit Obergrenze"><option value="g">g</option><option value="kg">kg</option></select>
+      </div>
+      <p id="limit-info" class="small"></p>
+    </div>
 
     <div class="toolbar"><button type="button" id="btn-calc">Berechnen</button></div>
     <div id="calc-msg" class="msg hidden" role="alert"></div>
@@ -113,6 +139,23 @@
   <section id="result-panel" class="panel hidden">
     <h2>3. Ergebnis</h2>
     <p id="result-head" class="small"></p>
+    <div id="ask-split" class="ask hidden">
+      <b id="ask-split-text">Teig liegt über der Obergrenze – nach Obergrenze teilen?</b>
+      <button type="button" id="split-yes">Ja, teilen</button>
+      <button type="button" id="split-no">Nein, ein Teig</button>
+    </div>
+    <div id="dough-box" class="ask hidden">
+      <b id="dough-text"></b>
+      <div class="row">
+        <label class="inline" for="dough-count">Anzahl Teige</label>
+        <input id="dough-count" class="w-count" type="number" min="1" max="50" step="1">
+        <label class="inline"><input type="radio" name="split-mode" value="fill" checked> voll auffüllen</label>
+        <label class="inline"><input type="radio" name="split-mode" value="even"> gleichmäßig</label>
+      </div>
+      <div id="sub-modes"></div>
+      <div id="dough-msg" class="msg hidden" role="alert"></div>
+    </div>
+    <div id="dough-tabs" class="bases hidden" role="group" aria-label="Teige"></div>
     <div class="bases" role="group" aria-label="Ansicht">
       <button type="button" id="view-lines" class="active">Zeilen</button>
       <button type="button" id="view-summary">Zusammenfassung</button>
@@ -120,6 +163,10 @@
     <div id="summary-box" class="hidden">
       <p class="small">Jeder Rohstoff einmal, Mengen aus Hauptteig und allen Unterrezepten zusammengezählt
         (so, wie gewogen wird). Anteil und Bäckerprozent beziehen sich auf den ganzen Teig.</p>
+      <div id="summary-scope" class="bases hidden" role="group" aria-label="Umfang">
+        <button type="button" id="scope-dough" class="active">Dieser Teig</button>
+        <button type="button" id="scope-order">Ganzer Auftrag</button>
+      </div>
       <div class="scroll"><table>
         <thead><tr><th>Rohstoff</th><th class="num">Menge</th><th class="num">Anteil</th><th class="num" id="th-sum-baker">Bäcker-%</th></tr></thead>
         <tbody id="sum-rows"></tbody></table></div>
@@ -137,6 +184,7 @@
     </div>
     <div class="facts" id="facts"></div>
     <div id="hints-box" class="hidden"><h2>Ergibt</h2><ul id="hints"></ul></div>
+    <div id="sub-orders-box" class="hidden"><h2>Unterrezept-Aufträge</h2><ul id="sub-orders"></ul></div>
     <div id="warnings-box" class="hidden"><h2>Hinweise</h2><ul id="warnings"></ul></div>
   </section>
 </main>
@@ -157,6 +205,15 @@ let recipes = [];          // Liste für die Auswahl
 let options = null;        // Bezugsgrößen des gewählten Rezepts (basis-options)
 let basis = null;          // gewählte Bezugsgröße
 let batchSizeId = null;    // gewählte Chargengröße
+// Teil C3: Antworten und Auswahl zur Aufteilung (docs/berechnung.md 17.7)
+let split = null;          // Antwort auf „teilen?“ (Mehl gesamt/Leitrohstoff)
+let doughCount = null;     // gewählte Anzahl Teige (leer = Mindestanzahl)
+let splitMode = "fill";
+let subModes = {};         // Position → "per_dough"/"all"
+let lastResult = null;
+let doughIndex = 0;        // angezeigter Teig
+let summaryScope = "dough";
+let applied = null;        // zuletzt erfolgreich gerechnete Auswahl
 
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-recipes").href = BASE + "admin/rezepte";
@@ -286,7 +343,7 @@ async function loadOptions() {
   } catch (err) { show("basis-panel", false); handleError(err, "recipe-msg"); return; }
   const o = options;
   $("recipe-info").textContent = "Grundrezept: " + fmtG(o.total_g) +
-    (o.flour_total_available ? " · Mehl gesamt (mit Unterrezepten): " + fmtDec(o.flour_exact) + " g" : " · ohne Mehl") +
+    (o.flour_total_available ? " · Mehl gesamt (mit Unterrezepten): " + fmtG(o.flour_g) : " · ohne Mehl") +
     (o.knead ? " · Knetzeit " + o.knead : "");
   setupBases();
   show("basis-panel", true);
@@ -302,6 +359,8 @@ function setupBases() {
     batch_size: o.batch_sizes.length > 0,
     flour_total: o.flour_total_available,
     raw_material: o.raw_materials.length > 0,
+    factor: o.factor_allowed !== false,
+    combined: true,
   };
   document.querySelectorAll("#bases button").forEach((b) => {
     b.disabled = !available[b.dataset.basis];
@@ -318,8 +377,15 @@ function setupBases() {
   });
   // Chargengrößen
   const bs = $("batch-sizes"); bs.textContent = "";
+  const bc = $("batch-counts"); bc.textContent = "";
   o.batch_sizes.forEach((b) => {
-    const text = b.label + " (" + (b.kind === "weight" ? fmtG(b.value) : b.value + " × " + b.piece_weight_label + " = " + fmtG(b.weight_g)) + ")";
+    const text = b.label + " (" + (b.kind === "weight" ? fmtG(b.value) : b.value + " × " + b.piece_weight_label + " = " + fmtG(b.weight_g)) + ")" +
+      (b.is_limit ? " – Obergrenze" : "");
+    const wrap = el("div");
+    const lab = el("label", text);
+    const inp = el("input"); inp.type = "text"; inp.inputMode = "numeric"; inp.className = "w-count";
+    inp.dataset.batchSizeId = b.id; inp.placeholder = "0"; inp.id = "bc-" + b.id; lab.htmlFor = inp.id;
+    wrap.appendChild(lab); wrap.appendChild(inp); bc.appendChild(wrap);
     const btn = el("button", text); btn.type = "button"; btn.dataset.id = b.id;
     btn.addEventListener("click", () => {
       batchSizeId = b.id;
@@ -328,6 +394,10 @@ function setupBases() {
     bs.appendChild(btn);
   });
   batchSizeId = null;
+  $("limit-info").textContent = o.limit
+    ? "Obergrenze des Rezepts: „" + o.limit.label + "“ " + fmtG(o.limit.limit_g) + " (aktive Chargengröße). Für diesen Auftrag nur kleiner möglich."
+    : "Keine aktive Chargengröße: keine Obergrenze, außer sie wird hier für den Auftrag eingegeben.";
+  $("order-limit").value = "";
   // Leitrohstoffe: „gesamt“ und darunter die Zeilen (K06-1)
   const lead = $("leading"); lead.textContent = "";
   o.raw_materials.forEach((m) => {
@@ -347,12 +417,16 @@ function selectBasis(name) {
   basis = name;
   document.querySelectorAll("#bases button").forEach((b) => b.classList.toggle("active", b.dataset.basis === name));
   const amount = name === "total" || name === "flour_total" || name === "raw_material";
-  show("in-amount", amount);
   show("in-leading", name === "raw_material");
-  show("in-pieces", name === "pieces");
+  show("in-amount", amount || name === "combined");
+  show("in-pieces", name === "pieces" || name === "combined");
   show("in-batch", name === "batch_size");
-  $("value-label").textContent = { total: "Gesamtteig je Teig", flour_total: "Mehl gesamt je Teig",
-    raw_material: "Vorhandene Menge des Leitrohstoffs" }[name] || "Menge";
+  show("in-batch-count", name === "combined" && options.batch_sizes.length > 0);
+  show("in-factor", name === "factor" || name === "combined");
+  show("combined-help", name === "combined");
+  $("factor-label").textContent = name === "combined" ? "Faktor × Grundrezept (optional)" : "Faktor × Grundrezept";
+  $("value-label").textContent = { total: "Gesamtteig", flour_total: "Mehl gesamt",
+    raw_material: "Vorhandene Menge des Leitrohstoffs", combined: "Gesamtteig (optional)" }[name] || "Menge";
   const unit = $("unit"); const keep = unit.value; unit.textContent = "";
   const units = name === "raw_material" ? ["g", "kg", "l"] : ["g", "kg"];
   units.forEach((u) => unit.appendChild(new Option(u === "l" ? "l (1 l = 1 000 g)" : u, u)));
@@ -374,30 +448,61 @@ function buildRequest() {
     body.raw_material_id = parts[0] ? Number(parts[0]) : null;
     if (parts[1]) body.item_position = Number(parts[1]);
   }
-  if (basis === "pieces") {
+  if (basis === "pieces" || basis === "combined") {
     body.pieces = [...document.querySelectorAll("#pieces input")]
       .filter((i) => i.value.trim() !== "")
       .map((i) => ({ piece_weight_id: Number(i.dataset.pieceWeightId), count: i.value.trim() }));
   }
   if (basis === "batch_size") body.batch_size_id = batchSizeId;
+  if (basis === "combined") {
+    const v = $("value").value.trim();
+    if (v) body.total_part = { value: v, input_unit: $("unit").value };
+    body.batch_sizes = [...document.querySelectorAll("#batch-counts input")]
+      .filter((i) => i.value.trim() !== "")
+      .map((i) => ({ batch_size_id: Number(i.dataset.batchSizeId), count: i.value.trim() }));
+    if (!body.pieces.length) delete body.pieces;
+    if (!body.batch_sizes.length) delete body.batch_sizes;
+  }
+  if ((basis === "factor" || basis === "combined") && $("factor").value.trim()) body.factor = $("factor").value.trim();
+  const limit = $("order-limit").value.trim();
+  if (limit) body.order_limit = { value: limit, input_unit: $("order-limit-unit").value };
+  if (split !== null) body.split = split;
+  if (doughCount !== null) body.dough_count = doughCount;
+  body.split_mode = splitMode;
+  const modes = Object.keys(subModes).map((p) => ({ position: Number(p), mode: subModes[p] }));
+  if (modes.length) body.sub_modes = modes;
   return body;
 }
 
 function markField(field) {
   document.querySelectorAll(".bad").forEach((x) => x.classList.remove("bad"));
   const target = { value: "value", input_unit: "unit", raw_material_id: "leading", item_position: "leading",
-    pieces: "pieces", batch_size_id: "batch-sizes" }[field];
+    pieces: "pieces", batch_size_id: "batch-sizes", total_part: "value", factor: "factor",
+    batch_sizes: "batch-counts", order_limit: "order-limit", dough_count: "dough-count" }[field];
   if (target) $(target).classList.add("bad");
 }
 
-async function calc() {
+// ``fresh``: neue Eingabe (Taste „Berechnen“) – Antworten zur Aufteilung zurücksetzen
+async function calc(fresh) {
+  // Auswahl im Ergebnis (Anzahl Teige, Teilungsart, Vorteig): bei Fehler bleibt das letzte Ergebnis stehen
+  // und die Auswahl springt auf den zuletzt gerechneten Stand zurück
+  const keep = fresh !== true && lastResult ? applied : null;
+  if (fresh === true) { split = null; doughCount = null; subModes = {}; doughIndex = 0; lastResult = null; }
   showMsg("calc-msg", "");
+  showMsg("dough-msg", "");
   markField(null);
   if (basis === "batch_size" && !batchSizeId) { showMsg("calc-msg", "Bitte eine Chargengröße wählen."); markField("batch_size_id"); return; }
   try {
     const result = await api("calculation", { method: "POST", body: buildRequest() });
-    renderResult(result);
+    applied = { split: split, doughCount: doughCount, splitMode: splitMode, subModes: Object.assign({}, subModes) };
+    renderOrder(result);
   } catch (err) {
+    if (keep && err.status !== 401) {
+      split = keep.split; doughCount = keep.doughCount; splitMode = keep.splitMode; subModes = Object.assign({}, keep.subModes);
+      renderOrder(lastResult);
+      showMsg("dough-msg", err.message, "error");
+      return;
+    }
     show("result-panel", false);
     handleError(err, "calc-msg");
     if (err.data && err.data.field) markField(err.data.field);
@@ -407,7 +512,7 @@ async function calc() {
 // ---- Ergebnis -----------------------------------------------------------------------
 
 const BASIS_TEXT = { total: "Gesamtteig", pieces: "Stückzahlen", batch_size: "Chargengröße",
-  flour_total: "Mehl gesamt", raw_material: "Leitrohstoff" };
+  flour_total: "Mehl gesamt", raw_material: "Leitrohstoff", factor: "Faktor", combined: "Kombiniert" };
 
 function toleranceText(item) {
   if (item.kind === "hand") return "Handzugabe";
@@ -488,8 +593,9 @@ function setAll(open) {
   });
 }
 
-function fact(label, value) {
+function fact(label, value, title) {
   const d = el("div"); d.appendChild(el("b", label)); d.appendChild(document.createTextNode(" " + value));
+  if (title) d.title = title;
   $("facts").appendChild(d);
 }
 
@@ -497,7 +603,8 @@ function fact(label, value) {
 function renderSummary(r) {
   const body = $("sum-rows"); body.textContent = "";
   const hasFlour = r.totals.has_flour;
-  r.summary.forEach((row) => {
+  const whole = summaryScope === "order" && lastResult && lastResult.doughs && lastResult.doughs.length > 1;
+  (whole ? lastResult.order_summary : r.summary).forEach((row) => {
     const tr = el("tr");
     if (row.raw_material.archived) tr.className = "archived";
     td(tr, row.raw_material.station_name + (row.raw_material.station_name !== row.raw_material.name ? " (" + row.raw_material.name + ")" : ""));
@@ -522,7 +629,68 @@ function setResultView(name) {
 $("view-lines").addEventListener("click", () => setResultView("lines"));
 $("view-summary").addEventListener("click", () => setResultView("summary"));
 
-function renderResult(r) {
+// Gesamtergebnis (Auftrag) → Rückfragen, Teige, angezeigter Teig (docs/berechnung.md 17.7)
+function renderOrder(r) {
+  lastResult = r;
+  const sp = r.split || { count: 1, min_count: 1 };
+  const doughs = r.doughs || [];
+  // Rückfrage „teilen?“ bei Mehl gesamt/Leitrohstoff über der Obergrenze (R06-50)
+  show("ask-split", sp.needs_question && split === null);
+  if (sp.needs_question) $("ask-split-text").textContent = "Teig liegt über der Obergrenze " + fmtG(sp.limit_g) +
+    " – nach Obergrenze teilen? (mindestens " + sp.min_count + " Teige)";
+  // Anzahl Teige und Teilungsart, sobald es eine Obergrenze gibt und geteilt wird oder werden könnte
+  // Mehl gesamt/Leitrohstoff nur nach „Ja“ (R06-51); sonst bei jeder Obergrenze (mehr Teige wählbar, VC06-d)
+  const sole = r.basis.type === "flour_total" || r.basis.type === "raw_material";
+  show("dough-box", Boolean(sp.limit_g) && (sole ? split === true && sp.split : true));
+  $("dough-text").textContent = sp.limit_g
+    ? "Bedarf " + fmtG(r.demand.target_g) + " – Obergrenze " + fmtG(sp.limit_g) +
+      (sp.limit_source === "order" ? " (nur dieser Auftrag)" : sp.limit_label ? " („" + sp.limit_label + "“)" : "") +
+      " – mindestens " + sp.min_count + " Teig" + (sp.min_count === 1 ? "" : "e")
+    : "";
+  $("dough-count").min = String(sp.min_count);
+  $("dough-count").value = String(sp.count);
+  document.querySelectorAll("input[name=split-mode]").forEach((x) => { x.checked = x.value === splitMode; });
+  // Rückfrage Vorteig je Teig oder für alle (R06-44)
+  const sm = $("sub-modes"); sm.textContent = "";
+  if (sp.sub_question) {
+    const seen = new Set();
+    r.sub_orders.forEach((so) => {
+      if (seen.has(so.position)) return; seen.add(so.position);
+      const row = el("div", null, "row");
+      row.appendChild(el("span", so.sub_recipe.name + " (Zeile " + so.position + "):"));
+      ["per_dough", "all"].forEach((mode) => {
+        const lab = el("label", null, "inline");
+        const inp = el("input"); inp.type = "radio"; inp.name = "sub-" + so.position; inp.value = mode;
+        inp.checked = (subModes[so.position] || "per_dough") === mode;
+        inp.addEventListener("change", () => { subModes[so.position] = mode; calc(); });
+        lab.appendChild(inp); lab.appendChild(document.createTextNode(mode === "all" ? " einmal für alle" : " je Teig"));
+        row.appendChild(lab);
+      });
+      sm.appendChild(row);
+    });
+  }
+  // Teige als Reiter
+  const tabs = $("dough-tabs"); tabs.textContent = "";
+  if (doughIndex >= doughs.length) doughIndex = 0;
+  doughs.forEach((d, i) => {
+    const b = el("button", "Teig " + d.dough_index + " (" + fmtG(d.target_g) + ")"); b.type = "button";
+    b.classList.toggle("active", i === doughIndex);
+    b.addEventListener("click", () => { doughIndex = i; renderOrder(lastResult); });
+    tabs.appendChild(b);
+  });
+  show("dough-tabs", doughs.length > 1);
+  show("summary-scope", doughs.length > 1);
+  const shown = doughs.length > 1 ? doughs[doughIndex].result : r;
+  renderResult(shown, r);
+  // Unterrezept-Aufträge (R06-45, R06-46)
+  const so = $("sub-orders"); so.textContent = "";
+  (r.sub_orders || []).forEach((s) => so.appendChild(el("li", s.sub_recipe.name + " (Zeile " + s.position + "): " +
+    (s.dough_index ? "Teig " + s.dough_index : doughs.length > 1 ? "für alle Teige" : "ein Auftrag") + " – Gesamtteig " + fmtG(s.target_g))));
+  show("sub-orders-box", (r.sub_orders || []).length > 0);
+}
+
+function renderResult(r, order) {
+  order = order || r;
   rowKey = 0;
   $("rows").textContent = "";
   addRows(r.items, 0, " ", null);
@@ -535,22 +703,44 @@ function renderResult(r) {
   if (b.batch_size) basisText += " „" + b.batch_size.label + "“";
   if (b.pieces) basisText += " " + b.pieces.map((p) => p.count + " × " + p.label).join(", ");
   if (b.input_value) basisText += " " + b.input_value.replace(".", ",") + " " + b.input_unit;
-  $("result-head").textContent = r.recipe.number + " – " + r.recipe.name + " · " + version + " · " + basisText +
+  const ob = order.basis;
+  let orderText = BASIS_TEXT[ob.type];
+  if (ob.batch_size) orderText += " „" + ob.batch_size.label + "“";
+  if (ob.batch_sizes) orderText += " " + ob.batch_sizes.map((x) => x.count + " × " + x.label).join(", ");
+  if (ob.pieces) orderText += " " + ob.pieces.map((p) => p.count + " × " + p.label).join(", ");
+  if (ob.input_value && ob.type !== "combined") orderText += " " + ob.input_value.replace(".", ",") + " " + ob.input_unit;
+  if (ob.factor_hundredths && ob.type === "factor") orderText += " " + (ob.factor_hundredths / 100).toLocaleString("de-DE");
+  const many = order.doughs && order.doughs.length > 1;
+  $("result-head").textContent = r.recipe.number + " – " + r.recipe.name + " · " + version + " · " + orderText +
+    (many ? " · Teig " + (doughIndex + 1) + " von " + order.doughs.length : "") +
     " · Faktor " + b.factor_text.replace(".", ",") + " (alle Werte je Teig)";
   $("facts").textContent = "";
-  fact("Bezug:", fmtG(b.target_g));
+  if (order.demand && (ob.type === "combined" || ob.type === "factor" || many)) {
+    fact("Bedarf Auftrag:", fmtG(order.demand.target_g), order.demand.parts.map((p) =>
+      p.kind === "factor" ? "Faktor " + (p.factor_hundredths / 100).toLocaleString("de-DE") + " = " + fmtDec(p.exact_g) + " g"
+        : (p.count && p.kind !== "total" ? p.count + " × " : "") + p.label + " = " + fmtG(p.g)).join(" + "));
+  }
+  if (many) {
+    const ot = order.order_totals;
+    fact("Teige:", order.doughs.map((d) => fmtG(d.target_g)).join(" + ") + " = " + fmtG(ot.target_g));
+    fact("Summe Auftrag nach Rundung:", fmtG(ot.rounded_sum_g));
+    if (t.has_flour) fact("Mehl gesamt Auftrag:", fmtG(ot.flour_g), "genau " + fmtDec(ot.flour_exact) + " g");
+  }
+  fact(many ? "Teig:" : "Bezug:", fmtG(many ? order.doughs[doughIndex].target_g : b.target_g));
   fact("Ziel Teig:", (t.target_is_exact ? "" : "ca. ") + fmtG(t.target_g));
   fact("Summe nach Rundung:", fmtG(t.rounded_sum_g));
-  if (t.has_flour) fact("Mehl gesamt:", fmtDec(t.flour_exact) + " g");
+  if (t.has_flour) fact("Mehl gesamt:", fmtG(t.flour_g), "genau " + fmtDec(t.flour_exact) + " g");
   if (t.knead) fact("Knetzeit:", t.knead + " min");
   const hints = $("hints"); hints.textContent = "";
-  r.piece_hints.forEach((h) => hints.appendChild(el("li", fmtCount(h.count_tenths) + " × " + h.label + " (" + fmtG(h.weight_g) + ")")));
-  show("hints-box", r.piece_hints.length > 0);
+  r.piece_hints.forEach((h) => hints.appendChild(el("li", fmtCount(h.count_tenths) + " × " + h.label + " (" + fmtG(h.weight_g) + ")" +
+    (many ? " je Teig" : ""))));
+  if (many) order.order_totals.piece_hints.forEach((h) => hints.appendChild(el("li", fmtCount(h.count_tenths) + " × " + h.label +
+    " (" + fmtG(h.weight_g) + ") ganzer Auftrag")));
+  show("hints-box", hints.childNodes.length > 0);
   const warn = $("warnings"); warn.textContent = "";
-  r.warnings.forEach((w) => warn.appendChild(el("li", (w.position ? "Pos. " + w.position + ": " : "") + w.text)));
-  show("warnings-box", r.warnings.length > 0);
+  order.warnings.forEach((w) => warn.appendChild(el("li", (w.position ? "Pos. " + w.position + ": " : "") + w.text)));
+  show("warnings-box", order.warnings.length > 0);
   show("result-panel", true);
-  $("result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---- Bedienung ------------------------------------------------------------------------
@@ -559,8 +749,29 @@ $("search").addEventListener("input", fillRecipeSelect);
 $("show-archived").addEventListener("change", loadRecipes);
 $("recipe").addEventListener("change", chooseRecipe);
 $("version").addEventListener("change", () => { show("result-panel", false); loadOptions(); });
-$("btn-calc").addEventListener("click", calc);
-$("value").addEventListener("keydown", (ev) => { if (ev.key === "Enter") calc(); });
+$("btn-calc").addEventListener("click", async () => {
+  await calc(true);
+  if (!$("result-panel").classList.contains("hidden")) $("result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+$("value").addEventListener("keydown", (ev) => { if (ev.key === "Enter") calc(true); });
+$("split-yes").addEventListener("click", () => { split = true; calc(); });
+$("split-no").addEventListener("click", () => { split = false; calc(); });
+$("dough-count").addEventListener("change", () => {
+  const n = parseInt($("dough-count").value, 10);
+  doughCount = Number.isFinite(n) ? n : null;
+  calc();
+});
+document.querySelectorAll("input[name=split-mode]").forEach((x) => x.addEventListener("change", () => {
+  if (x.checked) { splitMode = x.value; calc(); }
+}));
+$("scope-dough").addEventListener("click", () => setScope("dough"));
+$("scope-order").addEventListener("click", () => setScope("order"));
+function setScope(name) {
+  summaryScope = name;
+  $("scope-dough").classList.toggle("active", name === "dough");
+  $("scope-order").classList.toggle("active", name === "order");
+  if (lastResult) renderOrder(lastResult);
+}
 $("btn-expand").addEventListener("click", () => setAll(true));
 $("btn-collapse").addEventListener("click", () => setAll(false));
 $("nav-logout").addEventListener("click", async () => {

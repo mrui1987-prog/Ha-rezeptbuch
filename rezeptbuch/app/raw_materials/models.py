@@ -10,7 +10,8 @@ das Ergebnis enthält die Spaltenwerte der Tabelle ``raw_material``
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+import re
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from ..errors import ValidationError
 from ..text_rules import check_no_formula_start
@@ -106,6 +107,61 @@ def parse_tolerance(value, unit: str) -> int:
     if tenths_int > MAX_PERCENT_TENTHS:
         raise ValidationError("Toleranz in Prozent darf höchstens 100 betragen.", field="tolerance")
     return tenths_int
+
+
+# -- Preis je kg (VC03-a, docs/rohstoffe.md 15.3, R03-13; K03-6, K03-8) -------------
+
+MAX_PRICE_CENTS = 999_999       # 9 999,99 €/kg (Tippfehlerschutz, K03-6)
+
+_PRICE_PLAIN = re.compile(r"^\d+([.,]\d+)?$")
+_PRICE_THOUSANDS = re.compile(r"^\d{1,3}(\.\d{3})+,\d+$")   # Tausenderpunkt nur mit Komma (1.234,50)
+
+
+def euro_text(cents: int) -> str:
+    """Cent → „2,35“ (Komma, genau 2 Nachkommastellen, ohne Tausenderpunkt und €-Zeichen)."""
+    return f"{cents // 100},{cents % 100:02d}"
+
+
+def parse_price(value, field: str = "price_per_kg") -> tuple[int | None, str | None]:
+    """Preis je kg in Euro netto → (Cent oder None, Rundungshinweis oder None).
+
+    Leer oder ``None`` = kein Preis. Erlaubt sind „2,35“, „2.35“, „1.234,50“, „2,35 €“ und Zahlen.
+    Mehr als 2 Nachkommastellen werden kaufmännisch gerundet (K03-8); die Obergrenze
+    9 999,99 € gilt nach dem Runden. Negative Werte und Text sind Fehler (``invalid_price``).
+    """
+    if value is None:
+        return None, None
+    if isinstance(value, bool):
+        raise ValidationError("Preis je kg muss eine Zahl sein (z. B. 2,35).", field=field, code="invalid_price")
+    if isinstance(value, (int, float)):
+        text = repr(value) if isinstance(value, float) else str(value)
+    elif isinstance(value, str):
+        text = value
+    else:
+        raise ValidationError("Preis je kg muss eine Zahl sein (z. B. 2,35).", field=field, code="invalid_price")
+    text = text.replace(" ", " ").strip()
+    if text.endswith("€"):
+        text = text[:-1]
+    text = text.replace(" ", "")
+    if not text:
+        return None, None
+    if text.startswith("-") and _PRICE_PLAIN.match(text[1:]):
+        raise ValidationError("Preis je kg darf nicht negativ sein.", field=field, code="invalid_price")
+    if _PRICE_THOUSANDS.match(text):
+        number = Decimal(text.replace(".", "").replace(",", "."))
+    elif _PRICE_PLAIN.match(text) and text.isascii():
+        number = Decimal(text.replace(",", "."))
+    else:
+        raise ValidationError("Preis je kg muss eine Zahl sein (z. B. 2,35).", field=field, code="invalid_price")
+    rounded = number.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    cents = int(rounded * 100)
+    if cents > MAX_PRICE_CENTS:
+        raise ValidationError("Preis je kg darf höchstens 9 999,99 € betragen.", field=field, code="invalid_price")
+    hint = None
+    if rounded != number:
+        shown = format(number.normalize(), "f").replace(".", ",")
+        hint = f"Preis auf 2 Nachkommastellen gerundet: {shown} → {euro_text(cents)} €"
+    return cents, hint
 
 
 def tolerance_display(unit: str, value: int) -> int | float:

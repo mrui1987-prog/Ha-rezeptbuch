@@ -13,9 +13,11 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from ..errors import ValidationError
-from .engine import BASIS_TYPES, MAX_DOUGH_G
+from .engine import BASIS_TYPES, MAX_DOUGH_G, MAX_DOUGHS, SOLE_BASIS_TYPES, SPLIT_MODES, SUB_MODES
 
 MAX_PIECES = 100_000
+MAX_BATCH_COUNT = 100           # Anzahl je Chargengröße (P06-13)
+MAX_FACTOR_HUNDREDTHS = 10_000  # Faktor höchstens 100 (R06-26)
 INPUT_UNITS = ("g", "kg", "l", "pcs")
 
 # Erlaubte Eingabeeinheiten je Bezugsgröße (P06-8). Chargengröße: je nach Art, siehe Service.
@@ -25,10 +27,13 @@ UNITS_FOR_BASIS = {
     "raw_material": ("g", "kg", "l"),
     "pieces": ("pcs",),
     "batch_size": ("g", "kg", "pcs"),
+    "factor": ("g",),
+    "combined": ("g", "kg"),
 }
 FACTOR_TO_G = {"g": 1, "kg": 1000, "l": 1000}          # 1 l = 1 000 g (M02-1e)
 
 _NUMBER = re.compile(r"^[0-9]+([.,][0-9]+)?$")
+_FACTOR = re.compile(r"^[0-9]+([.,][0-9]{1,2})?$")
 _DIGITS = re.compile(r"^[0-9]+$")
 
 
@@ -45,6 +50,15 @@ class CalcRequest:
     raw_material_id: int | None = None
     item_position: int | None = None
     overrides: dict[int, int] = field(default_factory=dict)
+    # Teil C3 (docs/berechnung.md 17.11)
+    total_part_g: int | None = None            # Gesamtteig-Anteil bei 'combined'
+    factor_hundredths: int | None = None       # Faktor bei 'factor'/'combined' (150 = 1,5)
+    batch_sizes: tuple[tuple[int, int], ...] = ()   # (Chargengröße-ID, Anzahl)
+    order_limit_g: int | None = None           # Obergrenze nur für den Auftrag
+    split: bool | None = None                  # Antwort auf „teilen?“ (Mehl gesamt/Leitrohstoff)
+    dough_count: int | None = None
+    split_mode: str = "fill"
+    sub_modes: dict[int, str] = field(default_factory=dict)
 
 
 def whole_number(value, field_name: str, label: str, *, minimum: int = 0, maximum: int | None = None,
@@ -136,6 +150,85 @@ def _pieces(data) -> tuple[tuple[int, int], ...]:
     return pieces
 
 
+def parse_factor(value, field_name: str = "factor") -> int:
+    """Faktor × Grundrezept → Hundertstel (R06-24, R06-26, P06-12): 0,01 bis 100, höchstens 2 Nachkommastellen."""
+    message = "Bitte einen Faktor zwischen 0,01 und 100 eingeben (höchstens 2 Nachkommastellen)."
+    if value is None or isinstance(value, bool):
+        raise ValidationError(message, field=field_name, code="factor_invalid")
+    if isinstance(value, (int, float)):
+        text = repr(value) if isinstance(value, float) else str(value)
+    elif isinstance(value, str):
+        text = value.strip().replace(" ", "")
+    else:
+        raise ValidationError(message, field=field_name, code="factor_invalid")
+    if not _FACTOR.match(text):
+        raise ValidationError(message, field=field_name, code="factor_invalid")
+    hundredths = int(Decimal(text.replace(",", ".")) * 100)
+    if not 1 <= hundredths <= MAX_FACTOR_HUNDREDTHS:
+        raise ValidationError(message, field=field_name, code="factor_invalid")
+    return hundredths
+
+
+def _batch_sizes(data) -> tuple[tuple[int, int], ...]:
+    if data is None:
+        return ()
+    if not isinstance(data, list):
+        raise ValidationError("Ungültige Chargengröße.", field="batch_sizes", code="batch_sizes_invalid")
+    result: dict[int, int] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            raise ValidationError("Ungültige Chargengröße.", field="batch_sizes", code="batch_sizes_invalid")
+        sid = whole_number(entry.get("batch_size_id"), "batch_sizes", "die Chargengröße", minimum=1)
+        count = whole_number(entry.get("count"), "batch_sizes", "die Anzahl", minimum=0)
+        if count > MAX_BATCH_COUNT:
+            raise ValidationError(f"Höchstens {MAX_BATCH_COUNT} je Chargengröße.", field="batch_sizes",
+                                  code="batch_count_invalid")
+        if sid in result:
+            raise ValidationError("Eine Chargengröße ist doppelt angegeben.", field="batch_sizes",
+                                  code="batch_sizes_duplicate")
+        result[sid] = count
+    return tuple((sid, count) for sid, count in result.items() if count > 0)
+
+
+def _amount_part(data, field_name: str) -> int | None:
+    """Menge als Zahl/Text (Gramm) oder als {value, input_unit} mit g/kg; leer = None."""
+    if data is None or (isinstance(data, str) and not data.strip()):
+        return None
+    if isinstance(data, dict):
+        value, unit = data.get("value"), data.get("input_unit") or "g"
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+    else:
+        value, unit = data, "g"
+    if unit not in ("g", "kg"):
+        raise ValidationError("Bitte g oder kg angeben.", field=field_name, code="unit_invalid")
+    return amount_to_grams(value, unit, field_name)
+
+
+def _order_limit(data) -> int | None:
+    try:
+        return _amount_part(data, "order_limit")
+    except ValidationError as exc:
+        # P06-17 mit eigener Meldung
+        raise ValidationError("Obergrenze: bitte ganze Gramm größer als 0 und höchstens 1 000 kg eingeben.",
+                              field="order_limit", code="order_limit_invalid") from exc
+
+
+def _sub_modes(data) -> dict[int, str]:
+    if data is None:
+        return {}
+    if not isinstance(data, list):
+        raise ValidationError("Ungültige Auswahl „je Teig/für alle“.", field="sub_modes", code="sub_mode_invalid")
+    result: dict[int, str] = {}
+    for entry in data:
+        if not isinstance(entry, dict) or entry.get("mode") not in SUB_MODES:
+            raise ValidationError("Bitte „je Teig“ oder „für alle“ wählen.", field="sub_modes",
+                                  code="sub_mode_invalid")
+        position = whole_number(entry.get("position"), "sub_modes", "die Zeile", minimum=1)
+        result[position] = entry["mode"]
+    return result
+
+
 def _overrides(data) -> dict[int, int]:
     if data is None:
         return {}
@@ -187,4 +280,54 @@ def validate_request(payload) -> CalcRequest:
     if basis_type == "batch_size":
         req["batch_size_id"] = whole_number(payload.get("batch_size_id"), "batch_size_id",
                                             "eine Chargengröße", minimum=1)
+
+    # Teil C3: Kombinieren, Faktor (17.2, 17.3)
+    combo = {
+        "total_part": payload.get("total_part"),
+        "factor": payload.get("factor"),
+        "batch_sizes": payload.get("batch_sizes"),
+        "pieces": payload.get("pieces") if basis_type != "pieces" else None,
+    }
+    given = {key for key, value in combo.items() if value not in (None, "", [])}
+    if basis_type == "factor":
+        req["factor_hundredths"] = parse_factor(payload.get("factor"))
+        given.discard("factor")
+    if basis_type == "combined":
+        req["total_part_g"] = _amount_part(payload.get("total_part"), "total_part")
+        if payload.get("factor") not in (None, ""):
+            req["factor_hundredths"] = parse_factor(payload.get("factor"))
+        req["batch_sizes"] = _batch_sizes(payload.get("batch_sizes"))
+        if payload.get("pieces") not in (None, []):
+            # Stückzahlen 0 werden in der Kombination einfach weggelassen
+            try:
+                req["pieces"] = _pieces(payload.get("pieces"))
+            except ValidationError as exc:
+                if exc.code != "pieces_missing":
+                    raise
+        if not (req.get("total_part_g") or req.get("factor_hundredths") or req.get("batch_sizes")
+                or req.get("pieces")):
+            raise ValidationError("Bitte mindestens eine Angabe machen.", field="basis_type", code="demand_missing")
+    elif given:
+        if basis_type in SOLE_BASIS_TYPES:
+            raise ValidationError("Mehl gesamt und Leitrohstoff nur allein möglich.", field="basis_type",
+                                  code="sole_basis")
+        raise ValidationError("Mehrere Angaben bitte mit der Bezugsart „kombiniert“.", field="basis_type",
+                              code="combine_required")
+
+    # Obergrenze und Teige (17.4 bis 17.6)
+    req["order_limit_g"] = _order_limit(payload.get("order_limit"))
+    split = payload.get("split")
+    if split is not None and not isinstance(split, bool):
+        raise ValidationError("„Teilen?“ bitte mit Ja oder Nein beantworten.", field="split", code="split_invalid")
+    req["split"] = split
+    req["dough_count"] = whole_number(payload.get("dough_count"), "dough_count", "Die Anzahl Teige", minimum=1,
+                                      required=False)
+    if req["dough_count"] is not None and req["dough_count"] > MAX_DOUGHS:
+        raise ValidationError(f"Höchstens {MAX_DOUGHS} Teige je Auftrag.", field="dough_count", code="too_many_doughs")
+    mode = payload.get("split_mode") or "fill"
+    if mode not in SPLIT_MODES:
+        raise ValidationError("Bitte „voll auffüllen“ oder „gleichmäßig“ wählen.", field="split_mode",
+                              code="split_mode_invalid")
+    req["split_mode"] = mode
+    req["sub_modes"] = _sub_modes(payload.get("sub_modes"))
     return CalcRequest(**req)

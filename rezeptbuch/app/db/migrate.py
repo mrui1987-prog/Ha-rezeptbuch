@@ -25,6 +25,9 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 BACKUP_KEEP = 5
 BACKUP_PREFIX = "pre_migration_"
 
+# Erste Zeile einer Migration, die mit ausgeschalteten Fremdschlüsseln laufen muss
+FK_OFF_MARKER = "-- migration: foreign_keys=off"
+
 _FILE_PATTERN = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 
 
@@ -135,6 +138,13 @@ def migrate(
     applied: list[int] = []
     for migration in pending:
         sql = migration.path.read_text(encoding="utf-8")
+        # Tabellen-Neuaufbau (z. B. geänderte CHECK-Regel, Migration 0006) braucht ausgeschaltete
+        # Fremdschlüssel; das geht in SQLite nur außerhalb einer Transaktion. Die Prüfung mit
+        # PRAGMA foreign_key_check unten läuft trotzdem vor dem COMMIT.
+        fk_off = sql.lstrip().lower().startswith(FK_OFF_MARKER)
+        fk_was_on = bool(conn.execute("PRAGMA foreign_keys").fetchone()[0])
+        if fk_off:
+            conn.execute("PRAGMA foreign_keys = OFF")
         try:
             # Das Skript läuft innerhalb einer Transaktion; Fehler lassen sie offen
             # und werden unten zurückgerollt.
@@ -162,6 +172,9 @@ def migrate(
                 f"Migration {migration.path.name} ist fehlgeschlagen und wurde zurückgerollt "
                 f"(Datenbank bleibt auf Stand {current_version(conn)}): {exc}.{hint}"
             ) from exc
+        finally:
+            if fk_off and fk_was_on:
+                conn.execute("PRAGMA foreign_keys = ON")
         applied.append(migration.version)
 
     return applied

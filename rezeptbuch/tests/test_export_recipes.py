@@ -39,7 +39,7 @@ def filled(conn):
                    "tolerance": "1,5", "tolerance_unit": "percent"}]})
     service.set_piece_weights(conn, brot["id"], [{"label": "Laib", "weight_g": 1000}, {"label": "Klein", "weight_g": 500}])
     service.set_batch_sizes(conn, brot["id"], [{"label": "3 Laibe", "kind": "pieces", "value": 3, "piece_weight_label": "Laib"},
-                                               {"label": "Teig", "kind": "weight", "value": 3400}])
+                                               {"label": "Teig", "kind": "weight", "value": 3400, "is_limit": True}])
     service.unlock_recipe(conn, brot["id"], confirm=True)
     return {"brot": brot["id"], "vorteig": vorteig["id"]}
 
@@ -58,7 +58,8 @@ def snapshot(conn, recipe_id):
         "items": [(i["type"], (i.get("raw_material") or i.get("sub_recipe"))["name"], i["amount_g"],
                    i["tolerance_override"], i["step_no"], i["needs_review"]) for i in r["items"]],
         "pieces": [(p["label"], p["weight_g"]) for p in r["piece_weights"]],
-        "batches": [(b["label"], b["kind"], b["value"], b["piece_weight_label"]) for b in r["batch_sizes"]],
+        "batches": [(b["label"], b["kind"], b["value"], b["piece_weight_label"], b["is_limit"])
+                    for b in r["batch_sizes"]],
     }
 
 

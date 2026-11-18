@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from ..errors import ConflictError, PayloadTooLargeError, ServiceError, ValidationError
 from ..raw_materials import service
-from ..raw_materials.models import normalize_text
+from ..raw_materials.models import euro_text, normalize_text
 from .report import ImportReport
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -60,7 +60,7 @@ _HEADER_LABELS = {
 COLUMN_LABEL = {
     "number": "Nummer", "name": "Name", "display_name": "Kurzname", "type": "Typ",
     "tolerance": "Toleranz", "tolerance_unit": "Toleranzeinheit", "unit_size_g": "Gebindegröße g",
-    "unit_label": "Gebindebezeichnung", "archived": "archiviert",
+    "unit_label": "Gebindebezeichnung", "archived": "archiviert", "price_per_kg": "Preis je kg €",
 }
 
 TYPE_VALUES = {"standard": "standard", "mehl": "flour", "flour": "flour"}
@@ -112,6 +112,14 @@ def _header_key(text: str) -> str:
 
 HEADERS = {_header_key(label): target for label, target in _HEADER_LABELS.items()}
 
+# Preis je kg nur im CSV-Import, nicht in der Importvorlage .xlsx (VC03-a, K03-7; docs/rohstoffe.md 15.6).
+# „Preis geändert am“ ist bekannt, wird aber nicht ausgewertet (setzt der Rezeptserver, R03-14).
+_PRICE_LABELS = {
+    "Preis je kg €": "price_per_kg", "Preis je kg": "price_per_kg", "Preis €/kg": "price_per_kg",
+    "Preis/kg": "price_per_kg", "Preis geändert am": None,
+}
+CSV_HEADERS = {**HEADERS, **{_header_key(label): target for label, target in _PRICE_LABELS.items()}}
+
 
 def cell_text(value) -> str:
     """Zellwert als Text (für CSV schon Text; für .xlsx auch Zahlen, Teil C3)."""
@@ -147,7 +155,7 @@ def parse_csv(data: bytes) -> ParsedFile:
     ignored: list[str] = []
     for raw in header:
         key = _header_key(raw)
-        target = HEADERS.get(key, "?")
+        target = CSV_HEADERS.get(key, "?")
         if target == "?":
             columns.append(None)
             if key:
@@ -214,6 +222,9 @@ def _row_input(row: SourceRow, existing: bool) -> tuple[dict, bool | None, bool]
     for key in ("name", "display_name", "unit_label"):
         if row.has(key):
             data[key] = row.get(key) or None
+    if row.has("price_per_kg"):
+        # K03-5: leere Zelle löscht den Preis; fehlt die Spalte ganz, bleibt er unverändert
+        data["price_per_kg"] = row.get("price_per_kg") or None
     if row.has("unit_size_g"):
         data["unit_size_g"] = _int_text(row.get("unit_size_g")) or None
     if row.get("type"):
@@ -250,7 +261,15 @@ def _show(item: dict) -> dict:
         "Toleranz": tolerance,
         "Gebinde": f"{item['unit_size_g']} g {item['unit_label']}" if item["unit_size_g"] else "(leer)",
         "archiviert": "ja" if item["archived"] else "nein",
+        "Preis je kg": (euro_text(item["price_cents_per_kg"]) + " €"
+                        if item["price_cents_per_kg"] is not None else "(leer)"),
     }
+
+
+def _price_hints(report: ImportReport, warnings: list, row: SourceRow, sheet: str | None) -> None:
+    """Gerundeter Preis (K03-8): Import möglich, Hinweis mit Zeile im Bericht."""
+    for warning in warnings:
+        report.hint(warning["detail"], line=row.line, sheet=sheet)
 
 
 def _is_zero_percent(item: dict) -> bool:
@@ -324,7 +343,9 @@ def _apply_one(conn: sqlite3.Connection, row: SourceRow, report: ImportReport, s
         data, archived, zero_from_empty = _row_input(row, existing=False)
         if number is not None:
             data["number"] = number
-        new_id = service.create_in_tx(conn, data, source="import")
+        warnings: list = []
+        new_id = service.create_in_tx(conn, data, source="import", warnings=warnings)
+        _price_hints(report, warnings, row, sheet)
         if archived:
             service.archive_in_tx(conn, new_id, source="import")
         item = service.get_raw_material(conn, new_id)
@@ -342,14 +363,18 @@ def _apply_one(conn: sqlite3.Connection, row: SourceRow, report: ImportReport, s
 
     before = service.get_raw_material(conn, target)
     data, archived, _ = _row_input(row, existing=True)
+    warnings: list = []
     if archived is True and not before["archived"]:
         service.archive_in_tx(conn, target, source="import")
-        changed = service.update_in_tx(conn, target, data, confirm_type_change=True, source="import")
+        changed = service.update_in_tx(conn, target, data, confirm_type_change=True, source="import",
+                                       warnings=warnings)
     else:
-        changed = service.update_in_tx(conn, target, data, confirm_type_change=True, source="import")
+        changed = service.update_in_tx(conn, target, data, confirm_type_change=True, source="import",
+                                       warnings=warnings)
         if archived is False and before["archived"]:
             service.restore_in_tx(conn, target, source="import")
     after = service.get_raw_material(conn, target)
+    _price_hints(report, warnings, row, sheet)
 
     old, new = _show(before), _show(after)
     fields = [{"field": key, "old": old[key], "new": new[key]} for key in old if old[key] != new[key]]

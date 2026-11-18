@@ -452,7 +452,7 @@ def test_csv_export_format(conn):
     assert data.startswith(b"\xef\xbb\xbf")                       # UTF-8 mit BOM
     lines = data.decode("utf-8-sig").split("\r\n")
     assert lines[0] == ("Nummer;Name;Kurzname;Typ;Toleranz;Toleranzeinheit;Gebindegröße g;"
-                        "Gebindebezeichnung;Herkunft;archiviert;geändert am")
+                        "Gebindebezeichnung;Herkunft;archiviert;geändert am;Preis je kg €;Preis geändert am")
     first = lines[1].split(";")
     assert first[:10] == ["1", "Weizenmehl 550", "", "Mehl", "20", "g", "", "", "eigen", "nein"]
     assert lines[2].startswith('2;"Ei; frisch";Eier;Standard;2,5;%;55;Ei;eigen;ja;')   # Semikolon im Namen in Anführungszeichen

@@ -80,6 +80,7 @@ def _load(conn: sqlite3.Connection, recipe_id: int, version_no: int | None, vers
             lines.append(Line(material=_material(conn, r["raw_material_id"], cache),
                               tolerance_unit=r["tolerance_unit"], tolerance_value=r["tolerance_value"], **common))
 
+    limit = active_limit(conn, recipe_id)
     pieces = ()
     if with_pieces:
         pieces = tuple(PieceWeight(r["id"], r["label"], r["weight_g"]) for r in conn.execute(
@@ -89,7 +90,8 @@ def _load(conn: sqlite3.Connection, recipe_id: int, version_no: int | None, vers
         id=recipe_id, number=recipe_row["number"], name=version["name"], version_no=version["version_no"],
         version_id=version["id"], lines=tuple(lines), knead_slow_min=version["knead_slow_min"],
         knead_fast_min=version["knead_fast_min"], piece_weights=pieces, locked=bool(recipe_row["locked"]),
-        archived=bool(recipe_row["archived"]), current=version["id"] == recipe_row["current_version_id"])
+        archived=bool(recipe_row["archived"]), current=version["id"] == recipe_row["current_version_id"],
+        limit_g=limit["limit_g"] if limit else None, limit_label=limit["label"] if limit else None)
 
 
 def load_recipe(conn: sqlite3.Connection, recipe_id: int, *, version_no: int | None = None,
@@ -101,7 +103,8 @@ def load_recipe(conn: sqlite3.Connection, recipe_id: int, *, version_no: int | N
 def batch_sizes(conn: sqlite3.Connection, recipe_id: int) -> list[dict]:
     """Chargengrößen des Rezepts mit Gewicht in Gramm (bei „Stück“: Anzahl × Stückgewicht)."""
     rows = conn.execute(
-        "SELECT b.id, b.label, b.kind, b.value, b.piece_weight_id, p.label AS piece_label, p.weight_g AS piece_g "
+        "SELECT b.id, b.label, b.kind, b.value, b.piece_weight_id, b.is_limit, "
+        "       p.label AS piece_label, p.weight_g AS piece_g "
         "FROM recipe_batch_size b LEFT JOIN recipe_piece_weight p ON p.id = b.piece_weight_id "
         "WHERE b.recipe_id = ? ORDER BY b.sort_order, b.id", (recipe_id,))
     return [{
@@ -109,4 +112,13 @@ def batch_sizes(conn: sqlite3.Connection, recipe_id: int) -> list[dict]:
         "piece_weight_id": r["piece_weight_id"], "piece_weight_label": r["piece_label"],
         "piece_weight_g": r["piece_g"],
         "weight_g": r["value"] if r["kind"] == "weight" else r["value"] * r["piece_g"],
+        "is_limit": bool(r["is_limit"]),
     } for r in rows]
+
+
+def active_limit(conn: sqlite3.Connection, recipe_id: int) -> dict | None:
+    """Aktive Chargengröße als Obergrenze (Haken, R06-27); Gramm bei „Stück“ = Anzahl × Stückgewicht (R06-28)."""
+    for size in batch_sizes(conn, recipe_id):
+        if size["is_limit"]:
+            return {"batch_size_id": size["id"], "label": size["label"], "limit_g": size["weight_g"]}
+    return None

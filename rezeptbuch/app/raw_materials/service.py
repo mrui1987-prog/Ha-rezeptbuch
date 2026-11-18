@@ -15,7 +15,7 @@ import sqlite3
 
 from ..db import transaction
 from ..errors import ConflictError, NotFoundError
-from .models import normalize_text, tolerance_display, validate
+from .models import normalize_text, parse_price, tolerance_display, validate
 
 # Ähnlichkeit ab der ein Name als „ähnlich“ gemeldet wird (R03-3)
 SIMILARITY_THRESHOLD = 0.8
@@ -23,7 +23,10 @@ SIMILARITY_THRESHOLD = 0.8
 _COLUMNS = ("number", "name", "display_name", "type", "tolerance_unit", "tolerance_value",
             "unit_size_g", "unit_label")
 _SELECT = ("SELECT id, number, name, display_name, type, tolerance_unit, tolerance_value, "
-           "unit_size_g, unit_label, source, archived, created_at, updated_at FROM raw_material")
+           "unit_size_g, unit_label, source, archived, created_at, updated_at, price_cents_per_kg, price_changed_at "
+           "FROM raw_material")
+
+_NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
 
 # -- Hilfen --------------------------------------------------------------------
@@ -45,6 +48,9 @@ def _to_dict(row: sqlite3.Row) -> dict:
         "archived": bool(row["archived"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        # Preis je kg in Cent (VC03-a, R03-16: auch ohne PIN lesbar)
+        "price_cents_per_kg": row["price_cents_per_kg"],
+        "price_changed_at": row["price_changed_at"],
     }
 
 
@@ -67,7 +73,7 @@ def _log(conn: sqlite3.Connection, action: str, entity_id: int, old: dict | None
 
 
 def _snapshot(row: sqlite3.Row) -> dict:
-    return {key: row[key] for key in (*_COLUMNS, "source", "archived")}
+    return {key: row[key] for key in (*_COLUMNS, "price_cents_per_kg", "source", "archived")}
 
 
 def _display_values(row: sqlite3.Row) -> dict:
@@ -190,9 +196,24 @@ def _integrity(exc: sqlite3.IntegrityError, what: str = "Der Rohstoff konnte nic
 # die Regeln und werden von den öffentlichen Funktionen unten sowie vom Import
 # (Modul 05, alles in einer Transaktion) benutzt. So gibt es die Regeln nur einmal.
 
-def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin") -> int:
-    """Legt einen eigenen Rohstoff an (R03-1, R03-2, R03-5, R03-6, R03-8, R03-12) und liefert die ID."""
+def _price(data: dict, warnings: list | None) -> tuple[bool, int | None]:
+    """Preis aus der Eingabe (``price_per_kg``, R03-13): (angegeben?, Cent). Rundungshinweis → ``warnings``."""
+    if "price_per_kg" not in data:
+        return False, None
+    cents, hint = parse_price(data["price_per_kg"])
+    if hint and warnings is not None:
+        warnings.append({"field": "price_per_kg", "code": "price_rounded", "detail": hint})
+    return True, cents
+
+
+def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
+                 warnings: list | None = None) -> int:
+    """Legt einen eigenen Rohstoff an (R03-1, R03-2, R03-5, R03-6, R03-8, R03-12, R03-13) und liefert die ID.
+
+    Ein Rundungshinweis zum Preis (K03-8) kommt in ``warnings``.
+    """
     clean = validate(data)
+    _, price = _price(data, warnings)
     if clean["number"] is None:
         clean["number"] = next_number(conn)
     elif conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (clean["number"],)).fetchone():
@@ -205,22 +226,30 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin") ->
             field="name", code="name_taken")
     cur = conn.execute(
         "INSERT INTO raw_material (number, name, display_name, type, tolerance_unit, tolerance_value, "
-        "unit_size_g, unit_label, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own')",
-        tuple(clean[c] for c in _COLUMNS))
+        "unit_size_g, unit_label, source, price_cents_per_kg, price_changed_at) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own', ?, CASE WHEN ? IS NULL THEN NULL ELSE {_NOW} END)",
+        (*(clean[c] for c in _COLUMNS), price, price))
     new_id = cur.lastrowid
     _log(conn, "create", new_id, None, _snapshot(_fetch(conn, new_id)), source)
     return new_id
 
 
 def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
-                 confirm_type_change: bool = False, source: str = "admin") -> dict:
+                 confirm_type_change: bool = False, source: str = "admin",
+                 warnings: list | None = None) -> dict:
     """Ändert einen Rohstoff; nur die mitgeschickten Felder ändern sich.
 
     Liefert die geänderten Spalten mit ``{"spalte": (alt, neu)}`` (leer = nichts geändert).
+    Preis (``price_per_kg``): fehlt = unverändert, ``None``/leer = löschen; „Preis geändert am“
+    wird nur gesetzt, wenn sich der gespeicherte Preis ändert (R03-14).
     """
     row = _fetch(conn, raw_material_id)
     clean = validate(data, base=_display_values(row))
     changes = {c: clean[c] for c in _COLUMNS if clean[c] != row[c]}
+    given, price = _price(data, warnings)
+    price_changed = given and price != row["price_cents_per_kg"]
+    if price_changed:
+        changes["price_cents_per_kg"] = price
     if not changes:
         return {}
 
@@ -247,8 +276,10 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
             field="type", code="type_change_confirmation_required", affected_recipes=n)
 
     assignments = ", ".join(f"{c} = ?" for c in changes)
+    if price_changed:
+        assignments += f", price_changed_at = {_NOW}"
     conn.execute(
-        f"UPDATE raw_material SET {assignments}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+        f"UPDATE raw_material SET {assignments}, updated_at = {_NOW} "
         "WHERE id = ?", (*changes.values(), raw_material_id))
     _log(conn, "update", raw_material_id, {c: row[c] for c in changes}, changes, source)
     return {c: (row[c], changes[c]) for c in changes}
@@ -280,27 +311,39 @@ def restore_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = 
     _log(conn, "restore", raw_material_id, {"archived": 1}, {"archived": 0}, source)
 
 
+def _with_warnings(result: dict, warnings: list) -> dict:
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
 def create_raw_material(conn: sqlite3.Connection, data: dict, source: str = "admin") -> dict:
     """Legt einen eigenen Rohstoff an (eigene Transaktion)."""
     validate(data)          # Eingabefehler vor dem Sperren der Datenbank melden
+    _price(data, None)
+    warnings: list = []
     try:
         with transaction(conn):
-            new_id = create_in_tx(conn, data, source)
+            new_id = create_in_tx(conn, data, source, warnings)
     except sqlite3.IntegrityError as exc:
         raise _integrity(exc) from exc
-    return get_raw_material(conn, new_id)
+    return _with_warnings(get_raw_material(conn, new_id), warnings)
 
 
 def update_raw_material(conn: sqlite3.Connection, raw_material_id: int, data: dict,
                         confirm_type_change: bool = False, source: str = "admin") -> dict:
-    """Ändert einen Rohstoff (eigene Transaktion); nur die mitgeschickten Felder ändern sich."""
+    """Ändert einen Rohstoff (eigene Transaktion); nur die mitgeschickten Felder ändern sich.
+
+    Wurde der Preis gerundet (K03-8), enthält die Antwort ``warnings``.
+    """
+    warnings: list = []
     try:
         with transaction(conn):
-            update_in_tx(conn, raw_material_id, data, confirm_type_change, source)
+            update_in_tx(conn, raw_material_id, data, confirm_type_change, source, warnings)
     except sqlite3.IntegrityError as exc:
         # Auch die Schutz-Trigger der Datenbank (z. B. Nummer gesperrt) landen hier
         raise _integrity(exc) from exc
-    return get_raw_material(conn, raw_material_id)
+    return _with_warnings(get_raw_material(conn, raw_material_id), warnings)
 
 
 def archive_raw_material(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> dict:

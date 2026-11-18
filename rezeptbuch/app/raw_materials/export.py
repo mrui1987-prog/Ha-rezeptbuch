@@ -1,7 +1,8 @@
 """CSV-Export der Rohstoffe (Modul 03, M03-8, docs/rohstoffe.md Abschnitt 6).
 
 Semikolon als Trenner, UTF-8 mit BOM (Excel öffnet die Datei direkt richtig),
-Prozent mit Komma. Dasselbe Format dient später für den Import (Modul 05).
+Prozent mit Komma. Dasselbe Format dient für den Import (Modul 05). Seit 0.6.2 zwei Spalten
+am Ende: „Preis je kg €“ (z. B. „2,35“) und „Preis geändert am“ (VC03-a).
 """
 
 from __future__ import annotations
@@ -9,9 +10,13 @@ from __future__ import annotations
 import csv
 import io
 
+from .models import euro_text
+
 HEADER = [
     "Nummer", "Name", "Kurzname", "Typ", "Toleranz", "Toleranzeinheit",
     "Gebindegröße g", "Gebindebezeichnung", "Herkunft", "archiviert", "geändert am",
+    # ab 0.6.2 am Ende (VC03-a, docs/rohstoffe.md 15.5)
+    "Preis je kg €", "Preis geändert am",
 ]
 
 TYPE_LABEL = {"standard": "Standard", "flour": "Mehl"}
@@ -42,5 +47,7 @@ def build_csv(rows: list[dict]) -> bytes:
             SOURCE_LABEL.get(row["source"], row["source"]),
             "ja" if row["archived"] else "nein",
             row["updated_at"],
+            euro_text(row["price_cents_per_kg"]) if row["price_cents_per_kg"] is not None else "",
+            row["price_changed_at"] or "",
         ])
     return b"\xef\xbb\xbf" + out.getvalue().encode("utf-8")

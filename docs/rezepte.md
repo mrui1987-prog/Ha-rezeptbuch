@@ -150,6 +150,7 @@ Beide Importe: nur im Admin-Bereich (PIN), Datei wird als Rohdaten im Anfragekö
 - **Zuordnung (K05-2a):** über die Nummer; Zeile ohne Nummer über den Namen (ohne Groß-/Kleinschreibung); passt keiner, wird der Rohstoff **neu angelegt** (leere Nummer → nächste freie Nummer).
 - **Vorhandener Rohstoff wird überschrieben (K05-2):** Name, Kurzname, Typ, Toleranz, Toleranzeinheit, Gebindegröße und -bezeichnung aus der Datei. **Leere Toleranz bleibt unverändert** (K05-2b); leerer Kurzname bzw. leeres Gebinde werden geleert. Nummer und Herkunft ändern sich nie.
 - **Spalte „archiviert“ (K05-2c):** ja → archivieren, nein → wiederherstellen (Namensprüfung R03-10). Rohstoffe, die nicht in der Datei stehen, bleiben unverändert.
+- **Seit 0.6.2 (VC03-a):** Spalte **„Preis je kg €“** (auch „Preis je kg“, „Preis €/kg“, „Preis/kg“): leere Zelle löscht den Preis, fehlende Spalte lässt ihn stehen, mehr als 2 Nachkommastellen werden mit Hinweis gerundet; „Preis geändert am“ wird nicht ausgewertet. Nur im CSV-Import, nicht in der Importvorlage .xlsx (K03-7). Regeln: docs/rohstoffe.md Abschnitt 15.6.
 - **Neuer Rohstoff:** Toleranz leer → **0 %** (M05-13), Hinweis im Bericht. Herkunft immer „eigen“ (R03-8).
 - „Herkunft“ und „geändert am“ werden nicht ausgewertet.
 - Alle Regeln aus Modul 03 gelten (Name eindeutig unter den aktiven Rohstoffen nach dem Import, auch innerhalb der Datei; B2; Gebinde nur mit Bezeichnung; Typwechsel M03-5 im Bericht hervorgehoben und mit der Import-Bestätigung bestätigt).

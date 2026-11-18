@@ -34,7 +34,7 @@ LINES = ["Import-ID", "Position", "Schritt", "Zeilenart (Rohstoff/Unterrezept)",
          "Toleranzwert (optional)", "Prüfen", "Bemerkung / Prüfgrund"]
 PIECES = ["Import-ID", "Bezeichnung", "Gewicht g", "Reihenfolge", "Bemerkung"]
 BATCHES = ["Import-ID", "Bezeichnung (Taste)", "Art (Gewicht/Stück)", "Wert (g bzw. Stück)",
-           "Stückgewicht-Bezeichnung (nur bei Stück)", "Reihenfolge", "Bemerkung"]
+           "Stückgewicht-Bezeichnung (nur bei Stück)", "Reihenfolge", "Obergrenze (ja = aktiv)", "Bemerkung"]
 RAW = ["Nummer", "Name", "Kurzname", "Typ (standard/flour)", "Toleranz (leer = 0 %)", "Toleranzeinheit (g/percent)",
        "Gebindegröße g", "Gebindebezeichnung", "Umrechnung Einheit (nur für den Rezeptimport, z. B. Stück)",
        "Gramm je Einheit (z. B. Eier: 65)", "archiviert (0/1)", "Bemerkung (nicht importieren)"]
@@ -74,8 +74,8 @@ SAMPLE_LINES = [
 ]
 SAMPLE_PIECES = [["M2", "Stück (1/16)", 170, 1, MUSTER]]
 SAMPLE_BATCHES = [
-    ["M2", "1 Torte", "Gewicht", None, None, 1, "leerer Wert = Gesamtgewicht des Rezepts"],
-    ["M2", "16 Stück", "Stück", 16, "Stück (1/16)", 2, "Stückzahl über das Stückgewicht"],
+    ["M2", "1 Torte", "Gewicht", None, None, 1, None, "leerer Wert = Gesamtgewicht des Rezepts"],
+    ["M2", "16 Stück", "Stück", 16, "Stück (1/16)", 2, None, "Stückzahl über das Stückgewicht"],
 ]
 SAMPLE_RAW = [[None, "Muster Kirschwasser", "M-Kirschw.", "standard", 5, "percent", None, None, "ml", 0.95, 0,
                "Musterrohstoff mit allen Spalten. Leere Nummer = nächste freie. Gleicher Name wie ein vorhandener "
@@ -122,6 +122,7 @@ GUIDE = [
     ("• Notiz intern: nur im Admin-Bereich sichtbar, nie an der Waage.", False),
     ("• Toleranz je Zeile ist freiwillig (sonst gilt die des Rohstoffs): Einheit g oder percent, Wert in g bzw. %.", False),
     ("• Chargengröße „Gewicht“ ohne Wert = Gesamtgewicht des Rezepts; „Stück“ braucht Anzahl und Stückgewicht-Bezeichnung.", False),
+    ("• „Obergrenze“ = ja: größter Teig für dieses Rezept (Kessel); höchstens eine Chargengröße je Rezept.", False),
     ("• Spalten mit „(Formel)“ dienen nur der Kontrolle in Excel und werden nicht importiert. Die Datei als .xlsx speichern.", False),
     ("• Ohne Microsoft Office: die Datei z. B. in LibreOffice Calc öffnen und beim Speichern das Format "
      "„Excel 2007-365 (.xlsx)“ wählen (nicht .ods).", False),
@@ -192,7 +193,7 @@ def build_sample() -> bytes:
         ws_l.cell(row=r, column=10, value=f'=IF(OR(G{r}="",I{r}=""),"",ROUND(G{r}*I{r},0))')
         ws_l.cell(row=r, column=9).number_format = "0.00"
     ws_p = _sheet(wb, "Stückgewichte", PIECES, SAMPLE_PIECES, [10, 22, 11, 11, 40], muster)
-    ws_b = _sheet(wb, "Chargengrößen", BATCHES, SAMPLE_BATCHES, [10, 22, 14, 14, 26, 11, 40], muster)
+    ws_b = _sheet(wb, "Chargengrößen", BATCHES, SAMPLE_BATCHES, [10, 22, 14, 14, 26, 11, 14, 40], muster)
     ws_rm = _sheet(wb, "Rohstoffe", RAW, SAMPLE_RAW, [9, 26, 14, 14, 14, 14, 14, 16, 18, 14, 14, 60], muster)
     from openpyxl.comments import Comment
     for column in (9, 10):

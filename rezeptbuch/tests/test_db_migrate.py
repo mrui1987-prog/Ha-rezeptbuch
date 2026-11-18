@@ -27,7 +27,8 @@ NEXT = f"{LATEST + 1:04d}"
 EXPECTED_TABLES = {
     "station", "raw_material",
     "recipe_group", "recipe", "recipe_version", "recipe_version_step", "recipe_item", "recipe_batch_size",
-    "recipe_piece_weight", "production_order", "order_piece", "order_item_override", "batch", "batch_item", "weighing_event",
+    "recipe_piece_weight", "production_order", "order_piece", "order_batch_size", "order_dough",
+    "order_item_override", "batch", "batch_item", "weighing_event",
     "setting", "change_log", "migration_log",
 }
 
@@ -108,6 +109,29 @@ def test_failing_migration_is_rolled_back(db_path, tmp_path, migrations_copy):
     assert current_version(conn) == LATEST
     assert "half_done" not in tables(conn)
     assert len(list((tmp_path / "backups").glob("pre_migration_*.db"))) == 1
+    conn.close()
+
+
+def test_foreign_keys_off_marker(db_path, migrations_copy):
+    """Migration mit „-- migration: foreign_keys=off“: läuft ohne Fremdschlüssel, prüft vor dem COMMIT
+    und schaltet sie danach wieder ein – auch nach einem Fehler (Migration 0006)."""
+    conn = connect(db_path)
+    migrate(conn, migrations_dir=migrations_copy)
+    (migrations_copy / f"{NEXT}_dangling.sql").write_text(
+        "-- migration: foreign_keys=off\n"
+        "INSERT INTO order_piece (order_id, label, weight_g, piece_count) VALUES (999, 'x', 1, 1);",
+        encoding="utf-8",
+    )
+    with pytest.raises(MigrationError, match="Fremdschlüssel"):
+        migrate(conn, migrations_dir=migrations_copy)
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    assert current_version(conn) == LATEST
+    assert conn.execute("SELECT COUNT(*) FROM order_piece").fetchone()[0] == 0
+
+    (migrations_copy / f"{NEXT}_dangling.sql").write_text(
+        "-- migration: foreign_keys=off\nCREATE TABLE extra (id INTEGER PRIMARY KEY);", encoding="utf-8")
+    assert migrate(conn, migrations_dir=migrations_copy) == [LATEST + 1]
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     conn.close()
 
 

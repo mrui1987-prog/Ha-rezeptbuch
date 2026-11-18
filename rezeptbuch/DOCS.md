@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.6.1:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.6.2:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -21,7 +21,7 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
 | Adresse | Zweck |
 |---------|-------|
-| `/admin` | Rohstoffe (PIN) |
+| `/admin` | Rohstoffe (PIN), mit Preis je kg (€ netto; lesen auch ohne PIN über die Schnittstelle) |
 | `/admin/rezepte` | Rezepte, Rezeptgruppen, Import/Export (PIN); Aufträge folgen in späteren Modulen |
 | `/admin/berechnung` | Berechnung nachprüfen (PIN, speichert nichts) |
 
@@ -31,7 +31,7 @@ Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung f
 
 ## Rohstoffe importieren (CSV)
 
-Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CSV-Exports (Semikolon, Kopfzeile `Nummer;Name;Kurzname;Typ;Toleranz;Toleranzeinheit;Gebindegröße g;Gebindebezeichnung;Herkunft;archiviert;geändert am`). Gelesen werden „CSV UTF-8“ und „CSV (Trennzeichen-getrennt)“ aus Excel.
+Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CSV-Exports (Semikolon, Kopfzeile `Nummer;Name;Kurzname;Typ;Toleranz;Toleranzeinheit;Gebindegröße g;Gebindebezeichnung;Herkunft;archiviert;geändert am;Preis je kg €;Preis geändert am`; die beiden Preisspalten seit 0.6.2, ältere Dateien ohne sie gehen weiter). Gelesen werden „CSV UTF-8“ und „CSV (Trennzeichen-getrennt)“ aus Excel.
 
 - Zuerst läuft immer ein **Probelauf**; er zeigt neue, überschriebene und unveränderte Rohstoffe, Fehler und Hinweise. Gespeichert wird erst mit **„Importieren“**, und nur wenn die Datei keinen Fehler enthält (alles oder nichts).
 - Zuordnung über die **Nummer**, ohne Nummer über den **Namen**; passt keiner, wird der Rohstoff neu angelegt.
@@ -40,6 +40,7 @@ Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CS
 - Spalte **„archiviert“**: ja = archivieren, nein = wiederherstellen. Rohstoffe, die nicht in der Datei stehen, bleiben unverändert.
 - Viele Rohstoffe bearbeiten: CSV-Export → in Excel ändern → als CSV speichern → CSV-Import.
 - Namen und Kurznamen dürfen nicht mit `=`, `+`, `-` oder `@` beginnen (Schutz vor Excel-Formeln).
+- **Preis je kg €** (€ netto, z. B. „2,35“): leere Zelle löscht den Preis, fehlt die Spalte ganz, bleibt er. Mehr als 2 Nachkommastellen werden kaufmännisch gerundet (Hinweis im Bericht). „Preis geändert am“ setzt das Rezeptbuch selbst. Der Preis steht nur im CSV, nicht in der Importvorlage .xlsx.
 - Höchstens 5 MB und 5 000 Zeilen je Datei.
 
 ## Rezepte
@@ -89,6 +90,10 @@ Reiter **„Berechnung“**: Rezept wählen (auch gesperrte, auf Wunsch archivie
 - **Zusammenfassung** (Umschalter „Zeilen / Zusammenfassung“): jeder Rohstoff einmal mit der Summe aus Hauptteig und allen Unterrezepten (so, wie gewogen wird), Anteil, Bäckerprozent und die **Mehlmischung** (Anteil jeder Mehlsorte am Mehl gesamt).
 - **„Ergibt“:** Stückzahl je Stückgewicht, auf eine Nachkommastelle abgerundet (z. B. 12,4 Käsekuchen).
 - **Hinweise:** Zeilen mit „*“, archivierte Rohstoffe/Unterrezepte, Toleranz 0 %, Aufrunden um mehr als 5 %, Leitrohstoff „gesamt“ über der Eingabe, gesperrtes/archiviertes Rezept.
+- **Faktor × Grundrezept** (z. B. 1,5; 0,01 bis 100, höchstens 2 Nachkommastellen) und **Kombiniert**: Gesamtteig, Stückzahlen, Chargengrößen (Anzahl je Chargengröße, auch mehrmals) und Faktor werden in Gramm zum Bedarf zusammengezählt (auf ganze Gramm aufgerundet). „Mehl gesamt“ und Leitrohstoff gehen nur allein.
+- **Obergrenze:** die Chargengröße mit Haken „aktiv (Obergrenze)“ (Rezeptbearbeitung, höchstens eine je Rezept; bei „Stück“ = Anzahl × Stückgewicht). Ohne aktive Chargengröße kann eine Obergrenze nur für den Auftrag eingegeben werden; mit aktiver nur kleiner. Liegt der Bedarf darüber, wird geteilt: mindestens so viele Teige wie nötig (mehr wählbar), **voll auffüllen** (20 + 12 kg) oder **gleichmäßig** (16 + 16 kg, auf ganze Gramm aufgerundet). Bei „Mehl gesamt“ und Leitrohstoff fragt die Seite „Nach Obergrenze teilen?“. Jeder Teig hat einen eigenen Reiter; die Zusammenfassung gibt es je Teig oder für den ganzen Auftrag.
+- **Vorteig/Unterrezept bei mehreren Teigen:** je Teig ein eigener Unterrezept-Auftrag oder einer für alle (Hinweis, wenn er über der Obergrenze des Unterrezepts liegt).
+- **Mehl gesamt** wird in ganzen Gramm angezeigt (kaufmännisch gerundet, genauer Wert beim Darüberfahren); die Bäckerprozente rechnen mit dem genauen Wert.
 - Schnittstelle ohne PIN (für die Stationen ab Modul 09/10): `GET /api/v1/recipes/{id}/basis-options`, `POST /api/v1/calculation`.
 
 ## Haftung

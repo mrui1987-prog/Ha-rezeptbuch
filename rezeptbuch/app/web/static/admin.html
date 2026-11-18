@@ -113,6 +113,10 @@
                <input id="f-unit-size" inputmode="numeric" style="width:100%"></div>
           <div><label for="f-unit-label">Gebinde-/Stückbezeichnung (z. B. Ei, Sack)</label>
                <input id="f-unit-label" maxlength="30" style="width:100%"></div>
+          <div><label for="f-price">Preis je kg (€ netto, optional)</label>
+               <input id="f-price" inputmode="decimal" style="width:100%" placeholder="z. B. 2,35">
+               <div class="small" id="f-price-date"></div>
+               <div class="small">Bei Gebinde/Stück auf 1 kg umrechnen (z. B. Preis je Ei ÷ Stückgewicht × 1000).</div></div>
         </div>
         <p class="small">0 g = Handzugabe (nur quittieren, nicht wiegen). 0 % wird gewogen; bei der Verwiegung nie enger als 1 g.</p>
         <div id="similar-msg" class="msg info hidden"></div>
@@ -124,7 +128,7 @@
 
     <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>Nr.</th><th>Name</th><th>Kurzname</th><th>Typ</th><th>Toleranz</th><th>Gebinde/Stück</th><th>Herkunft</th><th>Status</th><th>Aktionen</th></tr></thead>
+        <thead><tr><th>Nr.</th><th>Name</th><th>Kurzname</th><th>Typ</th><th>Toleranz</th><th>Gebinde/Stück</th><th>€/kg</th><th>Herkunft</th><th>Status</th><th>Aktionen</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -306,6 +310,20 @@ function cell(row, text) {
   return td;
 }
 
+// Preis je kg (VC03-a): Cent → „2,35“; leer ohne Preis
+function priceText(cents) {
+  if (cents === null || cents === undefined) return "";
+  return Math.floor(cents / 100) + "," + String(cents % 100).padStart(2, "0");
+}
+
+function dateText(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const two = (n) => String(n).padStart(2, "0");
+  return two(d.getDate()) + "." + two(d.getMonth() + 1) + "." + d.getFullYear() + " " + two(d.getHours()) + ":" + two(d.getMinutes());
+}
+
 function toleranceText(item) {
   if (item.tolerance_unit === "percent") return item.tolerance.toFixed(1).replace(".", ",") + " %";
   return item.tolerance === 0 ? "0 g (Handzugabe)" : item.tolerance + " g";
@@ -321,6 +339,7 @@ function actionButton(label, handler) {
 
 async function loadList() {
   showMsg("list-msg", "");
+  $("list-msg").className = "msg hidden";
   const query = new URLSearchParams();
   if ($("search").value.trim()) query.set("search", $("search").value.trim());
   if ($("show-archived").checked) query.set("include_archived", "true");
@@ -343,6 +362,7 @@ function renderRows(items) {
     cell(tr, item.type === "flour" ? "Mehl" : "Standard");
     cell(tr, toleranceText(item));
     cell(tr, item.unit_size_g ? item.unit_size_g + " g " + item.unit_label : "");
+    cell(tr, priceText(item.price_cents_per_kg));
     cell(tr, item.source === "baeko" ? "BÄKO" : "eigen");
     cell(tr, item.archived ? "archiviert" : "aktiv");
     const actions = document.createElement("td");
@@ -541,6 +561,8 @@ async function openForm(item) {
   $("f-tol").value = item ? String(item.tolerance).replace(".", ",") : "";
   $("f-unit-size").value = item && item.unit_size_g ? String(item.unit_size_g) : "";
   $("f-unit-label").value = item && item.unit_label ? item.unit_label : "";
+  $("f-price").value = item ? priceText(item.price_cents_per_kg) : "";
+  $("f-price-date").textContent = item && item.price_changed_at ? "Preis geändert am " + dateText(item.price_changed_at) : "";
   show("form-panel", true);
   if (item) {
     $("f-number").value = String(item.number);
@@ -585,6 +607,7 @@ function formPayload() {
     tolerance: emptyToNull($("f-tol").value),
     unit_size_g: emptyToNull($("f-unit-size").value),
     unit_label: $("f-unit-label").value,
+    price_per_kg: emptyToNull($("f-price").value),
   };
   const number = emptyToNull($("f-number").value);
   if (number !== null) payload.number = number;
@@ -594,8 +617,8 @@ function formPayload() {
 async function save(confirmTypeChange) {
   const payload = formPayload();
   if (confirmTypeChange) payload.confirm_type_change = true;
-  if (editingId === null) await api("admin/raw-materials", { method: "POST", body: payload });
-  else await api("admin/raw-materials/" + editingId, { method: "PATCH", body: payload });
+  if (editingId === null) return api("admin/raw-materials", { method: "POST", body: payload });
+  return api("admin/raw-materials/" + editingId, { method: "PATCH", body: payload });
 }
 
 $("form").addEventListener("submit", async (event) => {
@@ -603,19 +626,25 @@ $("form").addEventListener("submit", async (event) => {
   showMsg("form-msg", "");
   $("form-save").disabled = true;
   try {
+    let saved;
     try {
-      await save(false);
+      saved = await save(false);
     } catch (err) {
       // Typwechsel eines verwendeten Rohstoffs: erst nach Bestätigung speichern
       if (err.status === 409 && err.data.code === "type_change_confirmation_required"
           && (await askConfirm(err.message, "Trotzdem speichern"))) {
-        await save(true);
+        saved = await save(true);
       } else {
         throw err;
       }
     }
     closeForm();
     await loadList();
+    // Preis gerundet (K03-8): Hinweis und gespeicherter Wert
+    if (saved && saved.warnings && saved.warnings.length) {
+      showMsg("list-msg", saved.warnings.map((w) => w.detail).join(" ") + " – gespeichert für „" + saved.name + "“.");
+      $("list-msg").className = "msg info";
+    }
   } catch (err) {
     handleError(err, "form-msg");
   } finally {

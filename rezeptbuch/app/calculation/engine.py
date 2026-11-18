@@ -31,7 +31,14 @@ MAX_DEPTH = 10
 # Hinweis H06-4 ab dieser Erhöhung durch das Aufrunden (Prozent)
 ROUNDING_WARN_PERCENT = 5
 
-BASIS_TYPES = ("total", "pieces", "batch_size", "raw_material", "flour_total")
+BASIS_TYPES = ("total", "pieces", "batch_size", "raw_material", "flour_total", "factor", "combined")
+# Nur allein wählbar, nicht kombinierbar (R06-20)
+SOLE_BASIS_TYPES = ("raw_material", "flour_total")
+# Teige je Auftrag (P06-16) und Hinweis „kleiner letzter Teig“ (R06-40, K06-5)
+MAX_DOUGHS = 50
+SMALL_LAST_DOUGH_PERCENT = 20
+SPLIT_MODES = ("fill", "even")
+SUB_MODES = ("per_dough", "all")
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +104,8 @@ class Recipe:
     locked: bool = False
     archived: bool = False
     current: bool = True                 # aktuelle Version des Rezepts?
+    limit_g: int | None = None           # aktive Chargengröße als Obergrenze in Gramm (R06-27, R06-28)
+    limit_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +116,7 @@ class Basis:
     target_g: int
     raw_material_id: int | None = None   # nur bei 'raw_material'
     item_position: int | None = None     # Leitrohstoff je Zeile (K06-1); leer = „gesamt“
+    factor: Fraction | None = None       # nur bei 'factor': Faktor × Grundrezept (R06-25)
 
 
 # ---------------------------------------------------------------------------
@@ -281,8 +291,15 @@ def factor_for(recipe: Recipe, basis: Basis) -> Fraction:
         raise ValidationError("Rezept enthält keine Mengen.", field="recipe_id", code="recipe_empty")
     target = Fraction(basis.target_g)
 
-    if basis.type in ("total", "pieces", "batch_size"):
+    if basis.type in ("total", "pieces", "batch_size", "combined"):
         return target / total
+
+    if basis.type == "factor":
+        # R06-25: allein gewählt wird mit genau diesem Faktor gerechnet
+        if basis.factor is None or basis.factor <= 0:
+            raise ValidationError("Bitte einen Faktor zwischen 0,01 und 100 eingeben.", field="factor",
+                                  code="factor_invalid")
+        return basis.factor
 
     if basis.type == "flour_total":
         flour = flour_g(recipe)
@@ -429,9 +446,13 @@ def _lines(recipe: Recipe, f: Fraction, scale: Fraction, ctx: _Context, top_posi
             ctx.material_sums[material.id] = ctx.material_sums.get(material.id, 0) + target
             entry = ctx.summary.setdefault(material.id, {
                 "material": material, "target_g": 0, "exact": Fraction(0), "base": Fraction(0),
-                "weighed": False, "hand": False})
+                "weighed": False, "hand": False, "by_top": {}})
             entry["target_g"] += target
             entry["exact"] += exact
+            # Herkunft je Zeile des Hauptteigs (für die Zusammenfassung des ganzen Auftrags, R06-58)
+            top = entry["by_top"].setdefault(position, [0, Fraction(0)])
+            top[0] += target
+            top[1] += exact
             entry["base"] += effective
             if line.amount_g > 0:
                 entry["weighed"] = True
@@ -501,6 +522,18 @@ def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None 
     ``piece_hints``: Hinweis „ergibt n Stück“ je Stückgewicht anzeigen (R06-18; nicht bei
     Stückzahlen und Chargengröße „Stück“, dort ist die Anzahl schon bekannt).
     """
+    return _calculate(recipe, basis, overrides=overrides, piece_hints=piece_hints)[0]
+
+
+def _piece_hints(recipe: Recipe, exact_total: Fraction) -> list[dict]:
+    # R06-17: auf eine Nachkommastelle abgerundet, nie mehr Stück versprechen als möglich
+    return [{"id": pw.id, "label": pw.label, "weight_g": pw.weight_g,
+             "count_tenths": math.floor(exact_total * 10 / pw.weight_g)} for pw in recipe.piece_weights]
+
+
+def _calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None = None,
+               piece_hints: bool = True) -> tuple[dict, _Context, Fraction]:
+    """Wie ``calculate``, liefert zusätzlich den Rechenstand (Zusammenfassung) und das exakte Teiggewicht."""
     check_tree(recipe)
     recipe, overridden = apply_overrides(recipe, overrides)
     f = factor_for(recipe, basis)
@@ -525,12 +558,7 @@ def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None 
     if recipe.archived:
         ctx.warn("recipe_archived", "Rezept ist archiviert und erscheint nicht in der Vorwahl.")
 
-    hints = []
-    if piece_hints:
-        for pw in recipe.piece_weights:
-            # R06-17: auf eine Nachkommastelle abgerundet, nie mehr Stück versprechen als möglich
-            hints.append({"id": pw.id, "label": pw.label, "weight_g": pw.weight_g,
-                          "count_tenths": math.floor(exact_total * 10 / pw.weight_g)})
+    hints = _piece_hints(recipe, exact_total) if piece_hints else []
 
     flour_scaled = flour * f
     summary, flour_mix = _summary(ctx)
@@ -543,6 +571,7 @@ def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None 
             "item_position": basis.item_position,
             "factor": fraction_text(f),
             "factor_text": decimal_text(f, 4),
+            "factor_hundredths": int(basis.factor * 100) if basis.factor is not None else None,
         },
         "totals": {
             "base_total_g": int(total),
@@ -563,7 +592,7 @@ def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None 
         "summary": summary,
         "flour_mix": flour_mix,
         "warnings": ctx.warnings,
-    }
+    }, ctx, exact_total
 
 
 def _walk(items: list[dict]):
@@ -575,6 +604,296 @@ def _walk(items: list[dict]):
 
 
 walk_items = _walk
+
+
+# ---------------------------------------------------------------------------
+# Auftrag: Bedarf, Obergrenze, Teige, Unterrezept-Aufträge (Abschnitt 17)
+# ---------------------------------------------------------------------------
+
+def fmt_int(value: int) -> str:
+    """Ganze Zahl mit Leerzeichen als Tausendertrenner („20 000“)."""
+    return f"{value:,}".replace(",", " ")
+
+
+@dataclass(frozen=True)
+class Order:
+    """Eingabe der Vorwahl für einen ganzen Auftrag (docs/berechnung.md 17.1 bis 17.7).
+
+    ``basis``: Bezugsart. Bei 'combined' ergibt sich der Bedarf aus ``parts`` (Gramm) plus
+    ``factor`` × Grundrezept; bei allen anderen wie bisher aus ``basis`` allein.
+    """
+
+    basis: Basis
+    parts: tuple[dict, ...] = ()          # Einzelbeiträge {kind, label, count, g} (R06-21), nur Anzeige/Summe
+    factor: Fraction | None = None        # Faktor-Anteil bei 'combined' (R06-21)
+    pieces_only: bool = False             # nur Stückzahlen: kein Stückhinweis (R06-18, R06-23)
+    limit_g: int | None = None            # wirksame Obergrenze in Gramm (R06-27 bis R06-31)
+    limit_source: str | None = None       # 'recipe' oder 'order'
+    limit_label: str | None = None
+    split: bool | None = None             # Antwort auf „Nach Obergrenze teilen?“ (R06-50)
+    dough_count: int | None = None        # gewählte Anzahl Teige; leer = Mindestanzahl (R06-36)
+    split_mode: str = "fill"              # 'fill' (voll auffüllen) oder 'even' (gleichmäßig), R06-37
+    sub_modes: dict = field(default_factory=dict)   # Position der Unterrezeptzeile → 'per_dough'/'all' (R06-44)
+
+
+def min_doughs(demand_g: int, limit_g: int | None) -> int:
+    """R06-34: Mindestanzahl Teige = Bedarf ÷ Obergrenze, aufgerundet (ohne Obergrenze 1)."""
+    if limit_g is None or demand_g <= limit_g:
+        return 1
+    return -(-demand_g // limit_g)
+
+
+def plan_doughs(demand_g: int, limit_g: int | None, count: int | None = None, mode: str = "fill") -> list[int]:
+    """Sollgrößen der Teige in Gramm (R06-34 bis R06-41), ohne Datenbank.
+
+    * Ohne Obergrenze: ein Teig (mehrere Teige nur mit Obergrenze).
+    * ``count``: gewählte Anzahl, mindestens die Mindestanzahl (P06-14), höchstens 50 (P06-16).
+    * ``fill``: Teige 1 bis n−1 = Obergrenze, letzter Teig = Rest; ein leerer Teig ist nicht
+      wählbar (P06-15). ``even``: alle gleich groß, auf ganze Gramm aufgerundet (R06-41).
+    """
+    if demand_g <= 0:
+        raise ValidationError("Bitte mindestens eine Angabe machen.", field="basis_type", code="demand_missing")
+    if mode not in SPLIT_MODES:
+        raise ValidationError("Bitte „voll auffüllen“ oder „gleichmäßig“ wählen.", field="split_mode",
+                              code="split_mode_invalid")
+    if count is not None and count < 1:
+        raise ValidationError("Bitte mindestens einen Teig wählen.", field="dough_count", code="dough_count_invalid")
+    if limit_g is None:
+        if count not in (None, 1):
+            raise ValidationError("Mehrere Teige gibt es nur mit einer Obergrenze.", field="dough_count",
+                                  code="dough_count_without_limit")
+        return [demand_g]
+    n_min = min_doughs(demand_g, limit_g)
+    if n_min > MAX_DOUGHS or (count is not None and count > MAX_DOUGHS):
+        raise ValidationError(f"Höchstens {MAX_DOUGHS} Teige je Auftrag.", field="dough_count",
+                              code="too_many_doughs")
+    n = n_min if count is None else count
+    if n < n_min:
+        raise ValidationError(f"Mindestens {n_min} Teige nötig (Obergrenze {fmt_int(limit_g)} g).",
+                              field="dough_count", code="dough_count_too_small")
+    if n == 1:
+        return [demand_g]
+    if mode == "fill":
+        last = demand_g - (n - 1) * limit_g
+        if last <= 0:
+            raise ValidationError(f"Voll auffüllen ergibt nur {n_min} Teig{'e' if n_min != 1 else ''} – "
+                                  "für mehr Teige bitte „gleichmäßig“ wählen.", field="split_mode",
+                                  code="fill_empty_dough")
+        return [limit_g] * (n - 1) + [last]
+    return [-(-demand_g // n)] * n
+
+
+def _summary_from(ctx: _Context, amounts: dict[int, list] | None = None) -> list[dict]:
+    """Zusammenfassung wie ``_summary``, wahlweise mit anderen Mengen je Rohstoff (ganzer Auftrag, R06-58)."""
+    rows, _ = _summary(ctx)
+    if amounts is None:
+        return rows
+    for row in rows:
+        target, exact = amounts.get(row["raw_material"]["id"], (0, Fraction(0)))
+        row["target_g"] = target
+        row["exact_g"] = decimal_text(exact)
+    return rows
+
+
+def _sub_line_target(result: dict, position: int) -> int:
+    return next(i["target_g"] for i in result["items"] if i["position"] == position)
+
+
+def calculate_order(recipe: Recipe, order: Order, *, overrides: dict[int, int] | None = None) -> dict:
+    """Berechnung eines Auftrags mit Bedarf, Obergrenze und Teigen (docs/berechnung.md Abschnitt 17).
+
+    Bei einem Teig ist das Ergebnis auf oberster Ebene genau das von ``calculate`` (abwärtskompatibel,
+    R06-22); dazu kommen ``demand``, ``split``, ``doughs``, ``order_totals``, ``order_summary``,
+    ``order_flour_mix`` und ``sub_orders`` (17.11). Bei mehreren Teigen stehen auf oberster Ebene
+    die Werte von Teig 1, die Teige einzeln unter ``doughs``.
+    """
+    check_tree(recipe)
+    work, _ = apply_overrides(recipe, overrides)
+    base_total = total_g(work)
+    if base_total == 0:
+        raise ValidationError("Rezept enthält keine Mengen.", field="recipe_id", code="recipe_empty")
+    basis = order.basis
+    hints_on = not order.pieces_only
+    order_warnings: list[dict] = []
+    sub_lines = [line for line in work.lines if line.sub is not None]
+    sub_positions = {line.position for line in sub_lines}
+    for position, mode in order.sub_modes.items():
+        if position not in sub_positions:
+            raise ValidationError(f"Zeile {position} ist kein Unterrezept.", field="sub_modes",
+                                  code="sub_mode_position")
+        if mode not in SUB_MODES:
+            raise ValidationError("Bitte „je Teig“ oder „für alle“ wählen.", field="sub_modes", code="sub_mode_invalid")
+
+    parts = [dict(p) for p in order.parts]
+    if basis.type == "factor" and basis.factor is not None:
+        parts = [{"kind": "factor", "label": "Faktor × Grundrezept", "factor_hundredths": int(basis.factor * 100),
+                  "g": None, "exact_g": decimal_text(basis.factor * base_total)}]
+    needs_question = False
+    split_doughs = True              # jeder Teig als Gesamtteig T (sonst ein Teig mit der eigenen Bezugsart)
+    if basis.type in SOLE_BASIS_TYPES:
+        # Mehl gesamt / Leitrohstoff: wie bisher, Rückfrage „teilen?“ über der Obergrenze (R06-50, R06-51)
+        dough_exact = base_total * factor_for(work, basis)
+        demand_exact = dough_exact
+        demand_g = round_up_g(dough_exact)
+        over = order.limit_g is not None and dough_exact > order.limit_g
+        needs_question = over
+        want_more = (order.dough_count or 1) > 1
+        if order.split is True and order.limit_g is not None and (over or want_more):
+            targets = plan_doughs(demand_g, order.limit_g, order.dough_count, order.split_mode)
+        else:
+            if want_more:
+                raise ValidationError("Mehrere Teige bei „Mehl gesamt“ und Leitrohstoff nur mit „Nach Obergrenze "
+                                      "teilen: Ja“.", field="split", code="split_required")
+            targets = [demand_g]
+            split_doughs = False
+            if over:
+                order_warnings.append({"code": "over_limit",
+                                       "text": f"Teig liegt über der Obergrenze {fmt_int(order.limit_g)} g."})
+    else:
+        if basis.type == "factor":
+            if basis.factor is None:
+                raise ValidationError("Bitte einen Faktor zwischen 0,01 und 100 eingeben.", field="factor",
+                                      code="factor_invalid")
+            demand_exact = basis.factor * base_total
+        elif basis.type == "combined":
+            demand_exact = Fraction(sum(p["g"] for p in parts if p.get("g") is not None))
+            if order.factor is not None:
+                demand_exact += order.factor * base_total
+        else:
+            demand_exact = Fraction(basis.target_g)
+        if order.factor is not None and basis.type == "combined":
+            parts.append({"kind": "factor", "label": "Faktor × Grundrezept",
+                          "factor_hundredths": int(order.factor * 100),
+                          "g": None, "exact_g": decimal_text(order.factor * base_total)})
+        demand_g = round_up_g(demand_exact)                 # K06-8 (R06-22)
+        targets = plan_doughs(demand_g, order.limit_g, order.dough_count, order.split_mode)
+        split_doughs = len(targets) > 1
+
+    # Teige rechnen (gleich große Teige nur einmal, R06-42)
+    if split_doughs:
+        cache: dict[int, tuple] = {}
+        for target in targets:
+            if target not in cache:
+                cache[target] = _calculate(recipe, Basis("total", target), overrides=overrides, piece_hints=hints_on)
+        computed = [cache[t] for t in targets]
+    else:
+        single = basis
+        if basis.type in ("combined", "factor"):
+            single = replace(basis, target_g=demand_g)
+        computed = [_calculate(recipe, single, overrides=overrides, piece_hints=hints_on)]
+    n = len(targets)
+
+    doughs = []
+    for index, (target, (result, _ctx, _exact)) in enumerate(zip(targets, computed), start=1):
+        doughs.append({"dough_index": index, "target_g": target, "result": result})
+
+    # Hinweise zur Aufteilung (H06-7, H06-10)
+    if n > 1 and order.split_mode == "fill":
+        last = targets[-1]
+        if last * 100 < order.limit_g * SMALL_LAST_DOUGH_PERCENT:
+            order_warnings.append({"code": "last_dough_small",
+                                   "text": f"Letzter Teig nur {fmt_int(last)} g – gleichmäßig teilen?"})
+    if n > 1 and order.split_mode == "even" and sum(targets) > demand_g:
+        order_warnings.append({"code": "even_rounded",
+                               "text": f"Summe der Teige {fmt_int(sum(targets))} g statt {fmt_int(demand_g)} g "
+                                       "(Aufrunden)."})
+    # H06-6 für den ganzen Auftrag nach dem Teilen (R06-52)
+    if split_doughs and basis.type == "raw_material":
+        if basis.item_position is None:
+            weighed = sum(ctx.material_sums.get(basis.raw_material_id, 0) for _r, ctx, _e in computed)
+        else:
+            weighed = sum(_sub_line_target(r, basis.item_position) for r, _c, _e in computed)
+        if weighed > basis.target_g:
+            order_warnings.append({"code": "basis_rounded",
+                                   "text": f"Leitrohstoff: {fmt_int(weighed)} g statt {fmt_int(basis.target_g)} g "
+                                           "(Aufrunden je Teig)."})
+
+    # Unterrezept-Aufträge (R06-44 bis R06-49)
+    sub_orders = []
+    all_positions: set[int] = set()
+    for line in sub_lines:
+        mode = order.sub_modes.get(line.position, "per_dough") if n > 1 else "all"
+        info = {"position": line.position, "mode": mode,
+                "sub_recipe": {"id": line.sub.id, "number": line.sub.number, "name": line.sub.name}}
+        line_targets = [_sub_line_target(r, line.position) for r, _c, _e in computed]
+        if mode == "per_dough":
+            for index, target in enumerate(line_targets, start=1):
+                sub_orders.append({**info, "dough_index": index, "target_g": target})
+        else:
+            all_positions.add(line.position)
+            total = sum(line_targets)
+            sub_orders.append({**info, "dough_index": None, "target_g": total})
+            if n > 1 and line.sub.limit_g is not None and total > line.sub.limit_g:
+                order_warnings.append({"code": "sub_over_limit", "position": line.position,
+                                       "text": f"{line.sub.name} für alle: {fmt_int(total)} g liegt über der "
+                                               f"Obergrenze {fmt_int(line.sub.limit_g)} g – je Teig wiegen?"})
+
+    # Ganzer Auftrag: Summen und Zusammenfassung (R06-58; Unterrezept „für alle“ zählt einmal)
+    first_result, first_ctx, _ = computed[0]
+    flour = flour_g(work)
+    exact_sum = sum((e for _r, _c, e in computed), Fraction(0))
+    if n == 1:
+        order_summary, order_flour_mix = first_result["summary"], first_result["flour_mix"]
+    else:
+        amounts: dict[int, list] = {}
+        for _r, ctx, _e in computed:
+            for mid, entry in ctx.summary.items():
+                acc = amounts.setdefault(mid, [0, Fraction(0)])
+                for top, (target, exact) in entry["by_top"].items():
+                    if top not in all_positions:
+                        acc[0] += target
+                        acc[1] += exact
+        for line in sub_lines:
+            if line.position not in all_positions:
+                continue
+            total = next(so["target_g"] for so in sub_orders if so["position"] == line.position)
+            _r, sub_ctx, _e = _calculate(line.sub, Basis("total", total), piece_hints=False)
+            for mid, entry in sub_ctx.summary.items():
+                acc = amounts.setdefault(mid, [0, Fraction(0)])
+                acc[0] += entry["target_g"]
+                acc[1] += entry["exact"]
+        order_summary = _summary_from(first_ctx, amounts)
+        order_flour_mix = first_result["flour_mix"]
+
+    # oberste Ebene: Ergebnis von Teig 1 (bei einem Teig unverändert wie bisher)
+    top = dict(first_result)
+    top["basis"] = dict(first_result["basis"])
+    top["basis"].update({"type": basis.type, "target_g": basis.target_g if basis.type != "combined" else demand_g,
+                         "raw_material_id": basis.raw_material_id, "item_position": basis.item_position})
+    if basis.type == "factor":
+        top["basis"]["factor_hundredths"] = int(basis.factor * 100)
+    seen = {(w["code"], w["text"]) for w in order_warnings}
+    merged = list(order_warnings)
+    for result, _c, _e in computed:
+        for w in result["warnings"]:
+            if (w["code"], w["text"]) not in seen:
+                seen.add((w["code"], w["text"]))
+                merged.append(w)
+    top["warnings"] = merged
+    top["demand"] = {"exact": decimal_text(demand_exact), "target_g": demand_g, "parts": parts}
+    top["split"] = {
+        "limit_g": order.limit_g,
+        "limit_source": order.limit_source,
+        "limit_label": order.limit_label,
+        "min_count": min_doughs(demand_g, order.limit_g),
+        "count": n,
+        "mode": order.split_mode if n > 1 else None,
+        "needs_question": needs_question,
+        "split": split_doughs,
+        "sub_question": n > 1 and bool(sub_lines),
+    }
+    top["doughs"] = doughs
+    top["order_totals"] = {
+        "target_g": sum(targets),
+        "rounded_sum_g": sum(r["totals"]["rounded_sum_g"] for r, _c, _e in computed),
+        "flour_g": round_half_up(exact_sum * flour / base_total),
+        "flour_exact": decimal_text(exact_sum * flour / base_total),
+        "piece_hints": _piece_hints(recipe, exact_sum) if hints_on else [],
+    }
+    top["order_summary"] = order_summary
+    top["order_flour_mix"] = order_flour_mix
+    top["sub_orders"] = sub_orders
+    return top
 
 
 # ---------------------------------------------------------------------------

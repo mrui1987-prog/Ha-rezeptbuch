@@ -233,7 +233,10 @@ def validate_piece_weights(data) -> list[dict]:
 
 
 def validate_batch_sizes(data) -> list[dict]:
-    """Chargengrößen (R05-20): Bezeichnung Pflicht; Art Gewicht (g) oder Stückzahl mit Stückgewicht."""
+    """Chargengrößen (R05-20): Bezeichnung Pflicht; Art Gewicht (g) oder Stückzahl mit Stückgewicht.
+
+    ``is_limit`` (seit 0.6.2): höchstens eine Chargengröße ist die Obergrenze (R06-27).
+    """
     if not isinstance(data, list):
         raise ValidationError("Chargengrößen müssen eine Liste sein.", field="batch_sizes")
     result = []
@@ -260,9 +263,17 @@ def validate_batch_sizes(data) -> list[dict]:
                 raise ValidationError(f"{where}: Bitte das Stückgewicht wählen.",
                                       field=f"batch_sizes.{index}.piece_weight_id")
         bs_id = raw.get("id")
+        # Haken „aktiv (Obergrenze)“ (V06-2, R06-27); fehlt das Feld, bleibt der bisherige Wert (None)
+        is_limit = raw.get("is_limit")
+        if is_limit is not None and not isinstance(is_limit, bool):
+            raise ValidationError(f"{where}: „aktiv (Obergrenze)“ ist ja oder nein.",
+                                  field=f"batch_sizes.{index}.is_limit")
         result.append({"id": bs_id if isinstance(bs_id, int) and not isinstance(bs_id, bool) else None,
                        "label": label, "kind": kind, "value": value,
-                       "piece_weight_id": piece_id, "piece_weight_label": piece_label})
+                       "piece_weight_id": piece_id, "piece_weight_label": piece_label, "is_limit": is_limit})
+    if sum(1 for b in result if b["is_limit"]) > 1:
+        raise ValidationError("Nur eine Chargengröße kann als Obergrenze aktiv sein.", field="batch_sizes",
+                              code="limit_twice")
     return result
 
 

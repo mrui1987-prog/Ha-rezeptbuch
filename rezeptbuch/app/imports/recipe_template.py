@@ -86,7 +86,8 @@ PIECE_COLUMNS = {
 }
 BATCH_COLUMNS = {
     "import-id": "import_id", "bezeichnung": "label", "art": "kind", "wert": "value",
-    "stückgewicht-bezeichnung": "piece_label", "reihenfolge": "order", "prüfen": None, "bemerkung": None,
+    "stückgewicht-bezeichnung": "piece_label", "reihenfolge": "order", "obergrenze": "is_limit",
+    "prüfen": None, "bemerkung": None,
 }
 UNIT_COLUMNS = {"schlüssel": "key", "gramm je einheit": "factor", "bemerkung": None}
 # Umrechnung im Blatt „Rohstoffe“ (C3-E7); wird nicht gespeichert, nur für den Import verwendet (M02-2)
@@ -103,7 +104,7 @@ COLUMN_TITLES = {
                   "review": "Prüfen"},
     SHEET_PIECES: {"label": "Bezeichnung", "weight": "Gewicht g", "order": "Reihenfolge"},
     SHEET_BATCHES: {"label": "Bezeichnung", "kind": "Art", "value": "Wert", "piece_label": "Stückgewicht-Bezeichnung",
-                    "order": "Reihenfolge"},
+                    "order": "Reihenfolge", "is_limit": "Obergrenze"},
 }
 
 NOTE_DISPLAY_VALUES = {
@@ -116,6 +117,8 @@ BATCH_KIND_VALUES = {"gewicht": "weight", "weight": "weight", "stück": "pieces"
                      "pieces": "pieces", "stückzahl": "pieces"}
 TOL_UNIT_VALUES = {"g": "g", "%": "percent", "percent": "percent", "prozent": "percent"}
 REVIEW_VALUES = {"*", "x", "ja", "1"}
+# Spalte „Obergrenze“ im Blatt Chargengrößen (V06-2, seit 0.6.2): ja = aktiv, leer/nein = nicht aktiv
+LIMIT_VALUES = {"ja": True, "x": True, "1": True, "aktiv": True, "nein": False, "0": False}
 FIXED_FACTORS = {"g": Decimal(1), "kg": Decimal(1000)}
 # ml ↔ l: ist der Faktor für die eine Einheit bekannt, ergibt sich die andere (E7c)
 RELATED_UNITS = {"l": ("ml", Decimal(1000)), "ml": ("l", Decimal(1) / Decimal(1000))}
@@ -748,9 +751,17 @@ def _plan_batches(sheet: Sheet | None, planned: dict[str, PlannedRecipe], err: _
             err.add(SHEET_BATCHES, row.line, "value", "Wert und Reihenfolge müssen ganze Zahlen sein.")
             recipe.broken = True
             continue
+        is_limit = None                                  # Spalte fehlt: bisheriger Haken bleibt
+        if "is_limit" in sheet.columns:
+            text = _key(row.text("is_limit"))
+            is_limit = LIMIT_VALUES.get(text, None) if text else False
+            if is_limit is None:
+                err.add(SHEET_BATCHES, row.line, "is_limit", "Obergrenze muss „ja“ oder leer sein.")
+                recipe.broken = True
+                continue
         recipe.batches.append({"line": row.line, "sort": (sort if sort is not None else 10**9, order),
                                "label": row.text("label"), "kind": kind, "value": value,
-                               "piece_label": row.text("piece_label") or None})
+                               "piece_label": row.text("piece_label") or None, "is_limit": is_limit})
 
 
 def _order(planned: dict[str, PlannedRecipe], err: _Errors, ignored: set[str] = frozenset()) -> list[PlannedRecipe]:
@@ -927,7 +938,7 @@ def _portions(conn: sqlite3.Connection, recipe: PlannedRecipe, recipe_id: int, i
         batches = validate_batch_sizes([{
             "label": b["label"], "kind": b["kind"],
             "value": b["value"] if b["value"] is not None or b["kind"] == "pieces" else total,
-            "piece_weight_label": b["piece_label"]} for b in recipe.sorted_batches])
+            "piece_weight_label": b["piece_label"], "is_limit": b["is_limit"]} for b in recipe.sorted_batches])
         if recipe.existing_id is not None:
             old = {r["label"].casefold(): r["id"] for r in conn.execute(
                 "SELECT id, label FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,))}

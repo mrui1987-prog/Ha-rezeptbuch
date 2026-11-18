@@ -273,9 +273,10 @@ def _batch_sizes(conn: sqlite3.Connection, recipe_id: int) -> list[dict]:
     return [{
         "id": r["id"], "label": r["label"], "kind": r["kind"], "value": r["value"],
         "piece_weight_id": r["piece_weight_id"], "piece_weight_label": r["piece_label"],
-        "piece_weight_g": r["piece_g"],
+        "piece_weight_g": r["piece_g"], "is_limit": bool(r["is_limit"]),
     } for r in conn.execute(
-        "SELECT b.id, b.label, b.kind, b.value, b.piece_weight_id, p.label AS piece_label, p.weight_g AS piece_g "
+        "SELECT b.id, b.label, b.kind, b.value, b.piece_weight_id, b.is_limit, "
+        "       p.label AS piece_label, p.weight_g AS piece_g "
         "FROM recipe_batch_size b LEFT JOIN recipe_piece_weight p ON p.id = b.piece_weight_id "
         "WHERE b.recipe_id = ? ORDER BY b.sort_order, b.id", (recipe_id,))]
 
@@ -888,7 +889,7 @@ def set_batch_sizes_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: list[
         "SELECT id, label FROM recipe_piece_weight WHERE recipe_id = ?", (recipe_id,))}
     by_label = {r["label"].casefold(): r["id"] for r in pieces.values()}
     existing = {r["id"]: r for r in conn.execute(
-        "SELECT id, label FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,))}
+        "SELECT id, label, is_limit FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,))}
     old_labels = {r["label"] for r in existing.values()}
     for index, b in enumerate(clean, start=1):
         if b["kind"] == "pieces":
@@ -904,25 +905,33 @@ def set_batch_sizes_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: list[
         if b["id"] not in existing:
             b["id"] = None
         before = existing.get(b["id"])
+        if b.get("is_limit") is None:          # nicht angegeben: bisheriger Haken bleibt (z. B. ältere Importdatei)
+            b["is_limit"] = bool(before["is_limit"]) if before is not None else False
         if (before is None and b["label"] not in old_labels) or (before is not None and before["label"] != b["label"]):
             check_no_formula_start(b["label"], field=f"batch_sizes.{index}.label",
                                    label=f"Chargengröße {index}: Bezeichnung")
+    if sum(1 for b in clean if b["is_limit"]) > 1:
+        raise ValidationError("Nur eine Chargengröße kann als Obergrenze aktiv sein.", field="batch_sizes",
+                              code="limit_twice")
     old_list = _batch_sizes(conn, recipe_id)
     keep = {b["id"] for b in clean if b["id"] is not None}
+    # Haken zuerst überall entfernen, damit der eindeutige Index beim Umsetzen nicht stört
+    conn.execute("UPDATE recipe_batch_size SET is_limit = 0 WHERE recipe_id = ? AND is_limit = 1", (recipe_id,))
     for bid in existing:
         if bid not in keep:
             conn.execute("DELETE FROM recipe_batch_size WHERE id = ?", (bid,))
     for order, b in enumerate(clean, start=1):
         if b["id"] is None:
-            conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id, sort_order) "
-                         "VALUES (?, ?, ?, ?, ?, ?)",
-                         (recipe_id, b["label"], b["kind"], b["value"], b["piece_weight_id"], order))
+            conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id, sort_order, "
+                         "is_limit) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (recipe_id, b["label"], b["kind"], b["value"], b["piece_weight_id"], order, int(b["is_limit"])))
         else:
             conn.execute("UPDATE recipe_batch_size SET label = ?, kind = ?, value = ?, piece_weight_id = ?, "
-                         "sort_order = ? WHERE id = ?",
-                         (b["label"], b["kind"], b["value"], b["piece_weight_id"], order, b["id"]))
+                         "sort_order = ?, is_limit = ? WHERE id = ?",
+                         (b["label"], b["kind"], b["value"], b["piece_weight_id"], order, int(b["is_limit"]), b["id"]))
     new_list = _batch_sizes(conn, recipe_id)
-    strip = lambda items: [(i["label"], i["kind"], i["value"], i["piece_weight_id"]) for i in items]  # noqa: E731
+    strip = lambda items: [(i["label"], i["kind"], i["value"], i["piece_weight_id"], i["is_limit"])  # noqa: E731
+                           for i in items]
     if strip(old_list) != strip(new_list):
         _log(conn, "update", recipe_id, {"batch_sizes": old_list}, {"batch_sizes": new_list}, source)
         conn.execute("UPDATE recipe SET revision = revision + 1 WHERE id = ?", (recipe_id,))
@@ -1090,11 +1099,12 @@ def copy_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin")
                 mapping[p["id"]] = conn.execute(
                     "INSERT INTO recipe_piece_weight (recipe_id, label, weight_g, sort_order) VALUES (?, ?, ?, ?)",
                     (new_id, p["label"], p["weight_g"], p["sort_order"])).lastrowid
-            for b in conn.execute("SELECT label, kind, value, piece_weight_id, sort_order FROM recipe_batch_size "
-                                  "WHERE recipe_id = ?", (recipe_id,)).fetchall():
-                conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id, sort_order) "
-                             "VALUES (?, ?, ?, ?, ?, ?)",
-                             (new_id, b["label"], b["kind"], b["value"], mapping.get(b["piece_weight_id"]), b["sort_order"]))
+            for b in conn.execute("SELECT label, kind, value, piece_weight_id, sort_order, is_limit "
+                                  "FROM recipe_batch_size WHERE recipe_id = ?", (recipe_id,)).fetchall():
+                conn.execute("INSERT INTO recipe_batch_size (recipe_id, label, kind, value, piece_weight_id, sort_order, "
+                             "is_limit) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                             (new_id, b["label"], b["kind"], b["value"], mapping.get(b["piece_weight_id"]), b["sort_order"],
+                              b["is_limit"]))
             _log(conn, "create", new_id, None,
                  {"number": number, "group_id": row["group_id"], "locked": 1, "internal_note": row["internal_note"],
                   "version_no": 1, "copied_from": {"id": recipe_id, "number": row["number"], "version_no": row["version_no"]},

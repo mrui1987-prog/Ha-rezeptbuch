@@ -146,3 +146,47 @@ def test_session_check(client, auth):
 def test_admin_pages_check_session_on_open(client):
     for page in ("/admin/rohstoffe", "/admin/rezepte", "/admin/berechnung"):
         assert "admin/session" in client.get(page).text, page
+
+
+# -- Teil C3: Obergrenze, Kombinieren, Faktor, Teige (docs/berechnung.md 17.11) -----------------------
+
+def test_limit_flag_combined_and_split_via_api(client, recipe, auth):
+    rid = recipe["recipe"]["id"]
+    r = client.put(f"/api/v1/admin/recipes/{rid}/batch-sizes", headers=auth, json={"batch_sizes": [
+        {"label": "Kessel", "kind": "weight", "value": 16000, "is_limit": True},
+        {"label": "Halb", "kind": "weight", "value": 8000}]})
+    assert r.status_code == 200, r.text
+    assert [b["is_limit"] for b in r.json()["batch_sizes"]] == [True, False]
+    half = r.json()["batch_sizes"][1]["id"]
+
+    options = client.get(f"/api/v1/recipes/{rid}/basis-options").json()
+    assert options["limit"]["limit_g"] == 16000 and options["factor_allowed"] is True
+
+    # 2 × Halb + 0,5 × Grundrezept = 16 000 + 8 000 = 24 000 g → 16 000 + 8 000 g (voll auffüllen)
+    r = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "combined", "factor": "0,5",
+                                                  "batch_sizes": [{"batch_size_id": half, "count": 2}]})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["demand"]["target_g"] == 24000
+    assert [d["target_g"] for d in data["doughs"]] == [16000, 8000]
+    assert data["split"]["limit_source"] == "recipe"
+
+    r = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "total", "value": "20000",
+                                                  "order_limit": "20000"})
+    assert r.status_code == 400 and r.json()["field"] == "order_limit"
+
+    r = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "flour_total", "value": "15",
+                                                  "input_unit": "kg"})
+    assert r.status_code == 200 and r.json()["split"]["needs_question"] is True
+    r = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "flour_total", "value": "15",
+                                                  "input_unit": "kg", "split": True, "split_mode": "even"})
+    assert [d["target_g"] for d in r.json()["doughs"]] == [12000, 12000]
+
+
+def test_factor_via_api(client, recipe):
+    rid = recipe["recipe"]["id"]
+    r = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "factor", "factor": "1,5"})
+    assert r.status_code == 200, r.text
+    assert [i["target_g"] for i in r.json()["items"]] == [15000, 8700, 300]
+    r = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "factor", "factor": "1,555"})
+    assert r.status_code == 400 and r.json()["code"] == "factor_invalid"

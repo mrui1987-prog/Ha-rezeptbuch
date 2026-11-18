@@ -36,6 +36,7 @@ PIECE_HEADER = ["Import-ID", "Rezeptname (nicht importieren)", "Bezeichnung", "G
 BATCH_HEADER = [
     "Import-ID", "Rezeptname (nicht importieren)", "Bezeichnung (Taste)", "Art (Gewicht/Stück)",
     "Wert (g bzw. Stück)", "Stückgewicht-Bezeichnung (nur bei Stück)", "Reihenfolge",
+    "Obergrenze (ja = aktiv)",
 ]
 RAW_HEADER = [
     "Nummer", "Name", "Kurzname", "Typ", "Toleranz", "Toleranzeinheit", "Gebindegröße g",
@@ -47,7 +48,7 @@ WIDTHS = {
     "Rezepte": [10, 12, 30, 20, 12, 12, 50, 22, 40, 14, 12],
     "Rezeptzeilen": [10, 26, 9, 22, 14, 30, 12, 12, 12, 12, 10, 10, 12, 12, 8],
     "Stückgewichte": [10, 26, 24, 11, 11],
-    "Chargengrößen": [10, 26, 24, 14, 14, 22, 11],
+    "Chargengrößen": [10, 26, 24, 14, 14, 22, 11, 14],
     "Rohstoffe": [9, 30, 16, 10, 10, 14, 14, 16, 18, 14, 12, 10],
 }
 
@@ -193,7 +194,8 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids
         for order, batch in enumerate(recipe["batch_sizes"], start=1):
             _put(ws_b, b_row, [rid, recipe["name"], batch["label"],
                                "Stück" if batch["kind"] == "pieces" else "Gewicht", batch["value"],
-                               batch["piece_weight_label"] if batch["kind"] == "pieces" else None, order])
+                               batch["piece_weight_label"] if batch["kind"] == "pieces" else None, order,
+                               "ja" if batch.get("is_limit") else None])
             b_row += 1
 
     rm_row = 2

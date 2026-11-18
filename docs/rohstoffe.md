@@ -1,6 +1,6 @@
 # Modul 03 – Rohstoff- & Zutatenverwaltung (Schritt B: Konzept)
 
-Status: **Modul 03 am 15.11.2026 von Michael freigegeben (Add-on 0.3.4); Konzept am 14.11.2026 freigegeben, Praxisprüfung in Home Assistant am 15.11.2026 bestanden; Abweichungen und Korrekturen siehe Abschnitt 14**
+Status: **Modul 03 am 15.11.2026 von Michael freigegeben (Add-on 0.3.4); Konzept am 14.11.2026 freigegeben, Praxisprüfung in Home Assistant am 15.11.2026 bestanden; Abweichungen und Korrekturen siehe Abschnitt 14.** **Ergänzung VC03-a „Preis je kg“ (Abschnitt 15) am 18.11.2026 geschrieben; K03-5 bis K03-8 am 18.11.2026, 13:13 entschieden; Ergänzung am 18.11.2026, 14:44 von Michael freigegeben; umgesetzt mit Modul 06 Teil C3 (0.6.2) am 18.11.2026 (Präzisierungen in 15.12), Praxisprüfung zusammen mit C3 offen.**
 Grundlage: Code-Stand `main` 43df855 (Add-on `rezeptbuch` 0.2.0), docs/datenmodell.md, docs/bedienkonzept.md, Entscheidungen M03-1 bis M03-8 und K03-1 bis K03-4 (PROJEKTSTATUS Abschnitt 3).
 Zielversion: Add-on `rezeptbuch` **0.3.0** (aktueller Stand nach Korrekturen: **0.3.4**).
 
@@ -15,6 +15,7 @@ Zielversion: Add-on `rezeptbuch` **0.3.0** (aktueller Stand nach Korrekturen: **
 - CSV-Export der Rohstoffe (M03-8).
 - Eine schlichte Seite mit PIN-Eingabe und Rohstoffliste (M03-6).
 - **Befund B6 aus Modul 02:** eigene Datenbankverbindung je Anfrage statt einer gemeinsamen Verbindung (K03-1, vorgezogen aus Modul 05).
+- **Ergänzung (VC03-a, 18.11.2026):** Preis je kg am Rohstoff, siehe Abschnitt 15.
 
 **Nicht enthalten**
 - Zurückgestellt bis BÄKO-Anbindung: Allergene, Nährwerte, Zutatenverzeichnis, Lieferanten/Artikelnummern, Herkunft „BÄKO“ mit Importdatum.
@@ -61,7 +62,7 @@ Ablauf wie in Modul 02: automatische Sicherungskopie vor der Migration, Rückrol
 | R03-2 | **Name:** Pflicht, eindeutig ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen am Rand. Doppelte Leerzeichen werden zusammengezogen. |
 | R03-3 | **Ähnliche Namen:** Beim Anlegen zeigt das System Hinweise auf ähnliche Namen (z. B. „Marrgarine“ ↔ „Margarine“), sperrt aber nicht. Vergleich mit Python `difflib` (Schwelle 0,8, keine neue Bibliothek). |
 | R03-4 | **Kurzname:** optional, frei wählbar, mehrfach erlaubt (z. B. drei Sorten mit „Margarine“). Leer = Name wird angezeigt. **An der Station überall der Kurzname** (Vorwahl, Rezeptübersicht, Wiegeansicht; K03-4). Admin-Bereich, Export und Chargenprotokoll zeigen immer den vollen Name. Die Anzeige an der Station setzen Modul 09/10 um; die API liefert dafür das Feld `station_name` (Kurzname, sonst Name). |
-| R03-5 | **Toleranz:** Pflichtfeld. **Beim Anlegen ist das Feld leer** und muss ausgefüllt werden (K03-3); ohne Wert wird nicht gespeichert. **Nur `0 g`** = Sollhandzugabe (nur quittieren); **`0 %` wird gewogen** (bei der Verwiegung mindestens ±1 g; M05-13b, ergänzt 15.11.2026). In Gramm ganze Zahl ≥ 0. In Prozent auf Zehntel genau, höchstens 100,0 %. Einheit vorbelegt mit Gramm (R1). Die **Mindesttoleranz 1 g** (M03-4) wirkt bei der Verwiegung und wird in Modul 06/09 umgesetzt; hier wird sie nur als Hinweis unter dem Eingabefeld angezeigt. |
+| R03-5 | **Toleranz:** Pflichtfeld. **Beim Anlegen ist das Feld leer** und muss ausgefüllt werden (K03-3); ohne Wert wird nicht gespeichert. `0` = Sollhandzugabe (nur quittieren). In Gramm ganze Zahl ≥ 0. In Prozent auf Zehntel genau, höchstens 100,0 %. Einheit vorbelegt mit Gramm (R1). Die **Mindesttoleranz 1 g** (M03-4) wirkt bei der Verwiegung und wird in Modul 06/09 umgesetzt; hier wird sie nur als Hinweis unter dem Eingabefeld angezeigt. |
 | R03-6 | **Gebinde/Stück:** Größe in Gramm und Bezeichnung nur zusammen (z. B. 55 g „Ei“). |
 | R03-7 | **Typwechsel Mehl ↔ Standard** (M03-5): erlaubt. Ist der Rohstoff in Rezepten verwendet, antwortet das System zuerst mit einer Warnung „betrifft n Rezepte – ‚Mehl gesamt‘ ändert sich dort“ (Code `type_change_confirmation_required`). Erst nach Bestätigung (`confirm_type_change: true`) wird gespeichert. Fixierte Versionen und Chargen bleiben unverändert. |
 | R03-8 | **Herkunft:** Handanlage immer „eigen“. „BÄKO“ setzt nur der spätere Datenlink-Import (Modul 04). |
@@ -69,6 +70,8 @@ Ablauf wie in Modul 02: automatische Sicherungskopie vor der Migration, Rückrol
 | R03-10 | **Wiederherstellen:** nur, wenn kein aktiver Rohstoff denselben Namen hat (sonst Meldung mit Hinweis auf den gleichnamigen Rohstoff). |
 | R03-11 | **Löschen:** nur, wenn nie verwendet. Sonst Meldung „wird in n Rezepten verwendet – bitte archivieren“. Die Datenbank sperrt das zusätzlich per Fremdschlüssel. |
 | R03-12 | **Protokoll:** jede Änderung in `change_log` (Quelle `admin`, `entity = raw_material`, alte und neue Werte als JSON). |
+
+Regeln zum Preis je kg (R03-13 bis R03-17): Abschnitt 15.3.
 
 ## 5. PIN-Schutz (M03-7)
 
@@ -89,7 +92,7 @@ Lesen (ohne PIN, die Stationen brauchen das später):
 
 | Methode | Pfad | Inhalt |
 |---|---|---|
-| GET | `/raw-materials?search=&include_archived=false&zero_percent=false` | Liste (einfaches Array), Suche in Nummer, Name, Kurzname; jedes Element mit `station_name`; `zero_percent=true` nur Toleranz 0 % (ab 0.5.0, M05-13b) |
+| GET | `/raw-materials?search=&include_archived=false` | Liste (einfaches Array), Suche in Nummer, Name, Kurzname; jedes Element mit `station_name` |
 | GET | `/raw-materials/{id}` | ein Rohstoff mit Verwendungszahl |
 | GET | `/system/info` | Version, `pin_is_default` (für den Probebetrieb-Balken), `admin_timeout_minutes` |
 
@@ -108,7 +111,7 @@ Lesen (ohne PIN, die Stationen brauchen das später):
 
 Fehlerantworten (immer mit deutscher Meldung im Feld `detail`, dazu `field` und `code`): 400 ungültige Eingabe, 401 nicht angemeldet, 404 nicht gefunden, 409 Konflikt (Name doppelt, Nummer vergeben oder gesperrt, Löschen verwendet, Typwechsel ohne Bestätigung), 423 PIN gesperrt, 503 Datenbank nicht bereit oder gesperrt.
 
-**CSV-Export:** Semikolon als Trenner, UTF-8 mit BOM (öffnet direkt richtig in Excel), Prozent mit Komma (2,5). Spalten: Nummer; Name; Kurzname; Typ; Toleranz; Toleranzeinheit; Gebindegröße g; Gebindebezeichnung; Herkunft; archiviert; geändert am. Dasselbe Format liest der CSV-Import (ab 0.5.0, Modul 05, docs/rezepte.md Abschnitt 6.1).
+**CSV-Export:** Semikolon als Trenner, UTF-8 mit BOM (öffnet direkt richtig in Excel), Prozent mit Komma (2,5). Spalten: Nummer; Name; Kurzname; Typ; Toleranz; Toleranzeinheit; Gebindegröße g; Gebindebezeichnung; Herkunft; archiviert; geändert am. Dasselbe Format dient später für den Import (Modul 05). **Ab 0.6.2 zwei weitere Spalten am Ende** (Abschnitt 15.5).
 
 ## 7. Seite (schlicht, ohne Gestaltung)
 
@@ -163,6 +166,8 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 | 12 | baut auf `auth` auf: PIN ändern, Probebetrieb beenden, weitere Admin-Bereiche schützen |
 | 04 | ergänzt später BÄKO-Felder per weiterer Migration und setzt Herkunft „BÄKO“ |
 
+Auswirkungen der Ergänzung VC03-a: Abschnitt 15.10.
+
 ## 12. Konzeptfragen – entschieden am 14.11.2026
 
 | Nr. | Entscheidung |
@@ -172,6 +177,8 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 | K03-3 | **Toleranzfeld ist beim Anlegen leer** und muss ausgefüllt werden (Pflichtfeld, keine Vorbelegung des Werts). |
 | K03-4 | **Kurzname überall an der Station** (Vorwahl, Rezeptübersicht, Wiegeansicht); voller Name im Admin-Bereich, Export und Chargenprotokoll. |
 
+Konzeptfragen zur Ergänzung VC03-a (K03-5 bis K03-8, entschieden 18.11.2026): Abschnitt 15.11.
+
 ## 13. Änderungen
 
 | Datum | Änderung |
@@ -180,7 +187,10 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 | 14.11.2026 | K03-1 bis K03-4 entschieden und eingearbeitet. |
 | 14.11.2026 | Konzept von Michael freigegeben; Schritt C umgesetzt, Abschnitte 5 bis 10 an den Code angepasst (siehe Abschnitt 14). |
 | 15.11.2026 | Praxisprüfung in Home Assistant (iPhone), Korrekturen 0.3.1 bis 0.3.4, Abschnitt 14 ergänzt. |
-| 15.11.2026 | Änderungen durch Modul 05 (0.5.0): Sperre B2, Bedeutung 0 g / 0 %, Filter 0 %, CSV-Import (Abschnitt 14). |
+| 18.11.2026, 12:44 | **Abschnitt 15 „Ergänzung VC03-a – Preis je kg“ geschrieben** (Auftrag Michael „ergänze Konzept Rohstoffe“); Hinweise in Abschnitt 1, 4, 6, 11, 12. Keine bestehende Regel geändert. |
+| 18.11.2026, 13:13 | **K03-5 bis K03-8 entschieden** und eingearbeitet (R03-13, 15.4, 15.6, 15.7, 15.9, 15.11); **K03-8 abweichend vom Vorschlag: runden statt Fehler.** Freigabe der Ergänzung offen. |
+| 18.11.2026, 14:44 | **Ergänzung VC03-a (Abschnitt 15) von Michael freigegeben** (Freigabe zum Programmieren); Umsetzung mit Modul 06 Teil C3 (0.6.2). Inhalt unverändert. |
+| 18.11.2026 | **VC03-a umgesetzt mit Modul 06 Teil C3 (0.6.2)**, Präzisierungen in 15.12. Keine Regel geändert. |
 
 ## 14. Abweichungen der Umsetzung vom freigegebenen Konzept
 
@@ -204,9 +214,107 @@ rezeptbuch/tests/  test_auth.py, test_raw_material_service.py, test_raw_material
 - **B2 (CSV-Formeln):** Namen, die mit `=`, `+`, `-` oder `@` beginnen, werden in Modul 05 (Rezeptverwaltung) gesperrt. Für Rohstoffe wird dies dort mit entschieden.
 - **B3 (sehr große Toleranz):** keine zusätzliche Warnung (Entscheidung Michael, 15.11.2026).
 
-### Änderungen durch Modul 05 (Add-on 0.5.0, abgestimmt mit Michael am 15.11.2026)
+## 15. Ergänzung VC03-a – Preis je kg (18.11.2026, freigegeben 14:44)
 
-- **Sperre B2 (M05-14):** Name und Kurzname dürfen beim Anlegen und Umbenennen nicht mit `=`, `+`, `-` oder `@` beginnen; unveränderte vorhandene Namen bleiben speicherbar (`app/text_rules.py`).
-- **0 g / 0 % (M05-13b):** nur 0 g ist Sollhandzugabe, 0 % wird gewogen; Hinweistext unter dem Toleranzfeld angepasst; Filter „nur Toleranz 0 %“ in der Liste und `zero_percent` in der API.
-- **CSV-Import** der Rohstoffe (aus M03-8 aufgeschoben): docs/rezepte.md Abschnitt 6.1.
-- `service.py` intern aufgeteilt: Funktionen `create_in_tx`, `update_in_tx`, `archive_in_tx`, `restore_in_tx` mit den Regeln für eine bereits offene Transaktion (für den Import „alles oder nichts“); die bisherigen Funktionen verhalten sich unverändert.
+Grundlage: Entscheidung VC03-a vom 18.11.2026, 10:51 (docs/modulstatus-03.md): **nur das Preisfeld**, **Euro netto je kg, 2 Nachkommastellen, leer erlaubt**, **„Preis geändert am“ automatisch**, **kein Preisverlauf**, **überall sichtbar (auch ohne PIN)**, **Rohstoffseite, CSV-Export und CSV-Import**, **Umsetzung mit Modul 06 Teil C3 (0.6.2) in Migration 0006** (docs/berechnung.md 17.9). Konzeptfragen K03-5 bis K03-8 am 18.11.2026, 13:13 entschieden (15.11). Änderung am freigegebenen Modul 03 wie M05-14. Vorbild: Optidos „Kosten / kg“.
+
+### 15.1 Umfang
+
+**Enthalten:** Feld „Preis je kg“ und „Preis geändert am“ am Rohstoff; Eingabe und Anzeige auf der Rohstoffseite; Lese- und Admin-Schnittstelle; CSV-Export und CSV-Import (docs/rezepte.md 6.1); Protokoll in `change_log`; Tests.
+
+**Nicht enthalten:** Kosten je Rezept, je Teig oder je Stück (Rezeptkalkulation, später in Modul 06, eigener Vorschlag); Preisverlauf; Preis je Gebinde oder je Stück; Mehrwertsteuer; Anzeige an der Station (Modul 09/10 zeigen den Preis nicht an); Preise aus dem BÄKO-Datenlink (Modul 04); Importvorlage `.xlsx` und Rezept-Export `.xlsx` (K03-7).
+
+### 15.2 Datenbank (Teil von Migration `0006`)
+
+| Änderung | Inhalt | Grund |
+|---|---|---|
+| Spalte `raw_material.price_cents_per_kg` | INTEGER, leer erlaubt; CHECK `NULL` oder `0 ≤ Wert ≤ 999 999` (= 9 999,99 €) | Preis in **Cent je kg als ganze Zahl**: exakt, keine Rundungsfehler bei 2 Nachkommastellen (wie die exakte Rechnung in Modul 06) |
+| Spalte `raw_material.price_changed_at` | TEXT (Zeitstempel im selben Format wie `updated_at`), leer erlaubt | „Preis geändert am“ (VC03-a (3)) |
+
+Vorhandene Rohstoffe: beide Felder leer. Kein Trigger; die Regeln R03-14 setzt der service (alle Schreibwege – Seite, CSV-Import, später BÄKO-Import – laufen über `raw_materials.service`, Abschnitt 2). Sicherungskopie und Rückrollen wie bei jeder Migration.
+
+### 15.3 Fachregeln
+
+| Nr. | Regel |
+|---|---|
+| R03-13 | **Preis je kg:** optional, Euro **netto** je kg. Leer = kein Preis hinterlegt. **0,00 € ist erlaubt** und etwas anderes als leer (z. B. Wasser; K03-6). Keine negativen Werte. Obergrenze **9 999,99 €/kg** (Tippfehlerschutz, K03-6); darüber Fehler 400. **Mehr als 2 Nachkommastellen werden kaufmännisch auf 2 Stellen gerundet** (2,355 → 2,36; 2,354 → 2,35) **mit Hinweis** (K03-8); geprüft wird die Obergrenze nach dem Runden. Eingabe mit Komma oder Punkt („2,35“, „2.35“); Tausenderpunkt mit Komma („1.234,50“) wird verstanden; ein angehängtes „€“ und Leerzeichen werden ignoriert. |
+| R03-14 | **Preis geändert am:** wird beim Speichern **automatisch** auf den aktuellen Zeitpunkt gesetzt, **wenn sich der gespeicherte Preis ändert** – auch beim Eintragen des ersten Preises und beim Leeren. Bleibt der Preis (nach dem Runden) gleich, z. B. Formular speichern ohne Preisänderung oder unveränderter CSV-Re-Import, bleibt auch das Datum. Von Hand nicht änderbar. |
+| R03-15 | **Kein Preisverlauf:** Es gilt immer nur der aktuelle Preis. Alte Preise stehen nur im Änderungsprotokoll (R03-12). Rezeptversionen und Chargen speichern keinen Preis. |
+| R03-16 | **Sichtbarkeit:** Preis und Datum stehen in der Lese-Schnittstelle **ohne PIN** und im Admin-Bereich (Entscheidung VC03-a (2)). Ändern nur mit PIN-Sitzung. |
+| R03-17 | **Archiv, Typ, Gebinde unberührt:** Archivieren und Wiederherstellen behalten den Preis; Typwechsel und Gebinde haben keinen Einfluss. Der Preis bezieht sich **immer auf 1 kg**, auch bei Gebinde-Rohstoffen (z. B. Eier: Preis je Stück ÷ Stückgewicht × 1 000; Hinweis unter dem Feld). |
+
+### 15.4 Schnittstellen
+
+- **Lesen (ohne PIN):** `GET /raw-materials` und `GET /raw-materials/{id}` liefern zusätzlich `price_cents_per_kg` (ganze Zahl oder `null`) und `price_changed_at` (Zeitstempel oder `null`). Die Seite formatiert als „2,35 €“.
+- **Ändern (PIN):** `POST /admin/raw-materials` und `PATCH /admin/raw-materials/{id}` nehmen `price_per_kg` als **Text** in Euro an („2,35“, „2.35“, „1.234,50 €“; R03-13). Bei `PATCH`: Feld fehlt = unverändert, `null` oder leerer Text = Preis löschen. `price_changed_at` wird nicht angenommen (R03-14).
+- **Gerundet (K03-8):** Die Antwort enthält dann zusätzlich `warnings: [{field: "price_per_kg", code: "price_rounded", detail: "Preis auf 2 Nachkommastellen gerundet: 2,355 → 2,36 €"}]`; gespeichert wird der gerundete Wert.
+- Fehler wie bisher mit `field = price_per_kg` und Code `invalid_price` (kein Zahlwert, negativ, über 9 999,99 €).
+
+### 15.5 CSV-Export
+
+Zwei neue Spalten **am Ende** (die bisherigen Spalten behalten ihre Lage): **„Preis je kg €“** (Komma, genau 2 Nachkommastellen, ohne Tausenderpunkt und ohne €-Zeichen, z. B. „2,35“; leer ohne Preis) und **„Preis geändert am“** (Format wie „geändert am“; leer ohne Datum).
+
+### 15.6 CSV-Import (docs/rezepte.md 6.1, Code in `app/imports/`)
+
+- Spalte **„Preis je kg €“** optional; als Kopfzeile werden auch „Preis je kg“, „Preis €/kg“ und „Preis/kg“ erkannt (ohne Groß-/Kleinschreibung).
+- **Spalte fehlt ganz:** Preis bei vorhandenen Rohstoffen unverändert (wie die übrigen Spalten, docs/rezepte.md 16, C1); ältere CSV-Dateien ohne Preisspalte lassen sich weiter importieren.
+- **Leere Zelle:** Preis wird **gelöscht** (wie Kurzname und Gebinde; K03-5). So ergibt Export → Re-Import „unverändert“.
+- Wert nach R03-13 (Excel-Schreibweisen „2,35“, „2.35“, „1.234,50“, „2,35 €“). **Mehr als 2 Nachkommastellen → gerundet, mit Hinweis im Bericht** (Zeile, „2,355 → 2,36“; Import möglich, K03-8). Kein Zahlwert, negativ oder über 9 999,99 € → Fehler mit Zeile und Spalte, Import nicht möglich.
+- Änderungen erscheinen im Bericht als „alt → neu“ und zählen als Überschreiben (Bestätigung `confirm_overwrite` wie bisher). „Preis geändert am“ setzt der Import nach R03-14; die Spalte „Preis geändert am“ wird **nicht ausgewertet** (wie „geändert am“).
+- Neue Rohstoffe übernehmen den Preis aus der Datei.
+
+### 15.7 Seite (`admin.html`, schlicht)
+
+- **Liste:** neue Spalte **„€/kg“** (leer, wenn kein Preis).
+- **Formular:** Feld **„Preis je kg (€ netto)“**, beim Anlegen leer; darunter „geändert am …“ (nur Anzeige) und der Hinweis „bei Gebinde/Stück auf 1 kg umrechnen“.
+- **Nach dem Speichern mit gerundetem Preis** zeigt die Seite den Hinweis aus der Antwort („Preis auf 2 Nachkommastellen gerundet: 2,355 → 2,36 €“) und den gespeicherten Wert (K03-8).
+- Rückfragen weiter mit eigenem Fenster (keine Browser-Dialoge, 0.3.3). Gestaltung in Modul 10.
+
+### 15.8 Dateien (voraussichtlich, Teil C3)
+
+`app/db/migrations/0006_….sql` (gemeinsam mit Modul 06), `app/raw_materials/models.py` (Preis lesen, prüfen und runden), `service.py` (R03-14), `export.py`, `router.py`, `app/imports/raw_materials_csv.py`, `app/web/static/admin.html`; Doku `DOCS.md`, `CHANGELOG.md`, docs/rezepte.md 6.1 (Hinweis auf Preisspalte).
+
+### 15.9 Tests
+
+- Migration 0006: vorhandene Rohstoffe mit leerem Preis; CHECK lehnt negative Werte und Werte über 999 999 ab.
+- R03-13: gültige Eingaben (2,35 · 2.35 · 1.234,50 · „2,35 €“ · 0 · 0,00 · 9 999,99) und ungültige (−1 · 10 000 · Text · „²“).
+- K03-8 Runden: 2,355 → 2,36 und 2,354 → 2,35 mit Hinweis; 9 999,994 → 9 999,99 erlaubt; 9 999,995 → 10 000,00 → Fehler (Obergrenze nach dem Runden); Hinweis auch im Import-Bericht.
+- R03-14: Datum beim ersten Preis, bei Änderung, beim Leeren gesetzt; bei unverändertem Preis (auch 2,349 → 2,35 bei gespeicherten 2,35), bei Änderung anderer Felder unverändert.
+- R03-17: Archivieren/Wiederherstellen behält den Preis.
+- API: Lesen ohne PIN liefert Preis und Datum; `PATCH` ohne Feld, mit `null`, mit Text, mit Rundung (`warnings`); Ändern ohne Sitzung 401.
+- CSV-Export: Spalten am Ende, Format „2,35“, leer ohne Preis.
+- CSV-Import: alte Datei ohne Preisspalte (Preis bleibt), leere Zelle löscht, Kopfzeilen-Varianten, Rundung mit Hinweis, Fehler mit Zeile/Spalte, Bericht „alt → neu“, Export → Re-Import „unverändert“ (Datum bleibt).
+- `change_log` enthält alten und neuen Preis. Bestehende Tests laufen weiter.
+
+### 15.10 Auswirkungen auf andere Module
+
+| Modul | Auswirkung |
+|---|---|
+| 02 | zwei Spalten in Migration 0006 (docs/berechnung.md 17.9) |
+| 05 | Rohstoff-CSV-Import (`app/imports/`) liest die Preisspalte (vom freigegebenen Modul 05, abgedeckt durch VC03-a „CSV-Import“); Importvorlage und Rezept-Export unverändert (K03-7) |
+| 06 | keine Rechnung mit dem Preis in Teil C3; Rezeptkalkulation (Kosten je Rezept/Stück) später als eigener Vorschlag |
+| 04 | BÄKO-Preise ins selbe Feld, sofern der Datenlink sie liefert; Vorrang Handpreis/BÄKO-Preis dort klären; Rundung nach R03-13 |
+| 09/10 | keine Anzeige des Preises an der Station; Gestaltung der Seite in Modul 10 |
+| 12 | zur Kenntnis: Preise ohne PIN lesbar (R03-16) |
+| 13 | Preise sind Teil der Datenbanksicherung und des CSV-Exports |
+
+### 15.11 Konzeptfragen – entschieden am 18.11.2026, 13:13 (Michael)
+
+| Nr. | Frage | Entscheidung |
+|---|---|---|
+| K03-5 | Leere Preiszelle im CSV-Import | **Preis löschen** (wie Kurzname/Gebinde; Export → Re-Import bleibt „unverändert“; jede Löschung steht im Bericht „alt → neu“). Fehlt die Spalte ganz, bleibt der Preis. Wie vorgeschlagen. |
+| K03-6 | Obergrenze und 0 € | **0 bis 9 999,99 €/kg; 0,00 € erlaubt** (verschieden von leer). Wie vorgeschlagen. |
+| K03-7 | Preis auch in Importvorlage `.xlsx` und Rezept-Export `.xlsx` | **Nein, nur CSV** (wie VC03-a); bei Bedarf später als eigene Ergänzung. Wie vorgeschlagen. |
+| K03-8 | Mehr als 2 Nachkommastellen | **Auf 2 Stellen runden (kaufmännisch), mit Hinweis** an der Seite und im Import-Bericht. **Abweichend vom Vorschlag** („Fehler“). |
+
+**Ergänzung am 18.11.2026, 14:44 von Michael freigegeben.** Umgesetzt mit Modul 06 Teil C3 (0.6.2); Praxisprüfung der Preisfunktion zusammen mit C3.
+
+### 15.12 Präzisierungen der Umsetzung (0.6.2)
+
+Keine Abweichung von einer Entscheidung.
+
+1. **Tausenderpunkt nur zusammen mit Komma:** „1.234,50“ = 1 234,50 €. Ein Punkt ohne Komma ist der Dezimalpunkt: „1.234“ = 1,234 € → gerundet 1,23 € mit Hinweis (R03-13 „2.35“ = 2,35 €). „1,234.50“ ist ungültig.
+2. **Schnittstelle:** `price_per_kg` nimmt neben Text auch Zahlen an. Das Formular der Rohstoffseite schickt den Preis bei jedem Speichern mit; unverändert bleibt das Datum (R03-14).
+3. **Kopfzeilen nur im CSV:** Die Preisspalten kennt nur der CSV-Import (`CSV_HEADERS`); die Importvorlage `.xlsx` nutzt die bisherige Kopfzeilen-Tabelle und meldet eine Preisspalte als „wird nicht ausgewertet“ (K03-7). Im Bericht heißt das Feld „Preis je kg“ („2,35 €“, „(leer)“), Fehler nennen die Spalte „Preis je kg €“.
+4. **Seite:** Hinweis zum gerundeten Preis erscheint nach dem Speichern über der Liste, mit dem Rohstoffnamen; „Preis geändert am“ in Ortszeit („18.11.2026 14:55“).
+5. **Tests:** `test_raw_material_price.py` (62), `test_migration_0006.py` (Preisspalten), API-Tests in `test_raw_material_api.py` (nur GitHub), Kopfzeile in `test_raw_material_service.py` angepasst.

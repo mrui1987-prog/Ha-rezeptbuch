@@ -1,5 +1,14 @@
 # Änderungen
 
+## 0.6.2 – Modul 06, Teil C3, und Preis je kg (in Entwicklung)
+
+- **Bezugsarten kombinieren** (V06-1): Gesamtteig, Stückzahlen, Chargengrößen (auch dieselbe mehrmals) und **Faktor × Grundrezept** (neu, VC06-e) in einem Auftrag, in Gramm zusammengezählt; „Mehl gesamt“ und Leitrohstoff nur allein
+- **Obergrenze und Aufteilung in Teige** (V06-2): Haken **„aktiv (Obergrenze)“** bei den Chargengrößen in der Rezeptbearbeitung (höchstens einer je Rezept; Kopie, Export und Import übernehmen ihn, Spalte „Obergrenze“ im Blatt Chargengrößen). Liegt der Bedarf darüber, wird in mehrere Teige geteilt: „voll auffüllen“ oder „gleichmäßig“, Anzahl Teige nur erhöhbar. Obergrenze nur für den Auftrag eingebbar (mit aktiver Chargengröße nur kleiner). Bei „Mehl gesamt“ und Leitrohstoff Rückfrage „Nach Obergrenze teilen?“. Bei Unterrezepten Auswahl „je Teig“ oder „einmal für alle“
+- Prüfseite „Berechnung“: Bezugsarten „Faktor“ und „Kombiniert“, Obergrenze, Rückfragen, Teige als Reiter, Zusammenfassung „dieser Teig / ganzer Auftrag“, Unterrezept-Aufträge; **„Mehl gesamt“ in ganzen Gramm** (kaufmännisch gerundet)
+- Schnittstelle `POST /api/v1/calculation` zusätzlich mit `demand`, `split`, `doughs`, `order_totals`, `order_summary`, `sub_orders` (bisherige Felder unverändert); `basis-options` mit `limit`; Funktionen für Modul 09: `plan_doughs`, `sub_order_targets`, `build_batch_items` je Teig, erweitertes `validate_basis`
+- **Preis je kg am Rohstoff** (Modul 03, VC03-a): Feld „Preis je kg (€ netto)“ auf der Rohstoffseite und Spalte „€/kg“, „Preis geändert am“ automatisch, ohne PIN lesbar; mehr als 2 Nachkommastellen werden mit Hinweis gerundet. CSV-Export mit zwei neuen Spalten am Ende, CSV-Import liest die Preisspalte (leere Zelle löscht, fehlende Spalte lässt den Preis stehen)
+- Datenbank-Migration `0006_order_doughs.sql`: `recipe_batch_size.is_limit`, Bezugsarten `factor`/`combined`, Obergrenze und Teilungsart am Auftrag, Tabellen `order_batch_size` und `order_dough`, `parent_dough_index`, Preisspalten am Rohstoff. Die Tabelle `production_order` wird dabei neu aufgebaut (SQLite kann CHECK-Regeln nicht ändern); dafür kennt die Migration den Schalter `-- migration: foreign_keys=off` in der ersten Zeile
+
 ## 0.6.1 – Modul 06, Teil C2 (in Entwicklung)
 
 - **Anteil und Bäckerprozent in der Rezeptverwaltung:** neue Spalten „Anteil %“ und „Bäcker %“ in den Zutaten und in alten Versionen, dazu „Mehl gesamt (mit Unterrezepten)“; die Lese-Schnittstelle liefert zusätzlich `sums.flour_total_g` und je Zeile `share_tenths`/`baker_tenths` (vorhandene Felder unverändert)

@@ -153,3 +153,35 @@ def test_503_without_database(tmp_path, monkeypatch):
     monkeypatch.setenv("REZEPTBUCH_DB", str(db_file))
     with TestClient(app) as c:
         assert c.get("/api/v1/raw-materials").status_code == 503
+
+
+# -- Preis je kg (VC03-a, docs/rohstoffe.md 15.4) -----------------------------------
+
+def test_price_readable_without_pin_and_patch_rules(client, auth):
+    r = client.post("/api/v1/admin/raw-materials", json=new(price_per_kg="2,35"), headers=auth)
+    assert r.status_code == 201
+    item = r.json()
+    assert item["price_cents_per_kg"] == 235 and item["price_changed_at"]
+    got = client.get(f"/api/v1/raw-materials/{item['id']}").json()          # ohne PIN (R03-16)
+    assert got["price_cents_per_kg"] == 235
+    assert client.get("/api/v1/raw-materials").json()[0]["price_cents_per_kg"] == 235
+
+    url = f"/api/v1/admin/raw-materials/{item['id']}"
+    assert client.patch(url, json={"tolerance": "6"}, headers=auth).json()["price_cents_per_kg"] == 235
+    rounded = client.patch(url, json={"price_per_kg": "2,355"}, headers=auth).json()
+    assert rounded["price_cents_per_kg"] == 236
+    assert rounded["warnings"][0]["code"] == "price_rounded"
+    assert client.patch(url, json={"price_per_kg": None}, headers=auth).json()["price_cents_per_kg"] is None
+
+    bad = client.patch(url, json={"price_per_kg": "-1"}, headers=auth)
+    assert bad.status_code == 400
+    assert bad.json()["field"] == "price_per_kg" and bad.json()["code"] == "invalid_price"
+    assert client.patch(url, json={"price_per_kg": "1"}).status_code == 401
+
+
+def test_export_contains_price(client, auth):
+    client.post("/api/v1/admin/raw-materials", json=new(price_per_kg="1,5"), headers=auth)
+    text = client.get("/api/v1/admin/raw-materials/export.csv", headers=auth).content.decode("utf-8-sig")
+    header, first = text.split("\r\n")[:2]
+    assert header.endswith(";Preis je kg €;Preis geändert am")
+    assert first.split(";")[11] == "1,50"
