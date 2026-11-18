@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.6.0:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.6.1:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 
@@ -27,7 +27,7 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
 Die Stationsadressen für die Tablets an den Waagen folgen in Modul 09/10 und sind in dieser Version noch nicht vorhanden.
 
-Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung folgt in Modul 12. Es wird nur ein Hash gespeichert. Nach 5 Fehlversuchen ist die Eingabe 5 Minuten gesperrt. Die Sitzungsdauer stellt die Add-on-Option `admin_timeout_minutes` ein (Standard 5 Minuten).
+Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung folgt in Modul 12. Es wird nur ein Hash gespeichert. Nach 5 Fehlversuchen ist die Eingabe 5 Minuten gesperrt. Die Sitzungsdauer stellt die Add-on-Option `admin_timeout_minutes` ein (Standard 5 Minuten). Beim Öffnen einer Admin-Seite und beim Reiterwechsel wird die Sitzung geprüft; ist sie abgelaufen, kommt gleich die PIN-Eingabe und danach die gewählte Seite (ungespeicherte Änderungen werden vorher abgefragt).
 
 ## Rohstoffe importieren (CSV)
 
@@ -59,7 +59,7 @@ Reiter **„Rezepte“** im Admin-Bereich.
 - **Rohstoff austauschen** (Taste über der Rezeptliste): auszutauschenden Rohstoff, neuen Rohstoff und Faktor wählen (neue Menge = alte Menge × Faktor, auf ganze Gramm gerundet; 0 g bleibt 0 g, sonst mindestens 1 g), dazu höchstens zwei Zusatzzutaten mit Faktor auf die alte Menge (z. B. Butter 1 000 g → Margarine × 0,82 = 820 g + Wasser × 0,16 = 160 g; die Zusatzzeilen kommen direkt unter die getauschte Zeile im selben Schritt). „Rezepte anzeigen“ listet alle nicht archivierten Rezepte, deren aktuelle Version den Rohstoff direkt enthält, mit „alt → neu“; einzelne Rezepte abwählen, dann „Austauschen“. **Jedes geänderte Rezept bekommt eine neue Version**; öffentlich/gesperrt bleibt. Eine eigene Zeilentoleranz bleibt erhalten. Wahlweise: geänderte Zeilen mit „*“ markieren; alten Rohstoff archivieren, wenn er danach in keinem Rezept mehr vorkommt. Wurde ein Rezept inzwischen an einem anderen Gerät geändert, wird es übersprungen und genannt.
 - **Alte Versionen ansehen:** Neben jeder Menge steht kursiv die Menge der aktuellen Version („aktuell: …“, gelb = abweichend, „entfällt“ = nicht mehr enthalten); Zeilen, die nur die aktuelle Version hat, stehen kursiv am Ende. Am Handy steht der Wert unter der Menge.
 - **Kopieren** übernimmt die aktuelle Version, Stückgewichte und Chargengrößen als „Kopie von …“ (gesperrt); nicht möglich, solange ein Unterrezept archiviert ist.
-- Gesamtgewicht und Summe Mehl zeigen den gespeicherten Stand der direkten Zeilen; Anteile und Bäckerprozent folgen mit Modul 06.
+- Spalten **Anteil %** und **Bäcker %** sowie „Mehl gesamt (mit Unterrezepten)“ zeigen den gespeicherten Stand; geänderte oder neue Zeilen zeigen „–“ bis zum Speichern. Bäckerprozent bezieht sich auf das ganze Mehl inklusive Unterrezepten.
 - **Gruppen** im Reiter „Gruppen“: anlegen, umbenennen, Reihenfolge, löschen nur, wenn kein Rezept (auch kein archiviertes) darin ist.
 
 ## Rezepte importieren und exportieren (.xlsx)
@@ -86,6 +86,7 @@ Reiter **„Berechnung“**: Rezept wählen (auch gesperrte, auf Wunsch archivie
 - **Toleranz:** Gramm unverändert (0 g = nur quittieren); Prozent von der Sollmenge, auf ganze Gramm abgerundet, **mindestens 1 g** (0 % wird mit ±1 g gewogen). Bei Gebinde/Stück gilt die ganze Toleranz für den gewogenen Rest.
 - **Gebinde/Stück:** ganze Einheiten + Rest, z. B. „10 × Ei + 30 g wiegen“.
 - **Anteil** am Gesamtgewicht und **Bäckerprozent** (bezogen auf das ganze Mehl inklusive Unterrezepten) aus dem Grundrezept, eine Nachkommastelle.
+- **Zusammenfassung** (Umschalter „Zeilen / Zusammenfassung“): jeder Rohstoff einmal mit der Summe aus Hauptteig und allen Unterrezepten (so, wie gewogen wird), Anteil, Bäckerprozent und die **Mehlmischung** (Anteil jeder Mehlsorte am Mehl gesamt).
 - **„Ergibt“:** Stückzahl je Stückgewicht, auf eine Nachkommastelle abgerundet (z. B. 12,4 Käsekuchen).
 - **Hinweise:** Zeilen mit „*“, archivierte Rohstoffe/Unterrezepte, Toleranz 0 %, Aufrunden um mehr als 5 %, Leitrohstoff „gesamt“ über der Eingabe, gesperrtes/archiviertes Rezept.
 - Schnittstelle ohne PIN (für die Stationen ab Modul 09/10): `GET /api/v1/recipes/{id}/basis-options`, `POST /api/v1/calculation`.

@@ -147,6 +147,7 @@ const $ = (id) => document.getElementById(id);
 
 let token = null;
 try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+let pendingPage = null;      // Reiter, der nach abgelaufener Sitzung nach der Anmeldung geöffnet wird
 let editingId = null;        // null = neuer Rohstoff
 let searchTimer = null;
 let similarTimer = null;
@@ -218,6 +219,27 @@ function handleError(err, target) {
   showMsg(target || "list-msg", err.message);
 }
 
+// Sitzungsprüfung beim Öffnen und beim Reiterwechsel (Modul 06 Teil C2, docs/berechnung.md 17.14):
+// abgelaufene Sitzung → gleich zur PIN-Eingabe. Die Prüfung verlängert die Sitzung nicht.
+// Ohne Verbindung wird nicht abgemeldet (der Server prüft jede ändernde Aktion ohnehin selbst).
+async function checkSession() {
+  if (!token) return false;
+  try { await api("admin/session"); return true; }
+  catch (err) {
+    if (err.status === 401) { backToLogin("Sitzung abgelaufen. Bitte neu anmelden."); return false; }
+    return true;
+  }
+}
+async function goTab(ev) {
+  ev.preventDefault();
+  const target = ev.currentTarget.href;
+  if (await checkSession()) location.href = target;
+  else pendingPage = target;
+}
+$("tab-recipes").addEventListener("click", goTab);
+$("tab-calc").addEventListener("click", goTab);
+window.addEventListener("pageshow", (ev) => { if (ev.persisted && token) checkSession(); });
+
 // ---- Probebetrieb-Balken --------------------------------------------------------
 
 async function loadInfo() {
@@ -259,7 +281,7 @@ $("login-form").addEventListener("submit", async (event) => {
     setToken(result.session);
     show("probe", result.pin_is_default === true);
     $("pin").value = "";
-    if (NEXT_PAGE) { location.href = BASE + NEXT_PAGE; return; }
+    if (pendingPage || NEXT_PAGE) { location.href = pendingPage || BASE + NEXT_PAGE; return; }
     showView("list");
     await loadList();
   } catch (err) {
@@ -606,11 +628,11 @@ $("form").addEventListener("submit", async (event) => {
 async function start() {
   buildKeypad();
   await loadInfo();
-  if (token && NEXT_PAGE) { location.href = BASE + NEXT_PAGE; return; }
-  if (token) {
+  if (token && await checkSession()) {
+    if (NEXT_PAGE) { location.href = BASE + NEXT_PAGE; return; }
     showView("list");
-    await loadList();       // bei abgelaufener Sitzung führt der Fehler zurück zur PIN-Eingabe
-  } else {
+    await loadList();
+  } else if (!token) {
     showView("login");
     $("pin").focus();
   }

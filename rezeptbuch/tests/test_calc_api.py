@@ -105,3 +105,44 @@ def test_calc_page_and_tabs(client):
     assert r.headers["cache-control"] == "no-store"
     assert "admin/berechnung" in client.get("/admin/rezepte").text
     assert "admin/berechnung" in client.get("/admin/rohstoffe").text
+
+
+# -- Teil C2 (0.6.1): Zusammenfassung, Prozente in der Lese-API, Sitzungsprüfung ----------
+
+def test_calculation_has_summary_and_flour_mix(client, recipe):
+    rid = recipe["recipe"]["id"]
+    data = client.post("/api/v1/calculation", json={"recipe_id": rid, "basis_type": "total",
+                                                     "value": 16000}).json()
+    assert [(s["raw_material"]["name"], s["target_g"]) for s in data["summary"]] == [
+        ("Weizenmehl 550", 10000), ("Wasser", 5800), ("Salz", 200)]
+    assert data["summary"][1]["baker_tenths"] == 580
+    assert [m["flour_tenths"] for m in data["flour_mix"]] == [1000]
+
+
+def test_recipe_read_api_has_percentages(client, recipe):
+    rid = recipe["recipe"]["id"]
+    for path in (f"/api/v1/recipes/{rid}",):
+        data = client.get(path).json()
+        assert data["sums"]["flour_g"] == 10000 and data["sums"]["flour_total_g"] == 10000
+        assert [i["share_tenths"] for i in data["items"]] == [625, 363, 13]     # 10 000/16 000, 5 800/16 000, 200/16 000
+        assert [i["baker_tenths"] for i in data["items"]] == [1000, 580, 20]
+
+
+def test_recipe_admin_api_has_percentages(client, recipe, auth):
+    rid = recipe["recipe"]["id"]
+    data = client.get(f"/api/v1/admin/recipes/{rid}", headers=auth).json()
+    assert data["sums"]["flour_total_g"] == 10000
+    assert [i["baker_tenths"] for i in data["items"]] == [1000, 580, 20]
+
+
+def test_session_check(client, auth):
+    assert client.get("/api/v1/admin/session", headers=auth).status_code == 204
+    assert client.get("/api/v1/admin/session").status_code == 401
+    assert client.get("/api/v1/admin/session", headers={H: "falsch"}).status_code == 401
+    client.post("/api/v1/admin/logout", headers=auth)
+    assert client.get("/api/v1/admin/session", headers=auth).status_code == 401
+
+
+def test_admin_pages_check_session_on_open(client):
+    for page in ("/admin/rohstoffe", "/admin/rezepte", "/admin/berechnung"):
+        assert "admin/session" in client.get(page).text, page

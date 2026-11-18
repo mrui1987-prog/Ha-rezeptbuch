@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.6.1 – Modul 06, Teil C2 (in Entwicklung)
+
+- **Anteil und Bäckerprozent in der Rezeptverwaltung:** neue Spalten „Anteil %“ und „Bäcker %“ in den Zutaten und in alten Versionen, dazu „Mehl gesamt (mit Unterrezepten)“; die Lese-Schnittstelle liefert zusätzlich `sums.flour_total_g` und je Zeile `share_tenths`/`baker_tenths` (vorhandene Felder unverändert)
+- **Ansicht „Zusammenfassung“** auf der Prüfseite „Berechnung“: jeder Rohstoff einmal über alle Unterrezepte, Anteil, Bäckerprozent, Mehlmischung; die Schnittstelle `POST /api/v1/calculation` liefert dafür `summary` und `flour_mix`
+- **Sitzungsprüfung** beim Öffnen und beim Reiterwechsel der Seiten Rohstoffe, Rezepte und Berechnung: abgelaufene Sitzung → gleich PIN-Eingabe, danach weiter zur gewählten Seite; neue Schnittstelle `GET /api/v1/admin/session` (verlängert die Sitzung nicht)
+
 ## 0.6.0 – Modul 06, Teil C1 (in Entwicklung)
 
 - **Rezeptberechnung** als eigenes Paket `app/calculation/` (Rechenkern ohne Datenbank, exakte Brüche, Rundung nur einmal je Zeile)

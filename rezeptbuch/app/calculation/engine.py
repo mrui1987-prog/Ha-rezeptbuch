@@ -11,6 +11,7 @@ Grundsätze:
 * Unterrezepte werden mit ihrer gerundeten Zeilenmenge als Gesamtteig gerechnet (R06-5).
 * Prozent-Toleranz: abgerundet auf ganze Gramm, mindestens 1 g (R06-8).
 * Anteil und Bäckerprozent aus dem Grundrezept, bezogen auf den Hauptteig (R06-13 bis R06-16).
+* Zusammenfassung: jeder Rohstoff einmal über alle Ebenen, dazu die Mehlmischung (R06-53 bis R06-58).
 
 Die Funktionen ``tolerance_g`` und ``split_units`` sind auch für den Wiegeablauf (Modul 09) gedacht.
 """
@@ -319,6 +320,8 @@ class _Context:
     main_flour: Fraction
     warnings: list[dict] = field(default_factory=list)
     material_sums: dict[int, int] = field(default_factory=dict)
+    # Zusammenfassung (R06-53 bis R06-57): Rohstoff-ID → Summen über alle Ebenen, in Reihenfolge des ersten Vorkommens
+    summary: dict[int, dict] = field(default_factory=dict)
     _seen: set = field(default_factory=set)
 
     def warn(self, code: str, text: str, position: int | None = None, key=None) -> None:
@@ -424,6 +427,16 @@ def _lines(recipe: Recipe, f: Fraction, scale: Fraction, ctx: _Context, top_posi
                 "type": material.type, "archived": material.archived,
             }
             ctx.material_sums[material.id] = ctx.material_sums.get(material.id, 0) + target
+            entry = ctx.summary.setdefault(material.id, {
+                "material": material, "target_g": 0, "exact": Fraction(0), "base": Fraction(0),
+                "weighed": False, "hand": False})
+            entry["target_g"] += target
+            entry["exact"] += exact
+            entry["base"] += effective
+            if line.amount_g > 0:
+                entry["weighed"] = True
+            else:
+                entry["hand"] = True
             if material.archived:
                 ctx.warn("archived", f"Rohstoff „{material.name}“ ist archiviert.", position,
                          key=("rm", material.id))
@@ -447,6 +460,38 @@ def _lines(recipe: Recipe, f: Fraction, scale: Fraction, ctx: _Context, top_posi
                                      "count": count, "rest_g": rest}
         items.append(item)
     return items
+
+
+def _summary(ctx: _Context) -> tuple[list[dict], list[dict]]:
+    """Zusammenfassung und Mehlmischung (VC06-f, docs/berechnung.md 17.8).
+
+    * Jeder Rohstoff einmal, Menge = Summe der **gerundeten** Zeilenmengen aller Ebenen, also das,
+      was tatsächlich gewogen wird (R06-53, R06-54, K06-10); dazu der genaue Wert.
+    * Anteil und Bäckerprozent aus dem Grundrezept, bezogen auf den Hauptteig (R06-55).
+    * Reihenfolge nach dem ersten Vorkommen; Rohstoffe nur als Handzugabe: „nach Bedarf“ (R06-57).
+    * Mehlmischung: Anteil jeder Mehlsorte am Mehl gesamt in Zehntelprozent (R06-56).
+    """
+    rows, mix = [], []
+    for entry in ctx.summary.values():
+        material = entry["material"]
+        rows.append({
+            "raw_material": {
+                "id": material.id, "number": material.number, "name": material.name,
+                "display_name": material.display_name, "station_name": material.station_name,
+                "type": material.type, "archived": material.archived,
+            },
+            "target_g": entry["target_g"],
+            "exact_g": decimal_text(entry["exact"]),
+            "hand_only": not entry["weighed"],
+            "has_hand": entry["hand"],
+            "share_tenths": tenths(entry["base"] / ctx.main_total * 100),
+            "baker_tenths": tenths(entry["base"] / ctx.main_flour * 100) if ctx.main_flour > 0 else None,
+        })
+        if material.type == "flour" and ctx.main_flour > 0 and entry["base"] > 0:
+            mix.append({"raw_material_id": material.id, "name": material.name,
+                        "station_name": material.station_name,
+                        "flour_tenths": tenths(entry["base"] / ctx.main_flour * 100)})
+    return rows, mix
 
 
 def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None = None,
@@ -488,6 +533,7 @@ def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None 
                           "count_tenths": math.floor(exact_total * 10 / pw.weight_g)})
 
     flour_scaled = flour * f
+    summary, flour_mix = _summary(ctx)
     return {
         "recipe": _recipe_info(recipe),
         "basis": {
@@ -514,6 +560,8 @@ def calculate(recipe: Recipe, basis: Basis, *, overrides: dict[int, int] | None 
         },
         "piece_hints": hints,
         "items": items,
+        "summary": summary,
+        "flour_mix": flour_mix,
         "warnings": ctx.warnings,
     }
 

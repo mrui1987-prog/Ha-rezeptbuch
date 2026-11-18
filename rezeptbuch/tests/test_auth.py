@@ -160,6 +160,17 @@ def test_session_expires_and_is_extended_by_use():
         sessions.require(token)
 
 
+def test_is_valid_does_not_extend_session():
+    # Sitzungsprüfung beim Öffnen/Reiterwechsel (Modul 06 Teil C2, docs/berechnung.md 17.14)
+    sessions, clock = make_sessions()
+    token = sessions.login("1234", ok)
+    clock.advance(200)
+    assert sessions.is_valid(token) is True       # prüft nur, verlängert nicht
+    clock.advance(101)
+    assert sessions.is_valid(token) is False      # 301 s nach der Anmeldung abgelaufen
+    assert sessions.is_valid(None) is False and sessions.is_valid("falsch") is False
+
+
 def test_logout_ends_session():
     sessions, _ = make_sessions()
     token = sessions.login("1234", ok)

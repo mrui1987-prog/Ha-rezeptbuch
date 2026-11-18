@@ -76,11 +76,11 @@
 <div id="ask-box"><div class="dlg"><p id="ask-text"></p><div class="row" id="ask-buttons"></div></div></div>
 <div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
 <nav>
-  <a id="nav-raw" href="#">Rohstoffe</a>
+  <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
   <button type="button" id="nav-recipes" class="active">Rezepte</button>
   <button type="button" id="nav-groups">Gruppen</button>
   <button type="button" id="nav-io">Import/Export</button>
-  <a id="nav-calc" href="#">Berechnung</a>
+  <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
   <span class="grow"></span>
   <button type="button" id="nav-logout">Abmelden</button>
 </nav>
@@ -168,7 +168,7 @@
       <datalist id="dl-rec"></datalist>
       <div class="scroll">
         <table>
-          <thead><tr><th>Pos.</th><th>Art</th><th>Rohstoff / Unterrezept (Nummer oder Name)</th><th>Menge g</th><th>Toleranz</th><th>Schritt</th><th>„*“</th><th></th></tr></thead>
+          <thead><tr><th>Pos.</th><th>Art</th><th>Rohstoff / Unterrezept (Nummer oder Name)</th><th>Menge g</th><th class="num" title="Anteil am Gesamtgewicht (gespeicherter Stand)">Anteil %</th><th class="num" title="Bäckerprozent: bezogen auf das Mehl inklusive Unterrezepten (gespeicherter Stand)">Bäcker %</th><th>Toleranz</th><th>Schritt</th><th>„*“</th><th></th></tr></thead>
           <tbody id="item-rows"></tbody>
         </table>
       </div>
@@ -315,9 +315,9 @@ let searchTimer = null;
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-calc").href = BASE + "admin/berechnung";
 
-function toLogin() {
+function toLogin(next) {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
-  location.href = BASE + "admin/login?next=rezepte";
+  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "rezepte"));
 }
 
 async function api(path, options) {
@@ -353,6 +353,16 @@ function showMsg(id, text, kind) {
 function handleError(err, target) {
   if (err.status === 401) { toLogin(); return; }
   showMsg(target, err.message, "error");
+}
+// Sitzungsprüfung beim Öffnen und beim Reiterwechsel (Modul 06 Teil C2, docs/berechnung.md 17.14):
+// abgelaufene Sitzung → gleich zur PIN-Eingabe. Die Prüfung verlängert die Sitzung nicht.
+// Ohne Verbindung wird nicht abgemeldet (der Server prüft jede ändernde Aktion ohnehin selbst).
+// Bei ungespeicherten Änderungen kommt zuerst die Rückfrage (leaveEditor), dann die Prüfung.
+// ``next``: Seite, zu der es nach der Anmeldung geht (beim Reiterwechsel der gewählte Reiter)
+async function checkSession(next) {
+  if (!token) { toLogin(next); return false; }
+  try { await api("admin/session"); return true; }
+  catch (err) { if (err.status === 401) { dirty = false; portionDirty = false; toLogin(next); return false; } return true; }
 }
 function el(tag, text, cls) {
   const e = document.createElement(tag);
@@ -422,14 +432,17 @@ async function leaveEditor() {
   return true;
 }
 
-$("nav-recipes").addEventListener("click", async () => { if (await leaveEditor()) { showView("list"); loadList(); } });
-$("nav-groups").addEventListener("click", async () => { if (await leaveEditor()) { showView("groups"); loadGroups(); } });
-$("nav-io").addEventListener("click", async () => { if (await leaveEditor()) { showView("io"); } });
-$("nav-raw").addEventListener("click", async (ev) => { if (!(await leaveEditor())) ev.preventDefault(); });
-$("nav-calc").addEventListener("click", async (ev) => {
+$("nav-recipes").addEventListener("click", async () => { if (await leaveEditor() && await checkSession()) { showView("list"); loadList(); } });
+$("nav-groups").addEventListener("click", async () => { if (await leaveEditor() && await checkSession()) { showView("groups"); loadGroups(); } });
+$("nav-io").addEventListener("click", async () => { if (await leaveEditor() && await checkSession()) { showView("io"); } });
+async function goPage(ev) {
   ev.preventDefault();
-  if (await leaveEditor()) { dirty = false; portionDirty = false; location.href = $("nav-calc").href; }
-});
+  const target = ev.currentTarget.href;
+  if (await leaveEditor() && await checkSession(ev.currentTarget.dataset.next)) { dirty = false; portionDirty = false; location.href = target; }
+}
+$("nav-raw").addEventListener("click", goPage);
+$("nav-calc").addEventListener("click", goPage);
+window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
 $("nav-logout").addEventListener("click", async () => {
   try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
   toLogin();
@@ -745,6 +758,17 @@ function newItem() {
            step_no: null, needs_review: false };
 }
 
+// Anteil und Bäckerprozent (Modul 06 Teil C2): Werte des gespeicherten Stands; geänderte oder neue Zeilen zeigen „–“
+function fmtPct(tenths) { return tenths === null || tenths === undefined ? "–" : (tenths / 10).toFixed(1).replace(".", ","); }
+function savedPct(it) {
+  if (!loaded || it.id === null) return null;
+  const s = loaded.items.find((i) => i.id === it.id);
+  if (!s) return null;
+  const sRef = s.type === "raw_material" ? s.raw_material.id : s.sub_recipe.id;
+  if (s.type !== it.type || sRef !== it.ref_id || String(s.amount_g) !== String(it.amount_g).trim()) return null;
+  return s;
+}
+
 function renderItems() {
   const body = $("item-rows"); body.textContent = "";
   rec.items.forEach((it, idx) => {
@@ -793,8 +817,15 @@ function renderItems() {
 
     const amount = el("input"); amount.className = "w-num"; amount.inputMode = "numeric"; amount.value = it.amount_g;
     amount.setAttribute("aria-label", "Menge Zeile " + (idx + 1));
-    amount.addEventListener("input", () => { it.amount_g = amount.value; markDirty(); });
     td(tr, amount);
+    const saved = savedPct(it);
+    const pctTitle = saved ? "" : "Prozente erscheinen nach dem Speichern";
+    const shareCell = td(tr, fmtPct(saved && saved.share_tenths), "num"); shareCell.title = pctTitle;
+    const bakerCell = td(tr, fmtPct(saved && saved.baker_tenths), "num"); bakerCell.title = pctTitle;
+    const stalePct = () => { shareCell.textContent = "–"; bakerCell.textContent = "–"; shareCell.title = bakerCell.title = "Prozente erscheinen nach dem Speichern"; };
+    amount.addEventListener("input", () => { it.amount_g = amount.value; markDirty(); stalePct(); });
+    ref.addEventListener("input", stalePct);
+    type.addEventListener("change", stalePct);
 
     const tolCell = el("td");
     const tol = el("input"); tol.className = "w-tol"; tol.inputMode = "decimal"; tol.value = it.tolerance;
@@ -850,8 +881,11 @@ $("item-add").addEventListener("click", () => { rec.items.push(newItem()); markD
 function renderSums() {
   if (!loaded || rec.id === null) { $("sums").textContent = ""; return; }
   const s = loaded.sums;
-  $("sums").textContent = "Gespeicherter Stand: Gesamtgewicht " + s.total_g + " g, davon Mehl (direkte Zeilen) " + s.flour_g +
-    " g" + (loaded.knead ? " · Knetzeit " + loaded.knead : "") + ". Anteile und Bäckerprozent folgen mit Modul 06.";
+  const total = s.flour_total_g === null || s.flour_total_g === undefined ? "" :
+    ", Mehl gesamt (mit Unterrezepten) " + s.flour_total_g + " g";
+  $("sums").textContent = "Gespeicherter Stand: Gesamtgewicht " + s.total_g + " g, Mehl direkte Zeilen " + s.flour_g + " g" + total +
+    (loaded.knead ? " · Knetzeit " + loaded.knead : "") + ". Anteil und Bäckerprozent beziehen sich auf den gespeicherten Stand" +
+    (s.flour_total_g === 0 ? "; ohne Mehl kein Bäckerprozent." : " (Bäckerprozent auf Mehl gesamt).");
 }
 
 // Felder des Kopfs
@@ -1144,7 +1178,9 @@ async function viewVersion(no) {
     box.appendChild(el("h2", v.display_name + " – nur ansehen"));
     const facts = [];
     if (v.knead) facts.push("Knetzeit " + v.knead);
-    facts.push("Gesamtgewicht " + v.sums.total_g + " g, Mehl " + v.sums.flour_g + " g");
+    facts.push("Gesamtgewicht " + v.sums.total_g + " g, Mehl " + v.sums.flour_g + " g" +
+      (v.sums.flour_total_g !== null && v.sums.flour_total_g !== undefined && v.sums.flour_total_g !== v.sums.flour_g
+        ? " (mit Unterrezepten " + v.sums.flour_total_g + " g)" : ""));
     if (v.note) facts.push("Hinweis (" + (v.note_display === "start" ? "am Anfang und am Ende" : "nur am Ende") + "): " + v.note);
     box.appendChild(el("p", facts.join(" · "), "small"));
     const compare = Array.isArray(v.current_only);
@@ -1152,7 +1188,7 @@ async function viewVersion(no) {
       + "); gelb = abweichend.", "small"));
     const steps = {}; v.steps.forEach((s) => { steps[s.step_no] = s.name; });
     const table = el("table");
-    const head = el("tr"); ["Pos.", "Rohstoff / Unterrezept", "Menge g", "Toleranz", "Schritt", "„*“"].forEach((h) => head.appendChild(el("th", h)));
+    const head = el("tr"); ["Pos.", "Rohstoff / Unterrezept", "Menge g", "Anteil %", "Bäcker %", "Toleranz", "Schritt", "„*“"].forEach((h) => head.appendChild(el("th", h)));
     table.appendChild(head);
     v.items.forEach((i) => {
       const tr = el("tr"); if (i.type === "sub_recipe") tr.className = "sub";
@@ -1164,6 +1200,7 @@ async function viewVersion(no) {
         const text = c.missing ? "aktuell: entfällt" : "aktuell: " + (c.amount_g === 0 ? "0 (Handzugabe)" : c.amount_g + " g");
         amount.appendChild(el("span", text, "cur" + (c.same ? "" : " diff")));
       }
+      td(tr, fmtPct(i.share_tenths), "num"); td(tr, fmtPct(i.baker_tenths), "num");
       td(tr, fmtTol(i.tolerance)); td(tr, i.step_no ? i.step_no + ". " + (steps[i.step_no] || "") : "");
       td(tr, i.needs_review ? "*" : "");
       table.appendChild(tr);
@@ -1175,7 +1212,7 @@ async function viewVersion(no) {
         td(tr, (c.type === "sub_recipe" ? "Unterrezept " : "") + c.number + " – " + c.name);
         const amount = td(tr, "", "num");
         amount.appendChild(el("span", "aktuell: " + c.amount_g + " g", "cur diff"));
-        td(tr, "neu in aktueller Version"); td(tr, ""); td(tr, "");
+        td(tr, ""); td(tr, ""); td(tr, "neu in aktueller Version"); td(tr, ""); td(tr, "");
         table.appendChild(tr);
       });
     }
@@ -1505,9 +1542,9 @@ $("io-sample").addEventListener("click", () => downloadFile(
 
 async function start() {
   try { const info = await api("system/info"); show("probe", info.pin_is_default === true); } catch (e) { /* egal */ }
-  if (!token) { toLogin(); return; }
+  if (!(await checkSession())) return;
   showView("list");
-  await loadList();       // bei abgelaufener Sitzung führt der Fehler zur PIN-Eingabe
+  await loadList();
 }
 window.addEventListener("beforeunload", (ev) => { if (dirty || portionDirty) { ev.preventDefault(); ev.returnValue = ""; } });
 start();

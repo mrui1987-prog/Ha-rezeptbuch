@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Body, Depends, Header, Request
+from fastapi import APIRouter, Body, Depends, Header, Request, Response
 
 from .. import __version__
 from ..deps import get_db
-from ..errors import ValidationError
+from ..errors import NotAuthenticatedError, ValidationError
 from .pin import is_default_pin, verify_pin
 
 router = APIRouter(prefix="/api/v1", tags=["admin"])
@@ -45,3 +45,15 @@ def logout(request: Request, x_rezeptbuch_session: str | None = Header(default=N
     if sessions is not None:
         sessions.logout(x_rezeptbuch_session)
     return {"status": "ok"}
+
+
+@router.get("/admin/session", status_code=204)
+def session_check(request: Request, x_rezeptbuch_session: str | None = Header(default=None)):
+    """Sitzungsprüfung der Admin-Seiten beim Öffnen und beim Reiterwechsel (docs/berechnung.md 17.14).
+
+    204 = Sitzung gültig, 401 = nicht angemeldet oder abgelaufen. Verlängert die Sitzung nicht.
+    """
+    sessions = getattr(request.app.state, "sessions", None)
+    if sessions is None or not sessions.is_valid(x_rezeptbuch_session):
+        raise NotAuthenticatedError("Nicht angemeldet oder Sitzung abgelaufen.", code="not_logged_in")
+    return Response(status_code=204)

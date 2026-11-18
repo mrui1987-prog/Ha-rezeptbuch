@@ -336,7 +336,39 @@ def test_new_lines_never_get_review_mark(conn, rm):
 def test_sums_count_direct_flour_only(conn, rm):
     vorteig = make(conn, "Vorteig", items=[line(rm["mehl"], 300), line(rm["wasser"], 300)])
     r = make(conn, "Hauptteig", items=[line(rm["mehl"], 1000), line(rm["wasser"], 600), sub(vorteig["id"], 600)])
-    assert r["sums"] == {"total_g": 2200, "flour_g": 1000}
+    assert r["sums"] == {"total_g": 2200, "flour_g": 1000, "flour_total_g": 1300}   # 1 300: Teil C2, Modul 06
+
+
+# -- Prozente (Modul 06 Teil C2, docs/berechnung.md 7.3, R06-13 bis R06-16) -------------
+
+def test_share_and_baker_percent_per_line(conn, rm):
+    vorteig = make(conn, "Vorteig", items=[line(rm["mehl"], 300), line(rm["wasser"], 300)])
+    r = make(conn, "Hauptteig", items=[line(rm["mehl"], 1000), line(rm["wasser"], 600), sub(vorteig["id"], 600)])
+    # Anteil: 1 000/2 200 = 45,45 %, 600/2 200 = 27,27 %; Bäckerprozent auf 1 300 g Mehl inkl. Vorteig
+    assert [i["share_tenths"] for i in r["items"]] == [455, 273, 273]
+    assert [i["baker_tenths"] for i in r["items"]] == [769, 462, 462]
+
+
+def test_no_baker_percent_without_flour(conn, rm):
+    r = make(conn, "Lake", items=[line(rm["wasser"], 900), line(rm["salz"], 100)])
+    assert [i["baker_tenths"] for i in r["items"]] == [None, None]
+    assert [i["share_tenths"] for i in r["items"]] == [900, 100]
+    assert r["sums"]["flour_total_g"] == 0
+
+
+def test_percentages_empty_recipe(conn, rm):
+    r = make(conn, "Leer")
+    assert r["sums"]["flour_total_g"] == 0
+    assert r["items"] == []
+
+
+def test_old_version_has_percentages_too(conn, rm):
+    from app.recipes import get_version
+    r = make(conn, "Brot", items=[line(rm["mehl"], 1000), line(rm["wasser"], 600)])
+    save(conn, r, mode="new", items=[line(rm["mehl"], 1000), line(rm["wasser"], 700)])
+    old = get_version(conn, r["id"], 1)
+    assert [i["baker_tenths"] for i in old["items"]] == [1000, 600]
+    assert old["sums"]["flour_total_g"] == 1000
 
 
 # -- Liste (Lese-Schnittstelle) ---------------------------------------------------------

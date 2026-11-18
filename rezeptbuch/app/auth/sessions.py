@@ -101,6 +101,18 @@ class AdminSessions:
             self._sessions[token] = now + self.timeout_seconds
             return True
 
+    def is_valid(self, token: str | None) -> bool:
+        """True, wenn die Sitzung gültig ist – **ohne** sie zu verlängern.
+
+        Für die Sitzungsprüfung der Admin-Seiten beim Öffnen und beim Reiterwechsel
+        (Modul 06 Teil C2, docs/berechnung.md 17.14): Das Prüfen allein zählt nicht als Tätigkeit.
+        """
+        if not token:
+            return False
+        with self._lock:
+            expires = self._sessions.get(token)
+            return expires is not None and self._clock() < expires
+
     def require(self, token: str | None) -> None:
         """Wie ``validate``, löst bei ungültiger Sitzung aber den Fehler 401 aus."""
         if not self.validate(token):

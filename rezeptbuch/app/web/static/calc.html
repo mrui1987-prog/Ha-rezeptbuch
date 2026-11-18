@@ -57,8 +57,8 @@
 <body>
 <div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
 <nav>
-  <a id="nav-raw" href="#">Rohstoffe</a>
-  <a id="nav-recipes" href="#">Rezepte</a>
+  <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
+  <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
   <a class="active" href="#" aria-current="page">Berechnung</a>
   <span class="grow"></span>
   <button type="button" id="nav-logout">Abmelden</button>
@@ -113,6 +113,19 @@
   <section id="result-panel" class="panel hidden">
     <h2>3. Ergebnis</h2>
     <p id="result-head" class="small"></p>
+    <div class="bases" role="group" aria-label="Ansicht">
+      <button type="button" id="view-lines" class="active">Zeilen</button>
+      <button type="button" id="view-summary">Zusammenfassung</button>
+    </div>
+    <div id="summary-box" class="hidden">
+      <p class="small">Jeder Rohstoff einmal, Mengen aus Hauptteig und allen Unterrezepten zusammengezählt
+        (so, wie gewogen wird). Anteil und Bäckerprozent beziehen sich auf den ganzen Teig.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Rohstoff</th><th class="num">Menge</th><th class="num">Anteil</th><th class="num" id="th-sum-baker">Bäcker-%</th></tr></thead>
+        <tbody id="sum-rows"></tbody></table></div>
+      <p id="flour-mix" class="small"></p>
+    </div>
+    <div id="lines-box">
     <div class="toolbar">
       <button type="button" class="small" id="btn-expand">Alle Unterrezepte aufklappen</button>
       <button type="button" class="small" id="btn-collapse">Alle zuklappen</button>
@@ -121,6 +134,7 @@
       <thead><tr><th class="num">Pos.</th><th>Schritt</th><th>Zutat</th><th class="num">Menge</th><th class="num">Toleranz</th>
         <th>Gebinde / Stück</th><th class="num">Anteil</th><th class="num" id="th-baker">Bäcker-%</th></tr></thead>
       <tbody id="rows"></tbody></table></div>
+    </div>
     <div class="facts" id="facts"></div>
     <div id="hints-box" class="hidden"><h2>Ergibt</h2><ul id="hints"></ul></div>
     <div id="warnings-box" class="hidden"><h2>Hinweise</h2><ul id="warnings"></ul></div>
@@ -147,9 +161,9 @@ let batchSizeId = null;    // gewählte Chargengröße
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-recipes").href = BASE + "admin/rezepte";
 
-function toLogin() {
+function toLogin(next) {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
-  location.href = BASE + "admin/login?next=berechnung";
+  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "berechnung"));
 }
 
 async function api(path, options) {
@@ -184,6 +198,23 @@ function handleError(err, target) {
   if (err.status === 401) { toLogin(); return; }
   showMsg(target, err.message, "error");
 }
+// Sitzungsprüfung beim Öffnen und beim Reiterwechsel (Modul 06 Teil C2, docs/berechnung.md 17.14):
+// abgelaufene Sitzung → gleich zur PIN-Eingabe. Die Prüfung verlängert die Sitzung nicht.
+// Ohne Verbindung wird nicht abgemeldet (der Server prüft jede ändernde Aktion ohnehin selbst).
+// ``next``: Seite, zu der es nach der Anmeldung geht (beim Reiterwechsel der gewählte Reiter)
+async function checkSession(next) {
+  if (!token) { toLogin(next); return false; }
+  try { await api("admin/session"); return true; }
+  catch (err) { if (err.status === 401) { toLogin(next); return false; } return true; }
+}
+async function goTab(ev) {
+  ev.preventDefault();
+  const target = ev.currentTarget.href;
+  if (await checkSession(ev.currentTarget.dataset.next)) location.href = target;
+}
+$("nav-raw").addEventListener("click", goTab);
+$("nav-recipes").addEventListener("click", goTab);
+window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
 function el(tag, text, cls) {
   const e = document.createElement(tag);
   if (text !== undefined && text !== null) e.textContent = text;
@@ -462,10 +493,40 @@ function fact(label, value) {
   $("facts").appendChild(d);
 }
 
+// Ansicht „Zusammenfassung“ (Modul 06 Teil C2, docs/berechnung.md 17.8, R06-53 bis R06-57)
+function renderSummary(r) {
+  const body = $("sum-rows"); body.textContent = "";
+  const hasFlour = r.totals.has_flour;
+  r.summary.forEach((row) => {
+    const tr = el("tr");
+    if (row.raw_material.archived) tr.className = "archived";
+    td(tr, row.raw_material.station_name + (row.raw_material.station_name !== row.raw_material.name ? " (" + row.raw_material.name + ")" : ""));
+    const amount = td(tr, row.hand_only ? "nach Bedarf" : fmtG(row.target_g) + (row.has_hand ? " + nach Bedarf" : ""), "num");
+    if (!row.hand_only) amount.title = "genau " + fmtDec(row.exact_g) + " g";
+    td(tr, fmtTenths(row.share_tenths), "num");
+    const baker = td(tr, fmtTenths(row.baker_tenths), "num");
+    baker.classList.toggle("hidden", !hasFlour);
+    body.appendChild(tr);
+  });
+  show("th-sum-baker", hasFlour);
+  const mix = r.flour_mix || [];
+  $("flour-mix").textContent = mix.length ? "Mehlmischung: " + mix.map((m) => m.station_name + " " + fmtTenths(m.flour_tenths)).join(" · ") : "";
+}
+
+function setResultView(name) {
+  show("lines-box", name === "lines");
+  show("summary-box", name === "summary");
+  $("view-lines").classList.toggle("active", name === "lines");
+  $("view-summary").classList.toggle("active", name === "summary");
+}
+$("view-lines").addEventListener("click", () => setResultView("lines"));
+$("view-summary").addEventListener("click", () => setResultView("summary"));
+
 function renderResult(r) {
   rowKey = 0;
   $("rows").textContent = "";
   addRows(r.items, 0, " ", null);
+  renderSummary(r);
   const t = r.totals, b = r.basis;
   show("th-baker", t.has_flour);
   document.querySelectorAll("#rows tr").forEach((tr) => { tr.lastChild.classList.toggle("hidden", !t.has_flour); });
@@ -511,7 +572,7 @@ async function start() {
   try { const info = await api("system/info"); show("probe", info.pin_is_default === true); } catch (e) { /* egal */ }
   if (!token) { toLogin(); return; }
   // Die Rechnung selbst braucht keine PIN; die Seite gehört aber zum Admin-Bereich (K06-3)
-  try { await api("admin/recipes/next-number"); } catch (err) { handleError(err, "recipe-msg"); if (err.status === 401) return; }
+  if (!(await checkSession())) return;
   await loadRecipes();
 }
 start();

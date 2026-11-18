@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from fractions import Fraction
 
 from ..db import transaction
 from ..errors import ConflictError, NotFoundError, ValidationError
@@ -212,6 +213,39 @@ def _sums(items: list[dict]) -> dict:
     return {"total_g": total, "flour_g": flour}
 
 
+def _add_percentages(conn: sqlite3.Connection, recipe_id: int, version_id: int, items: list[dict],
+                     sums: dict) -> None:
+    """Anteil, Bäckerprozent und Mehl inklusive Unterrezepten (Modul 06 Teil C2, docs/berechnung.md 7.3).
+
+    Zusätzliche Felder, die vorhandenen bleiben unverändert (``flour_g`` = nur direkte Zeilen):
+    ``sums.flour_total_g`` und je Zeile ``share_tenths``/``baker_tenths`` (Zehntelprozent,
+    R06-13 bis R06-16). Gerechnet wird mit dem Rechenkern aus Modul 06. Lässt sich der
+    Rezeptbaum nicht rechnen (z. B. leeres Unterrezept), bleiben die Werte leer – die
+    Rezeptansicht funktioniert trotzdem.
+    """
+    from ..calculation import engine
+    from ..calculation.loader import load_recipe
+
+    sums["flour_total_g"] = None
+    for item in items:
+        item["share_tenths"] = None
+        item["baker_tenths"] = None
+    try:
+        tree = load_recipe(conn, recipe_id, version_id=version_id)
+        engine.check_tree(tree)
+        total = engine.total_g(tree)
+        flour = engine.flour_g(tree)
+    except (ValidationError, NotFoundError):
+        return
+    sums["flour_total_g"] = engine.round_half_up(flour)
+    if total == 0:
+        return
+    for item in items:
+        item["share_tenths"] = engine.tenths(Fraction(item["amount_g"]) / total * 100)
+        if flour > 0:
+            item["baker_tenths"] = engine.tenths(Fraction(item["amount_g"]) / flour * 100)
+
+
 def _versions(conn: sqlite3.Connection, recipe_id: int, current_id: int | None) -> list[dict]:
     """Versionsliste, neueste zuerst; alte Versionen als „old (n)“ (M02-4b, R05-18)."""
     rows = conn.execute(
@@ -248,6 +282,8 @@ def _batch_sizes(conn: sqlite3.Connection, recipe_id: int) -> list[dict]:
 
 def _version_view(conn, recipe_id: int, version_row) -> dict:
     items = _items(conn, version_row["id"])
+    sums = _sums(items)
+    _add_percentages(conn, recipe_id, version_row["id"], items, sums)
     return {
         "version_no": version_row["version_no"],
         "name": version_row["name"],
@@ -260,7 +296,7 @@ def _version_view(conn, recipe_id: int, version_row) -> dict:
         "frozen": version_row["frozen_at"] is not None,
         "steps": _steps(conn, version_row["id"]),
         "items": items,
-        "sums": _sums(items),
+        "sums": sums,
         "review_count": sum(1 for i in items if i["needs_review"]),
     }
 
