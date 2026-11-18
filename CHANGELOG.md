@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.6.4 – Wiederherstellen mit archiviertem Unterrezept (in Entwicklung)
+
+- **Alte Version wiederherstellen:** Enthält die alte Version ein archiviertes Unterrezept, fragt die Oberfläche „„Vorteig“ ist archiviert – mit wiederherstellen?“. „Mit wiederherstellen“ holt das Unterrezept (und dessen archivierte Unterrezepte) und die alte Version in einem Schritt zurück, alles oder nichts. R05-23 bleibt bestehen (kein aktives Rezept mit archiviertem Unterrezept). Schnittstelle: `POST …/versions/{n}/restore` mit zusätzlichem `restore_sub_recipes: true`; ohne dieses Feld weiterhin 409 `archived_sub_recipe`, jetzt mit der Liste `sub_recipes`
+
 ## 0.6.3 – Wünsche aus der Praxisprüfung C2 (in Entwicklung)
 
 - **Erklärung zu „Anteil %“ und „Bäcker %“:** Taste „ⓘ“ an den Spalten auf der Rezeptseite (Zutaten und alte Versionen) und auf der Prüfseite „Berechnung“ (Zeilen und Zusammenfassung); eigenes Fenster, kein Browser-Dialog

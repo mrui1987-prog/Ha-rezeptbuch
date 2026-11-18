@@ -794,16 +794,42 @@ def save_recipe(conn: sqlite3.Connection, recipe_id: int, data: dict, *, revisio
 
 # -- Alte Version wiederherstellen (Wunsch Michael 18.11.2026, 13:32/13:36; Teil 0.6.3) -----------------
 
+def _archived_sub_closure(conn: sqlite3.Connection, sub_ids: list[int]) -> list[dict]:
+    """Archivierte Unterrezepte aus ``sub_ids`` samt ihrer archivierten Unterrezepte (aktuelle Version),
+    in Wiederherstellungsreihenfolge (tiefste zuerst, jedes nur einmal)."""
+    found: list[dict] = []
+    seen: set[int] = set()
+
+    def visit(sub_id: int) -> None:
+        if sub_id in seen:
+            return
+        seen.add(sub_id)
+        row = conn.execute("SELECT r.id, r.number, r.archived, v.name FROM recipe r JOIN recipe_version v "
+                           "ON v.id = r.current_version_id WHERE r.id = ?", (sub_id,)).fetchone()
+        if row is None or not row["archived"]:
+            return
+        for child in archived_sub_recipes(conn, sub_id):
+            visit(child["id"])
+        found.append({"id": row["id"], "number": row["number"], "name": row["name"]})
+
+    for sub_id in sub_ids:
+        visit(sub_id)
+    return found
+
+
 def restore_version(conn: sqlite3.Connection, recipe_id: int, version_no: int, *, revision,
-                    source: str = "admin") -> dict:
+                    source: str = "admin", restore_sub_recipes: bool = False) -> dict:
     """Legt den Inhalt einer alten Version als **neue aktuelle Version** an; die alte bleibt unverändert.
 
     Geht immer (auch wenn die alte oder aktuelle Version schon produziert wurde, 13:36). Übernommen werden
     Name, Knetzeit, Hinweis, Schritte und Zeilen genau wie gespeichert, auch „*“-Markierungen und
     archivierte Rohstoffe (Entscheidung Michael 18.11.2026, 15:36). Stückgewichte, Chargengrößen, Gruppe, Nummer, Status und
-    interne Notiz gehören nicht zur Version und bleiben. Ein archiviertes Unterrezept verhindert das
-    Wiederherstellen weiter (R05-23, Freigabebericht Modul 05 B1). Der Name darf nicht inzwischen einem
-    anderen Rezept gehören, und es dürfen keine Kreise entstehen (R05-10).
+    interne Notiz gehören nicht zur Version und bleiben. Enthält die alte Version ein archiviertes
+    Unterrezept, bleibt R05-23 bestehen (kein aktives Rezept mit archiviertem Unterrezept): Ohne
+    ``restore_sub_recipes`` kommt 409 ``archived_sub_recipe`` mit der Liste, mit ``restore_sub_recipes``
+    werden diese Unterrezepte (und deren archivierte Unterrezepte) zuerst wiederhergestellt, alles in
+    einer Transaktion (Entscheidung Michael 18.11.2026, Sprachchat, 0.6.4). Der Name darf nicht
+    inzwischen einem anderen Rezept gehören, und es dürfen keine Kreise entstehen (R05-10).
     """
     try:
         with transaction(conn):
@@ -825,12 +851,15 @@ def restore_version(conn: sqlite3.Connection, recipe_id: int, version_no: int, *
             else:
                 _check_name_free(conn, content["name"], exclude_id=recipe_id)
                 sub_ids = [i["sub_recipe_id"] for i in content["items"] if i["sub_recipe_id"] is not None]
-                for sub_id in sub_ids:
-                    sub = conn.execute("SELECT r.archived, v.name FROM recipe r JOIN recipe_version v "
-                                       "ON v.id = r.current_version_id WHERE r.id = ?", (sub_id,)).fetchone()
-                    if sub is not None and sub["archived"]:
-                        raise ConflictError(f"Version {version_no} enthält das archivierte Unterrezept „{sub['name']}“ "
-                                            "– bitte zuerst wiederherstellen.", code="archived_sub_recipe")
+                archived = _archived_sub_closure(conn, sub_ids)
+                if archived:
+                    if not restore_sub_recipes:
+                        names = ", ".join(f"„{a['name']}“" for a in archived)
+                        verb = "ist" if len(archived) == 1 else "sind"
+                        raise ConflictError(f"{names} {verb} archiviert – mit wiederherstellen?",
+                                            code="archived_sub_recipe", sub_recipes=archived)
+                    for a in archived:
+                        restore_in_tx(conn, a["id"], source=source)
                 _check_cycle(conn, recipe_id, content["name"], sub_ids)
                 new_no = conn.execute("SELECT MAX(version_no) + 1 FROM recipe_version WHERE recipe_id = ?",
                                       (recipe_id,)).fetchone()[0]

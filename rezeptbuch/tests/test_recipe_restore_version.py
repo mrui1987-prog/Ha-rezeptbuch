@@ -86,6 +86,50 @@ def test_archived_sub_recipe_blocks(conn, recipe, rm):
     with pytest.raises(ConflictError) as exc:
         restore_version(conn, recipe["id"], 2, revision=v3["revision"])
     assert exc.value.code == "archived_sub_recipe" and "Vorteig" in exc.value.message
+    assert exc.value.message == "„Vorteig“ ist archiviert – mit wiederherstellen?"
+    assert [x["name"] for x in exc.value.extra["sub_recipes"]] == ["Vorteig"]
+    assert get_recipe(conn, recipe["id"])["version_no"] == 3
+    assert get_recipe(conn, vorteig["id"])["archived"] is True
+
+
+def test_archived_sub_recipe_restored_together(conn, recipe, rm):
+    """Mit Bestätigung wird das Unterrezept mit wiederhergestellt (Michael 18.11.2026, 0.6.4)."""
+    vorteig = create_recipe(conn, {"name": "Vorteig", "items": [line(rm["mehl"], 500)]})
+    v2 = new_version(conn, recipe, items=[sub(vorteig["id"], 500), line(rm["mehl"], 1000, step_no=1)])
+    v3 = new_version(conn, v2, items=[line(rm["mehl"], 1000, step_no=1)])
+    archive_recipe(conn, vorteig["id"])
+    r = restore_version(conn, recipe["id"], 2, revision=v3["revision"], restore_sub_recipes=True)
+    assert r["save_result"]["result"] == "new_version" and r["version_no"] == 4
+    assert get_recipe(conn, vorteig["id"])["archived"] is False
+
+
+def test_archived_sub_sub_recipe_restored_in_order(conn, recipe, rm):
+    """Auch archivierte Unterrezepte der Unterrezepte werden mit zurückgeholt, tiefstes zuerst."""
+    tief = create_recipe(conn, {"name": "Sauer", "items": [line(rm["mehl"], 100)]})
+    vorteig = create_recipe(conn, {"name": "Vorteig", "items": [sub(tief["id"], 100), line(rm["mehl"], 400)]})
+    v2 = new_version(conn, recipe, items=[sub(vorteig["id"], 500), line(rm["mehl"], 1000, step_no=1)])
+    v3 = new_version(conn, v2, items=[line(rm["mehl"], 1000, step_no=1)])
+    archive_recipe(conn, vorteig["id"])
+    archive_recipe(conn, tief["id"])
+    with pytest.raises(ConflictError) as exc:
+        restore_version(conn, recipe["id"], 2, revision=v3["revision"])
+    assert [x["name"] for x in exc.value.extra["sub_recipes"]] == ["Sauer", "Vorteig"]
+    restore_version(conn, recipe["id"], 2, revision=v3["revision"], restore_sub_recipes=True)
+    assert get_recipe(conn, tief["id"])["archived"] is False
+    assert get_recipe(conn, vorteig["id"])["archived"] is False
+
+
+def test_sub_recipe_restore_fails_all_or_nothing(conn, recipe, rm):
+    """Kann das Unterrezept nicht zurück (Name belegt), bleibt alles unverändert."""
+    vorteig = create_recipe(conn, {"name": "Vorteig", "items": [line(rm["mehl"], 500)]})
+    v2 = new_version(conn, recipe, items=[sub(vorteig["id"], 500), line(rm["mehl"], 1000, step_no=1)])
+    v3 = new_version(conn, v2, items=[line(rm["mehl"], 1000, step_no=1)])
+    archive_recipe(conn, vorteig["id"])
+    create_recipe(conn, {"name": "Vorteig", "items": [line(rm["mehl"], 300)]})
+    with pytest.raises(ConflictError) as exc:
+        restore_version(conn, recipe["id"], 2, revision=v3["revision"], restore_sub_recipes=True)
+    assert exc.value.code == "name_taken"
+    assert get_recipe(conn, vorteig["id"])["archived"] is True
     assert get_recipe(conn, recipe["id"])["version_no"] == 3
 
 

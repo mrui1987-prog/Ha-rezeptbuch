@@ -1295,9 +1295,20 @@ async function restoreVersion(no) {
   const ok = await ask("Version " + no + " als neue aktuelle Version anlegen?\n\nDie alte Version bleibt unverändert. " +
     "Stückgewichte, Chargengrößen, Gruppe und Status bleiben, wie sie sind.", [{ label: "Wiederherstellen", value: true }]);
   if (ok !== true) return;
+  const url = "admin/recipes/" + rec.id + "/versions/" + no + "/restore";
   try {
-    const result = await api("admin/recipes/" + rec.id + "/versions/" + no + "/restore", { method: "POST",
-      body: { revision: loaded.revision } });
+    let result;
+    try {
+      result = await api(url, { method: "POST", body: { revision: loaded.revision } });
+    } catch (err) {
+      // 0.6.4: archivierte Unterrezepte der alten Version – Rückfrage, dann alles in einem Schritt
+      if (err.status === 409 && err.data.code === "archived_sub_recipe") {
+        const go = await ask(err.message + "\n\nDas Rezept und die alte Version werden in einem Schritt wiederhergestellt.",
+          [{ label: "Mit wiederherstellen", value: true }]);
+        if (go !== true) return;
+        result = await api(url, { method: "POST", body: { revision: loaded.revision, restore_sub_recipes: true } });
+      } else { throw err; }
+    }
     portionDirty = false;
     await afterLoad(result, result.save_result.message);
   } catch (err) {

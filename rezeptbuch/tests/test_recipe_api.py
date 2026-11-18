@@ -149,6 +149,26 @@ def test_restore_and_copy_with_archived_sub_recipe_409(client, auth, mehl):
     assert client.post(base + "/restore", headers=auth).json()["archived"] is False
 
 
+def test_restore_version_with_archived_sub_recipe_confirm(client, auth, mehl):
+    """0.6.4: erst 409 mit Liste, mit restore_sub_recipes wird das Unterrezept mit zurückgeholt."""
+    vorteig = create(client, auth, mehl, name="Vorteig")
+    haupt = client.post("/api/v1/admin/recipes", headers=auth, json={
+        "name": "Hauptteig", "items": [{"type": "sub_recipe", "sub_recipe_id": vorteig["id"], "amount_g": 500}]}).json()
+    base = f"/api/v1/admin/recipes/{haupt['id']}"
+    v2 = client.put(base, headers=auth, json={
+        "name": "Hauptteig", "revision": haupt["revision"], "version_mode": "new", "steps": [{"name": "Teig"}],
+        "items": [{"type": "raw_material", "raw_material_id": mehl, "amount_g": 800, "step_no": 1}]})
+    assert v2.status_code == 200, v2.text
+    assert client.post(f"/api/v1/admin/recipes/{vorteig['id']}/archive", headers=auth).status_code == 200
+    url = base + "/versions/1/restore"
+    answer = client.post(url, headers=auth, json={"revision": v2.json()["revision"]})
+    assert answer.status_code == 409 and answer.json()["code"] == "archived_sub_recipe"
+    assert answer.json()["sub_recipes"][0]["name"] == "Vorteig"
+    done = client.post(url, headers=auth, json={"revision": v2.json()["revision"], "restore_sub_recipes": True})
+    assert done.status_code == 200, done.text
+    assert client.get(f"/api/v1/admin/recipes/{vorteig['id']}").json()["archived"] is False
+
+
 def test_unlock_confirmation(client, auth):
     salz = client.post("/api/v1/admin/raw-materials", headers=auth,
                        json={"name": "Salz", "tolerance": "0", "tolerance_unit": "percent"}).json()["id"]

@@ -2,7 +2,7 @@
 
 Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
-**Stand 0.6.3:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
+**Stand 0.6.4:** Rohstoffverwaltung (Modul 03) mit CSV-Export und CSV-Import unter `/admin`, Rezeptverwaltung (Modul 05) mit Import aus der Importvorlage und Export (.xlsx) unter `/admin/rezepte`, Rezeptberechnung (Modul 06) mit Prüfseite unter `/admin/berechnung`. Die Oberfläche ist noch schlicht; die Gestaltung folgt in Modul 10.
 
 ## Datenbank
 

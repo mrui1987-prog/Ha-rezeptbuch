@@ -95,7 +95,9 @@ def save(recipe_id: int, payload: dict = Body(...), db: sqlite3.Connection = Dep
 @router.post("/admin/recipes/{recipe_id}/versions/{version_no}/restore", dependencies=admin)
 def restore_version(recipe_id: int, version_no: int, payload: dict | None = Body(default=None),
                     db: sqlite3.Connection = Depends(get_db)):
-    return service.restore_version(db, recipe_id, version_no, revision=(payload or {}).get("revision"))
+    payload = payload or {}
+    return service.restore_version(db, recipe_id, version_no, revision=payload.get("revision"),
+                                   restore_sub_recipes=_confirm(payload, "restore_sub_recipes"))
 
 
 @router.put("/admin/recipes/{recipe_id}/piece-weights", dependencies=admin)
