@@ -111,8 +111,8 @@ Ablauf wie bisher: Sicherungskopie vor der Migration, Rückrollen bei Fehler.
 |---|---|
 | R05-21 | **Freischalten (öffentlich):** nur mit mindestens einer Zeile. Enthält die aktuelle Version Zeilen mit „*“ oder Rohstoffe mit Toleranz 0 %, kommt eine Warnung mit Liste und Bestätigung (K05-3). **Sperren** geht jederzeit. |
 | R05-22 | **Archivieren** (M05-6): nicht möglich, solange das Rezept in der aktuellen Version eines nicht archivierten Rezepts als Unterrezept steckt; Meldung „wird in n Rezepten als Unterrezept verwendet“ mit Liste. Archivierte Rezepte erscheinen weder in der Vorwahl noch in der Auswahl für Unterrezepte. |
-| R05-23 | **Wiederherstellen:** nur, wenn kein nicht archiviertes Rezept denselben Namen hat (wie R03-10). Status bleibt wie vor dem Archivieren. |
-| R05-24 | **Kopieren** (M05-7): aktuelle Version mit Schritten und Zeilen (inkl. „*“), Stückgewichte und Chargengrößen; nächste freie Nummer; Name „Kopie von <Name>“ (bei Namensgleichheit „Kopie 2 von …“); gesperrt; keine Gruppe geändert. |
+| R05-23 | **Wiederherstellen:** nur, wenn kein nicht archiviertes Rezept denselben Namen hat (wie R03-10). Status bleibt wie vor dem Archivieren. **Ergänzung 18.11.2026 (Befund B1, Entscheidung Michael, 0.5.11):** außerdem nur, wenn **kein Unterrezept der aktuellen Version archiviert** ist; sonst Meldung „Wiederherstellen nicht möglich: Das Rezept enthält das archivierte Unterrezept „…“ (Nr. …) – bitte zuerst wiederherstellen.“ Dasselbe gilt für **Kopieren** (R05-24). Die Sammelaktion „Wiederherstellen“ wiederholt wie Archivieren, damit Haupt- und Unterrezept gemeinsam wiederhergestellt werden können (M05-6 spiegelbildlich). |
+| R05-24 | **Kopieren** (M05-7, seit 0.5.11 nur ohne archiviertes Unterrezept in der aktuellen Version, R05-23): aktuelle Version mit Schritten und Zeilen (inkl. „*“), Stückgewichte und Chargengrößen; nächste freie Nummer; Name „Kopie von <Name>“ (bei Namensgleichheit „Kopie 2 von …“); gesperrt; keine Gruppe geändert. |
 | R05-25 | **Löschen:** nur, wenn nie verwendet (kein Auftrag, nie als Unterrezept in irgendeiner Version). Sonst Meldung „wird verwendet – bitte archivieren“. Löscht Versionen, Schritte, Zeilen, Stückgewichte und Chargengrößen mit (Datenbank `CASCADE`). |
 
 ### Gruppen (M05-9)
@@ -318,6 +318,7 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 | 17.11.2026 | Ergänzung C3-E2 (0.5.4): Mustervorlage `GET /admin/recipes/template.xlsx` (Musterrezept Schwarzwälder Kirschtorte, Musterrohstoffe mit Präfix „Muster“); Hinweisfenster statt Meldung oben bei fehlendem Rohstoff. |
 | 17.11.2026 | Teil C3 (0.5.2) umgesetzt: Vorlagen-Import, Export, KC2-1 bis KC2-6, interne Notiz (Migration 0004); Umsetzungshinweise in Abschnitt 16. |
 | 18.11.2026 | Ergänzungen C3-E9, C3-E10 (0.5.9): Rohstoff in Rezepten austauschen (jedes geänderte Rezept neue Version); alte Versionen zeigen die aktuelle Menge kursiv daneben (Abschnitt 16). |
+| 18.11.2026 | 0.5.11 (Befund B1 und B2 aus dem Freigabebericht): R05-23 ergänzt – Wiederherstellen und Kopieren nur ohne archiviertes Unterrezept in der aktuellen Version; Sammelaktion „Wiederherstellen“ wiederholt; Meldetext „1 Rohstoff wird überschrieben“ (Abschnitt 16). |
 | 18.11.2026 | Ergänzungen C3-E7, C3-E8, C3-E11 (0.5.8): Umrechnung im Blatt Rohstoffe mit automatischem „*“ und Übersicht vorab, Blatt Umrechnung veraltet; Sammelaktion Wiederherstellen; Musterdaten beim Import übersprungen (Abschnitt 16). |
 
 ## 16. Umsetzung und Abweichungen
@@ -452,3 +453,15 @@ Jeder Teil mit eigenem Push und GitHub-Testlauf. Freigabe von Modul 05 nach C3 m
 
 **Tests:** `test_recipe_replace.py` (38: Rechnen, Eingaben, Vorschau, Ausführen, Versionen, Toleranz, Handzugabe, „*“, Unterrezepte, Archivieren, Konflikt, Höchstgrenze, Versionsvergleich), 1 API-Test (nur GitHub). Oberflächentest in Chrome mit Prüfserver: Austausch mit Zusatzzutat, Abwahl, Rückfrage, Ergebnis mit Archiv-Hinweis, alte Version mit „aktuell“-Werten am Tablet und Handy (390 px). **GitHub-Testlauf erfolgreich** (Run 44202130281, Commit 641d206): 597 Tests (rezeptbuch 590, rezeptbuch_waage 7); lokal 508 bestanden, 5 übersprungen.
 
+### Korrektur B1/B2 aus dem Freigabebericht (0.5.11, 18.11.2026)
+
+**B1 – Ergänzung R05-23** (Entscheidung Michael 18.11.2026, Vorschlag aus docs/freigabebericht-modul05.md übernommen): Nach gemeinsamem Archivieren von Haupt- und Unterrezept ließ sich das Hauptrezept allein wiederherstellen, freischalten und kopieren; es stand dann mit archiviertem Unterrezept in der Vorwahl (Grenzfälle 79–82).
+- Neue Funktion `archived_sub_recipes(conn, recipe_id)` in `app/recipes/service.py`: archivierte Unterrezepte der **aktuellen** Version (je Rezept einmal, nach Nummer). Alte Versionen zählen nicht; gesperrte Unterrezepte sind erlaubt (M05-5).
+- `restore_in_tx` prüft nach der Namensprüfung, `copy_recipe` vor dem Anlegen: sonst 409 `archived_sub_recipe` mit Meldung („enthält das archivierte Unterrezept „Vorteig“ (Nr. 1) – bitte zuerst wiederherstellen“, bei mehreren „die archivierten Unterrezepte …“) und Liste `sub_recipes`. Ein **archiviertes** Rezept kann weiterhin kopiert werden, wenn seine Unterrezepte aktiv sind.
+- Sammelaktion „Wiederherstellen“ (`bulk.py`) wiederholt wie Archivieren und Löschen, bis nichts mehr vorangeht; ist das Unterrezept nicht angehakt, wird das Hauptrezept mit Grund übersprungen.
+- Freischalten und Vorwahl brauchen keine eigene Prüfung: Ein aktives Rezept mit archiviertem Unterrezept kann nicht mehr entstehen (Archivieren sperrt M05-6, Wiederherstellen jetzt R05-23, neue Zeilen R05-12). **Hinweis:** Ein solcher Zustand, der vor 0.5.11 schon entstanden ist, bleibt bestehen, bis das Unterrezept wiederhergestellt oder die Zeile geändert wird.
+- Die Seite zeigt die Servermeldung unverändert an (keine Änderung an `recipes.html`).
+
+**B2 – Meldetext:** „1 Rohstoff **wird** überschrieben“ beim CSV-Import und beim Vorlagen-Import. Mitgenommen: Vorschau der Sammelaktionen „1 Rezept **wird** archiviert“ (vorher „werden“).
+
+**Tests:** `test_recipe_service.py` (+6: Wiederherstellen gesperrt und Reihenfolge, mehrere Unterrezepte, alte Version zählt nicht, gesperrtes Unterrezept erlaubt, Kopie gesperrt, Kopie mit aktivem Unterrezept), `test_recipe_bulk.py` (+3: Haupt- und Unterrezept gemeinsam, Unterrezept nicht angehakt, Einzahl in der Vorschau), Textprüfung in `test_import_raw_materials.py` und `test_import_recipes.py`, 1 API-Test (nur GitHub). Lokal 519 bestanden, 5 übersprungen (API-Tests ohne FastAPI); `rezeptbuch_waage` 7 bestanden.

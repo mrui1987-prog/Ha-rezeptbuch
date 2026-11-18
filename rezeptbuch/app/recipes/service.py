@@ -973,8 +973,35 @@ def archive_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "ad
     _log(conn, "archive", recipe_id, {"archived": 0}, {"archived": 1}, source)
 
 
+def archived_sub_recipes(conn: sqlite3.Connection, recipe_id: int) -> list[dict]:
+    """Archivierte Unterrezepte der **aktuellen** Version eines Rezepts (R05-23, Befund B1)."""
+    return [
+        {"id": r["id"], "number": r["number"], "name": r["name"]}
+        for r in conn.execute(
+            "SELECT DISTINCT s.id, s.number, sv.name FROM recipe r "
+            "JOIN recipe_item i ON i.recipe_version_id = r.current_version_id "
+            "JOIN recipe s ON s.id = i.sub_recipe_id "
+            "JOIN recipe_version sv ON sv.id = s.current_version_id "
+            "WHERE r.id = ? AND s.archived = 1 ORDER BY s.number", (recipe_id,))]
+
+
+def _check_no_archived_sub_recipes(conn: sqlite3.Connection, recipe_id: int, what: str) -> None:
+    """Meldung, wenn die aktuelle Version ein archiviertes Unterrezept enthält (R05-23)."""
+    subs = archived_sub_recipes(conn, recipe_id)
+    if not subs:
+        return
+    if len(subs) == 1:
+        text = f"enthält das archivierte Unterrezept „{subs[0]['name']}“ (Nr. {subs[0]['number']})"
+    else:
+        text = "enthält die archivierten Unterrezepte " + ", ".join(
+            f"„{s['name']}“ (Nr. {s['number']})" for s in subs)
+    raise ConflictError(f"{what} nicht möglich: Das Rezept {text} – bitte zuerst wiederherstellen.",
+                        code="archived_sub_recipe", sub_recipes=subs)
+
+
 def restore_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin") -> dict:
-    """Wiederherstellen (R05-23): nur ohne gleichnamiges aktives Rezept; Status bleibt."""
+    """Wiederherstellen (R05-23): nur ohne gleichnamiges aktives Rezept und ohne archiviertes
+    Unterrezept in der aktuellen Version; Status bleibt."""
     with transaction(conn):
         restore_in_tx(conn, recipe_id, source=source)
     return get_recipe(conn, recipe_id)
@@ -990,6 +1017,7 @@ def restore_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "ad
         raise ConflictError(
             f"Wiederherstellen nicht möglich: Das aktive Rezept „{same['name']}“ (Nummer {same['number']}) "
             "hat denselben Namen. Bitte zuerst einen der beiden umbenennen.", field="name", code="name_taken")
+    _check_no_archived_sub_recipes(conn, recipe_id, "Wiederherstellen")
     conn.execute("UPDATE recipe SET archived = 0 WHERE id = ?", (recipe_id,))
     _log(conn, "restore", recipe_id, {"archived": 1}, {"archived": 0}, source)
 
@@ -1006,10 +1034,13 @@ def _copy_name(conn, name: str) -> str:
 
 
 def copy_recipe(conn: sqlite3.Connection, recipe_id: int, source: str = "admin") -> dict:
-    """Kopie der aktuellen Version mit Schritten, Zeilen (inkl. „*“), Stückgewichten und Chargengrößen."""
+    """Kopie der aktuellen Version mit Schritten, Zeilen (inkl. „*“), Stückgewichten und Chargengrößen.
+
+    Nicht möglich, wenn die aktuelle Version ein archiviertes Unterrezept enthält (R05-23, 0.5.11)."""
     try:
         with transaction(conn):
             row = _fetch(conn, recipe_id)
+            _check_no_archived_sub_recipes(conn, recipe_id, "Kopieren")
             content = _stored_content(conn, row["current_version_id"])
             content["name"] = _copy_name(conn, row["name"])
             number = next_number(conn)

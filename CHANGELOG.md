@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.5.11 – Modul 05, Korrektur B1/B2 aus dem Freigabebericht (in Entwicklung)
+
+- **Wiederherstellen und Kopieren nur ohne archiviertes Unterrezept** (R05-23): Enthält die aktuelle Version ein archiviertes Unterrezept, kommt die Meldung „… enthält das archivierte Unterrezept „…“ – bitte zuerst wiederherstellen“. So kann kein aktives Rezept mit archiviertem Unterrezept mehr entstehen
+- **Sammelaktion „Wiederherstellen“** stellt Haupt- und Unterrezept gemeinsam wieder her, wenn beide angehakt sind (Reihenfolge egal)
+- Meldetexte in der Einzahl: „1 Rohstoff wird überschrieben“, Vorschau „1 Rezept wird …“
+
 ## 0.5.10 – Modul 05, Korrektur (in Entwicklung)
 
 - **Export → Re-Import mit archivierten Rohstoffen:** Ein vorhandenes Rezept, dessen aktuelle Version einen inzwischen archivierten Rohstoff schon verwendet, darf ihn beim Import behalten (wie beim Speichern im Formular). Vorher meldete der Import „Der Rohstoff … ist archiviert“. Neue Rezepte und neu hinzukommende Zeilen mit archivierten Rohstoffen bleiben ein Fehler

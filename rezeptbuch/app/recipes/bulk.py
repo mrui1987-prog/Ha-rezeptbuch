@@ -15,9 +15,9 @@ nicht erlaubt ist (z. B. ohne Zeilen freischalten, als Unterrezept verwendet arc
 verwendetes Rezept löschen, wiederherstellen bei gleichnamigem aktivem Rezept), werden übersprungen und im Ergebnis mit Grund genannt; die
 übrigen werden ausgeführt. Die Vorschau zeigt das vor der Bestätigung.
 
-Reihenfolge: Beim Archivieren und Löschen wird so lange wiederholt, bis nichts mehr geht.
-So lassen sich ein Rezept und sein Unterrezept gemeinsam archivieren bzw. löschen, wenn
-beide angehakt sind.
+Reihenfolge: Beim Archivieren, Wiederherstellen und Löschen wird so lange wiederholt, bis
+nichts mehr geht. So lassen sich ein Rezept und sein Unterrezept gemeinsam archivieren,
+wiederherstellen (R05-23, 0.5.11) bzw. löschen, wenn beide angehakt sind.
 """
 
 from __future__ import annotations
@@ -100,7 +100,8 @@ def bulk_action(conn: sqlite3.Connection, action: str, ids, *, mode: str = "chec
             except NotFoundError:
                 skipped.append({"id": rid, "number": None, "name": None, "reason": "Rezept nicht gefunden."})
         pending = [rid for rid in recipe_ids if rid in heads]
-        # Archivieren/Löschen: wiederholen, solange etwas vorangeht (Haupt- und Unterrezept gemeinsam)
+        # Archivieren/Wiederherstellen/Löschen: wiederholen, solange etwas vorangeht
+        # (Haupt- und Unterrezept gemeinsam)
         while pending:
             failed: dict[int, str] = {}
             progress = False
@@ -125,7 +126,7 @@ def bulk_action(conn: sqlite3.Connection, action: str, ids, *, mode: str = "chec
                 finally:
                     conn.execute("RELEASE bulk_one")
             pending = [rid for rid in pending if rid in failed]
-            if not progress or action not in ("archive", "delete"):
+            if not progress or action not in ("archive", "restore", "delete"):
                 skipped.extend({**heads[rid], "reason": failed[rid]} for rid in pending)
                 break
 
@@ -150,7 +151,7 @@ def bulk_action(conn: sqlite3.Connection, action: str, ids, *, mode: str = "chec
     }
     verb = ACTION_LABEL[action]
     n = len(done)
-    result["summary"] = (f"{n} Rezept{'e' if n != 1 else ''} {'werden' if not result['executed'] else ''} {verb}"
+    result["summary"] = (f"{n} Rezept{'e' if n != 1 else ''} {('werden' if n != 1 else 'wird') if not result['executed'] else ''} {verb}"
                          .replace("  ", " ").strip()
                          + (f", {len(skipped)} übersprungen" if skipped else "")
                          + (f", {len(unchanged)} unverändert" if unchanged else "") + ".")

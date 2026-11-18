@@ -430,6 +430,6 @@ def import_raw_materials_csv(conn: sqlite3.Connection, data: bytes, *, mode: str
     if mode == "run" and not report.imported:
         n = report.overwritten
         raise ConflictError(
-            f"{n} Rohstoff{'e' if n != 1 else ''} werden überschrieben. Bitte bestätigen.",
+            f"{n} Rohstoff{'e werden' if n != 1 else ' wird'} überschrieben. Bitte bestätigen.",
             code="overwrite_confirmation_required", report=report.to_dict())
     return report.to_dict()

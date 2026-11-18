@@ -1190,7 +1190,7 @@ def import_recipe_template(conn: sqlite3.Connection, data: bytes, *, mode: str =
         v = sum(1 for r in report.recipes_updated if r["action"] == "new_version")
         parts = []
         if n:
-            parts.append(f"{n} Rohstoff{'e' if n != 1 else ''} werden überschrieben")
+            parts.append(f"{n} Rohstoff{'e werden' if n != 1 else ' wird'} überschrieben")
         if v:
             parts.append(f"{v} vorhandene{'s Rezept bekommt' if v == 1 else ' Rezepte bekommen'} eine neue Version")
         raise ConflictError(

@@ -285,6 +285,7 @@ def test_raw_materials_overwritten_need_confirmation(conn):
     with pytest.raises(ConflictError) as exc:
         run(conn, data)
     assert exc.value.code == "overwrite_confirmation_required"
+    assert exc.value.message.startswith("1 Rohstoff wird überschrieben")  # B2 (0.5.11)
     assert service.list_recipes(conn, include_locked=True) == []         # nichts gespeichert
     report = run(conn, data, confirm_overwrite=True)
     assert report["imported"] and report["counts"]["overwritten"] == 1

@@ -185,6 +185,40 @@ def test_restore_two_archived_with_same_name(conn, rm):
     assert len(result["done"]) == 1 and len(result["skipped"]) == 1
 
 
+def test_restore_parent_and_sub_together(conn, rm):
+    """R05-23 (0.5.11, B1): Hauptrezept zuerst angehakt – wird nach dem Unterrezept wiederhergestellt."""
+    vorteig = make(conn, "Vorteig", [line(rm["mehl"])])
+    brot = make(conn, "Brot", [line(rm["mehl"]), sub(vorteig)])
+    bulk_action(conn, "archive", [vorteig, brot], mode="run", confirm=True)
+    alone = bulk_action(conn, "restore", [brot], mode="check")
+    assert alone["done"] == [] and "archivierte Unterrezept „Vorteig“" in alone["skipped"][0]["reason"]
+    preview = bulk_action(conn, "restore", [brot, vorteig], mode="check")
+    assert [e["name"] for e in preview["done"]] == ["Brot", "Vorteig"] and preview["skipped"] == []
+    assert status(conn, brot) == (True, True)                      # Vorschau ändert nichts
+    result = bulk_action(conn, "restore", [brot, vorteig], mode="run", confirm=True)
+    assert result["summary"] == "2 Rezepte wiederhergestellt."
+    assert status(conn, brot) == (True, False) and status(conn, vorteig) == (True, False)
+
+
+def test_restore_parent_skipped_when_sub_not_selected(conn, rm):
+    vorteig = make(conn, "Vorteig", [line(rm["mehl"])])
+    brot = make(conn, "Brot", [sub(vorteig)])
+    other = make(conn, "Zopf", [line(rm["mehl"])])
+    bulk_action(conn, "archive", [brot, vorteig, other], mode="run", confirm=True)
+    result = bulk_action(conn, "restore", [brot, other], mode="run", confirm=True)
+    assert [e["id"] for e in result["done"]] == [other] and [e["id"] for e in result["skipped"]] == [brot]
+    assert status(conn, brot)[1] and status(conn, vorteig)[1]
+
+
+def test_preview_summary_singular(conn, rm):
+    """Einzahl in der Vorschau: „1 Rezept wird …“ (zusammen mit B2 korrigiert, 0.5.11)."""
+    a = make(conn, "A", [line(rm["mehl"])])
+    assert bulk_action(conn, "archive", [a], mode="check")["summary"] == "1 Rezept wird archiviert."
+    b = make(conn, "B", [line(rm["mehl"])])
+    assert bulk_action(conn, "archive", [a, b], mode="check")["summary"] == "2 Rezepte werden archiviert."
+    assert bulk_action(conn, "archive", [a], mode="run", confirm=True)["summary"] == "1 Rezept archiviert."
+
+
 def test_restore_keeps_lock_state_and_logs(conn, rm):
     a = make(conn, "A", [line(rm["mehl"])])
     bulk_action(conn, "unlock", [a], mode="run", confirm=True)

@@ -167,6 +167,7 @@ def test_run_without_confirmation_saves_nothing(conn):
         run(conn, data)
     assert exc.value.code == "overwrite_confirmation_required"
     assert exc.value.extra["report"]["counts"]["overwritten"] == 1
+    assert exc.value.message == "1 Rohstoff wird überschrieben. Bitte bestätigen."   # B2 (0.5.11)
     assert get_raw_material(conn, item["id"])["tolerance"] == 20
     assert "Neu" not in names(conn)
     assert import_log(conn) == []

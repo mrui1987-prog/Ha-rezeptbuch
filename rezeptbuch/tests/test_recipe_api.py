@@ -132,6 +132,23 @@ def test_unlock_lock_copy_archive_restore_delete(client, auth, mehl):
     assert client.get(f"/api/v1/recipes/{r['id']}").status_code == 404
 
 
+def test_restore_and_copy_with_archived_sub_recipe_409(client, auth, mehl):
+    """R05-23 (0.5.11, Befund B1)."""
+    vorteig = create(client, auth, mehl, name="Vorteig")
+    haupt = client.post("/api/v1/admin/recipes", headers=auth, json={
+        "name": "Hauptteig", "items": [{"type": "sub_recipe", "sub_recipe_id": vorteig["id"], "amount_g": 500}]})
+    assert haupt.status_code == 201, haupt.text
+    base = f"/api/v1/admin/recipes/{haupt.json()['id']}"
+    assert client.post(base + "/archive", headers=auth).status_code == 200
+    assert client.post(f"/api/v1/admin/recipes/{vorteig['id']}/archive", headers=auth).status_code == 200
+    for action in ("/restore", "/copy"):
+        answer = client.post(base + action, headers=auth)
+        assert answer.status_code == 409 and answer.json()["code"] == "archived_sub_recipe"
+        assert answer.json()["sub_recipes"][0]["name"] == "Vorteig"
+    assert client.post(f"/api/v1/admin/recipes/{vorteig['id']}/restore", headers=auth).status_code == 200
+    assert client.post(base + "/restore", headers=auth).json()["archived"] is False
+
+
 def test_unlock_confirmation(client, auth):
     salz = client.post("/api/v1/admin/raw-materials", headers=auth,
                        json={"name": "Salz", "tolerance": "0", "tolerance_unit": "percent"}).json()["id"]

@@ -565,7 +565,80 @@ def test_archive_twice_and_restore_active(conn):
         restore_recipe(conn, r["id"])
 
 
+def _archive_both(conn, rm):
+    """Hauptteig mit Vorteig als Unterrezept, beide archiviert (Befund B1, Freigabebericht)."""
+    vorteig = make(conn, "Vorteig", items=[line(rm["mehl"])])
+    haupt = make(conn, "Hauptteig", items=[line(rm["mehl"]), sub(vorteig["id"])])
+    archive_recipe(conn, haupt["id"])
+    archive_recipe(conn, vorteig["id"])
+    return haupt["id"], vorteig["id"]
+
+
+def test_restore_blocked_while_sub_recipe_archived(conn, rm):
+    """R05-23 (0.5.11, B1): Wiederherstellen nur ohne archiviertes Unterrezept in der aktuellen Version."""
+    haupt, vorteig = _archive_both(conn, rm)
+    with pytest.raises(ConflictError) as exc:
+        restore_recipe(conn, haupt)
+    assert exc.value.code == "archived_sub_recipe"
+    assert exc.value.message == ("Wiederherstellen nicht möglich: Das Rezept enthält das archivierte "
+                                 "Unterrezept „Vorteig“ (Nr. 1) – bitte zuerst wiederherstellen.")
+    assert exc.value.extra["sub_recipes"] == [{"id": vorteig, "number": 1, "name": "Vorteig"}]
+    assert get_recipe(conn, haupt)["archived"] is True
+    assert [r["action"] for r in log_rows(conn)][-1] == "archive"     # nichts protokolliert
+    restore_recipe(conn, vorteig)                                       # erst das Unterrezept …
+    assert restore_recipe(conn, haupt)["archived"] is False            # … dann das Hauptrezept
+
+
+def test_restore_names_all_archived_sub_recipes(conn, rm):
+    a = make(conn, "Vorteig A", items=[line(rm["mehl"])])
+    b = make(conn, "Vorteig B", items=[line(rm["mehl"])])
+    haupt = make(conn, "Hauptteig", items=[sub(b["id"]), sub(a["id"]), sub(a["id"], 300)])
+    for rid in (haupt["id"], a["id"], b["id"]):
+        archive_recipe(conn, rid)
+    with pytest.raises(ConflictError) as exc:
+        restore_recipe(conn, haupt["id"])
+    assert "die archivierten Unterrezepte „Vorteig A“ (Nr. 1), „Vorteig B“ (Nr. 2)" in exc.value.message
+    assert [s["id"] for s in exc.value.extra["sub_recipes"]] == [a["id"], b["id"]]   # je Rezept einmal
+
+
+def test_restore_ignores_archived_sub_recipe_of_old_version(conn, rm):
+    vorteig = make(conn, "Vorteig", items=[line(rm["mehl"])])
+    haupt = make(conn, "Hauptteig", items=[sub(vorteig["id"])])
+    save(conn, haupt, mode="new", items=[line(rm["mehl"])])            # aktuelle Version ohne Vorteig
+    archive_recipe(conn, haupt["id"])
+    archive_recipe(conn, vorteig["id"])
+    assert restore_recipe(conn, haupt["id"])["archived"] is False
+
+
+def test_restore_with_locked_sub_recipe_allowed(conn, rm):
+    vorteig = make(conn, "Vorteig", items=[line(rm["mehl"])])           # gesperrt, nicht archiviert (M05-5)
+    haupt = make(conn, "Hauptteig", items=[sub(vorteig["id"])])
+    archive_recipe(conn, haupt["id"])
+    assert restore_recipe(conn, haupt["id"])["archived"] is False
+
+
 # -- Kopieren (R05-24) --------------------------------------------------------------------
+
+def test_copy_blocked_while_sub_recipe_archived(conn, rm):
+    """R05-23 (0.5.11, B1): auch eine Kopie darf kein archiviertes Unterrezept enthalten."""
+    haupt, vorteig = _archive_both(conn, rm)
+    before = conn.execute("SELECT count(*) FROM recipe").fetchone()[0]
+    with pytest.raises(ConflictError) as exc:
+        copy_recipe(conn, haupt)
+    assert exc.value.code == "archived_sub_recipe"
+    assert exc.value.message.startswith("Kopieren nicht möglich: Das Rezept enthält das archivierte "
+                                        "Unterrezept „Vorteig“")
+    assert conn.execute("SELECT count(*) FROM recipe").fetchone()[0] == before
+    restore_recipe(conn, vorteig)
+    assert copy_recipe(conn, haupt)["name"] == "Kopie von Hauptteig"   # archiviertes Hauptrezept: Kopie geht
+
+
+def test_copy_with_active_sub_recipe(conn, rm):
+    vorteig = make(conn, "Vorteig", items=[line(rm["mehl"])])
+    haupt = make(conn, "Hauptteig", items=[sub(vorteig["id"])])
+    c = copy_recipe(conn, haupt["id"])
+    assert c["items"][0]["sub_recipe"]["id"] == vorteig["id"]
+
 
 def test_copy_takes_everything(conn, rm):
     g = create_group(conn, "Brote")
