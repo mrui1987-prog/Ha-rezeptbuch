@@ -836,15 +836,24 @@ def _locate(recipe: PlannedRecipe, exc: ServiceError) -> tuple[str, int | None, 
     return SHEET_RECIPES, recipe.line, column
 
 
-def _raw_material_id(conn: sqlite3.Connection, name: str) -> int:
-    """Aktiver Rohstoff mit diesem Namen (ohne Groß-/Kleinschreibung), nach Schritt 1."""
+def _raw_material_id(conn: sqlite3.Connection, name: str, kept: frozenset[int] = frozenset()) -> int:
+    """Aktiver Rohstoff mit diesem Namen (ohne Groß-/Kleinschreibung), nach Schritt 1.
+
+    ``kept``: archivierte Rohstoffe, die das vorhandene Rezept in seiner aktuellen Version schon verwendet;
+    sie bleiben dort erlaubt (wie beim Speichern, R05-8), sonst wäre Export → Re-Import nicht möglich.
+    """
     key = rm_service.name_key(name)
     archived = False
+    kept_id = None
     for row in conn.execute("SELECT id, name, archived FROM raw_material"):
         if rm_service.name_key(row["name"]) == key:
             if not row["archived"]:
                 return row["id"]
             archived = True
+            if row["id"] in kept and kept_id is None:
+                kept_id = row["id"]
+    if kept_id is not None:
+        return kept_id
     if archived:
         raise ValidationError(f"Der Rohstoff „{name}“ ist archiviert und kann nicht verwendet werden.",
                               field="items.0.raw_material_id", code="raw_material_archived")
@@ -877,6 +886,11 @@ def _prepare(recipe: PlannedRecipe) -> None:
 
 def _items(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, int]) -> list[dict]:
     items = []
+    kept: frozenset[int] = frozenset()
+    if recipe.existing_id is not None:
+        kept = frozenset(r[0] for r in conn.execute(
+            "SELECT i.raw_material_id FROM recipe r JOIN recipe_item i ON i.recipe_version_id = r.current_version_id "
+            "WHERE r.id = ? AND i.raw_material_id IS NOT NULL", (recipe.existing_id,)))
     for index, line in enumerate(recipe.sorted_lines, start=1):
         item = {"type": line["kind"], "amount_g": line["amount_g"], "needs_review": line["review"],
                 "step_no": recipe.steps.index(line["step"]) + 1 if line["step"] else None}
@@ -885,7 +899,7 @@ def _items(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, i
             item["tolerance_unit"] = line["tolerance_unit"]
         if line["kind"] == "raw_material":
             try:
-                item["raw_material_id"] = _raw_material_id(conn, line["ingredient"])
+                item["raw_material_id"] = _raw_material_id(conn, line["ingredient"], kept)
             except ValidationError as exc:
                 exc.field = f"items.{index}.raw_material_id"
                 raise

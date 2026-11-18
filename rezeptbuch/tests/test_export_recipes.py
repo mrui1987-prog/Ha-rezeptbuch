@@ -141,3 +141,55 @@ def test_raw_material_sheet_has_empty_conversion_columns(conn, filled):
     assert all(r[8] is None and r[9] is None for r in rows[1:])
     info = " ".join(str(r[0]) for r in sheets(build_workbook(conn))["Info"])
     assert "neue Version" in info and "dürfen in der Zieldatenbank" not in info
+
+
+def test_reimport_with_archived_raw_material_in_current_version(conn):
+    """Export → Re-Import: ein Rezept, das einen archivierten Rohstoff schon verwendet, darf ihn behalten."""
+    salz = rm_service.create_raw_material(conn, {"name": "Salz", "tolerance": "1"})
+    mehl = rm_service.create_raw_material(conn, {"name": "Mehl", "type": "flour", "tolerance": "1"})
+    service.create_recipe(conn, {"name": "Brot", "items": [
+        {"type": "raw_material", "raw_material_id": mehl["id"], "amount_g": 500},
+        {"type": "raw_material", "raw_material_id": salz["id"], "amount_g": 10}]})
+    rm_service.archive_raw_material(conn, salz["id"])
+    data = build_workbook(conn)
+    report = import_recipe_template(conn, data, mode="check")
+    assert report["ok"], report["errors"]
+    assert report["counts"]["recipes_unchanged"] == 1
+    # geänderte Menge → neue Version, Salz bleibt der archivierte Rohstoff
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb["Rezeptzeilen"]
+    for row in ws.iter_rows(min_row=2):
+        if row[3].value == "Salz":
+            for cell in row:
+                if isinstance(cell.value, (int, float)) and cell.value == 10:
+                    cell.value = 12
+    out = io.BytesIO()
+    wb.save(out)
+    report = import_recipe_template(conn, out.getvalue(), mode="run", confirm_overwrite=True)
+    assert report["ok"], report["errors"]
+
+
+def test_import_archived_raw_material_still_refused_for_new_recipe(conn):
+    salz = rm_service.create_raw_material(conn, {"name": "Salz", "tolerance": "1"})
+    service.create_recipe(conn, {"name": "Brot", "items": [
+        {"type": "raw_material", "raw_material_id": salz["id"], "amount_g": 10}]})
+    rm_service.archive_raw_material(conn, salz["id"])
+    data = build_workbook(conn)
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb["Rezepte"]
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            if cell.value == "Brot":
+                cell.value = "Brot neu"
+            if isinstance(cell.value, int) and cell.value == 1 and cell.column == 2:
+                cell.value = 99
+    ws2 = wb["Rezeptzeilen"]
+    for row in ws2.iter_rows(min_row=2):
+        for cell in row[:2]:
+            if cell.value == "Brot":
+                cell.value = "Brot neu"
+    out = io.BytesIO()
+    wb.save(out)
+    report = import_recipe_template(conn, out.getvalue(), mode="check")
+    assert not report["ok"]
+    assert any("archiviert" in str(e) for e in report["errors"])

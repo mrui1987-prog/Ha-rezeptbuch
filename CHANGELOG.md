@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.5.10 – Modul 05, Korrektur (in Entwicklung)
+
+- **Export → Re-Import mit archivierten Rohstoffen:** Ein vorhandenes Rezept, dessen aktuelle Version einen inzwischen archivierten Rohstoff schon verwendet, darf ihn beim Import behalten (wie beim Speichern im Formular). Vorher meldete der Import „Der Rohstoff … ist archiviert“. Neue Rezepte und neu hinzukommende Zeilen mit archivierten Rohstoffen bleiben ein Fehler
+
 ## 0.5.9 – Modul 05, Ergänzungen C3-E9, C3-E10 (in Entwicklung)
 
 - **Rohstoff austauschen** (C3-E9, Taste über der Rezeptliste): alten und neuen Rohstoff mit Faktor wählen, dazu bis zu zwei Zusatzzutaten mit Faktor auf die alte Menge (direkt unter der getauschten Zeile, im selben Schritt). Angezeigt werden alle Rezepte, deren aktuelle Version den Rohstoff enthält, mit „alt → neu“; einzelne lassen sich abwählen. Jedes geänderte Rezept bekommt eine neue Version, Status und eigene Zeilentoleranz bleiben. Wahlweise „*“ an geänderten Zeilen und Archivieren des alten Rohstoffs, wenn er nirgends mehr vorkommt
