@@ -80,6 +80,7 @@
   <button type="button" id="nav-recipes" class="active">Rezepte</button>
   <button type="button" id="nav-groups">Gruppen</button>
   <button type="button" id="nav-io">Import/Export</button>
+  <a id="nav-calc" href="#">Berechnung</a>
   <span class="grow"></span>
   <button type="button" id="nav-logout">Abmelden</button>
 </nav>
@@ -312,6 +313,7 @@ let dirty = false, portionDirty = false;
 let searchTimer = null;
 
 $("nav-raw").href = BASE + "admin/rohstoffe";
+$("nav-calc").href = BASE + "admin/berechnung";
 
 function toLogin() {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
@@ -424,6 +426,10 @@ $("nav-recipes").addEventListener("click", async () => { if (await leaveEditor()
 $("nav-groups").addEventListener("click", async () => { if (await leaveEditor()) { showView("groups"); loadGroups(); } });
 $("nav-io").addEventListener("click", async () => { if (await leaveEditor()) { showView("io"); } });
 $("nav-raw").addEventListener("click", async (ev) => { if (!(await leaveEditor())) ev.preventDefault(); });
+$("nav-calc").addEventListener("click", async (ev) => {
+  ev.preventDefault();
+  if (await leaveEditor()) { dirty = false; portionDirty = false; location.href = $("nav-calc").href; }
+});
 $("nav-logout").addEventListener("click", async () => {
   try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
   toLogin();

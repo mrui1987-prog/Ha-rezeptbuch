@@ -1,8 +1,8 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.5.2: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.6.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
-Vorlagen-Import und Export .xlsx (Modul 05, Teil C3). Beim Start wird die Datenbank geöffnet, geprüft und
+Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -17,6 +17,7 @@ from . import __version__
 from .auth.pin import ensure_default_pin
 from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
+from .calculation.router import router as calculation_router
 from .db import DatabaseError, default_db_path, init_database
 from .errors import ServiceError
 from .exports.router import router as exports_router
@@ -72,6 +73,7 @@ app.include_router(raw_materials_router)
 app.include_router(imports_router)
 app.include_router(exports_router)      # vor recipes_router: /admin/recipes/export.xlsx ist keine Rezept-ID
 app.include_router(recipes_router)
+app.include_router(calculation_router)
 app.include_router(web_router)
 
 
@@ -104,7 +106,7 @@ def index() -> str:
 <body>
 <h1>HA-Rezeptbuch</h1>
 <p>Version {__version__} – im Aufbau.</p>
-<p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte)</a></p>
+<p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte, Berechnung)</a></p>
 <script>
   // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
   function repaint() {{ document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }}
