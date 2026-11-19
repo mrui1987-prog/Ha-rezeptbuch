@@ -15,6 +15,7 @@ import sqlite3
 
 from ..db import transaction
 from ..errors import ConflictError, NotFoundError
+from . import stock as stock_mod
 from .models import normalize_text, parse_price, tolerance_display, validate
 
 # Ähnlichkeit ab der ein Name als „ähnlich“ gemeldet wird (R03-3)
@@ -23,7 +24,8 @@ SIMILARITY_THRESHOLD = 0.8
 _COLUMNS = ("number", "name", "display_name", "type", "tolerance_unit", "tolerance_value",
             "unit_size_g", "unit_label")
 _SELECT = ("SELECT id, number, name, display_name, type, tolerance_unit, tolerance_value, "
-           "unit_size_g, unit_label, source, archived, created_at, updated_at, price_cents_per_kg, price_changed_at "
+           "unit_size_g, unit_label, source, archived, created_at, updated_at, price_cents_per_kg, price_changed_at, "
+           "stock_g, stock_alert_g "
            "FROM raw_material")
 
 _NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
@@ -51,6 +53,10 @@ def _to_dict(row: sqlite3.Row) -> dict:
         # Preis je kg in Cent (VC03-a, R03-16: auch ohne PIN lesbar)
         "price_cents_per_kg": row["price_cents_per_kg"],
         "price_changed_at": row["price_changed_at"],
+        # Bestand und Meldewert (VC03-b, docs/bestand.md); leer = keine Bestandsführung
+        "stock_g": row["stock_g"],
+        "stock_alert_g": row["stock_alert_g"],
+        "stock_status": stock_mod.status(row["stock_g"], row["stock_alert_g"]),
     }
 
 
@@ -73,7 +79,7 @@ def _log(conn: sqlite3.Connection, action: str, entity_id: int, old: dict | None
 
 
 def _snapshot(row: sqlite3.Row) -> dict:
-    return {key: row[key] for key in (*_COLUMNS, "price_cents_per_kg", "source", "archived")}
+    return {key: row[key] for key in (*_COLUMNS, "price_cents_per_kg", "stock_alert_g", "source", "archived")}
 
 
 def _display_values(row: sqlite3.Row) -> dict:
@@ -143,18 +149,23 @@ def get_raw_material(conn: sqlite3.Connection, raw_material_id: int) -> dict:
 
 
 def list_raw_materials(conn: sqlite3.Connection, search: str | None = None,
-                       include_archived: bool = False, zero_percent: bool = False) -> list[dict]:
+                       include_archived: bool = False, zero_percent: bool = False,
+                       below_alert: bool = False) -> list[dict]:
     """Liste nach Nummer sortiert. Die Suche findet Teile von Nummer, Name und Kurzname
     ohne Rücksicht auf Groß-/Kleinschreibung.
 
     ``zero_percent``: nur Rohstoffe mit Toleranz 0 % (Filter aus M05-13b; diese werden
     bei der Verwiegung auf ±1 g genau gewogen und sollten geprüft werden).
+    ``below_alert``: nur aktive Rohstoffe mit Bestandsführung am/unter dem Meldewert (VC03-b, B8).
     """
     where = []
     if not include_archived:
         where.append("archived = 0")
     if zero_percent:
         where.append("tolerance_unit = 'percent' AND tolerance_value = 0")
+    if below_alert:
+        where.append("archived = 0 AND stock_g IS NOT NULL AND stock_alert_g IS NOT NULL "
+                     "AND stock_g <= stock_alert_g")
     sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY number"
     rows = [_to_dict(r) for r in conn.execute(sql)]
     if search and search.strip():
@@ -206,6 +217,14 @@ def _price(data: dict, warnings: list | None) -> tuple[bool, int | None]:
     return True, cents
 
 
+def _alert(data: dict) -> tuple[bool, int | None]:
+    """Meldewert aus der Eingabe (``stock_alert_kg``, VC03-b): (angegeben?, Gramm); leer = keiner."""
+    if "stock_alert_kg" not in data:
+        return False, None
+    return True, stock_mod.parse_kg(data["stock_alert_kg"], "stock_alert_kg", allow_empty=True,
+                                    allow_negative=False)
+
+
 def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
                  warnings: list | None = None) -> int:
     """Legt einen eigenen Rohstoff an (R03-1, R03-2, R03-5, R03-6, R03-8, R03-12, R03-13) und liefert die ID.
@@ -214,6 +233,7 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
     """
     clean = validate(data)
     _, price = _price(data, warnings)
+    _, alert = _alert(data)
     if clean["number"] is None:
         clean["number"] = next_number(conn)
     elif conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (clean["number"],)).fetchone():
@@ -226,9 +246,9 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
             field="name", code="name_taken")
     cur = conn.execute(
         "INSERT INTO raw_material (number, name, display_name, type, tolerance_unit, tolerance_value, "
-        "unit_size_g, unit_label, source, price_cents_per_kg, price_changed_at) "
-        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own', ?, CASE WHEN ? IS NULL THEN NULL ELSE {_NOW} END)",
-        (*(clean[c] for c in _COLUMNS), price, price))
+        "unit_size_g, unit_label, source, price_cents_per_kg, price_changed_at, stock_alert_g) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own', ?, CASE WHEN ? IS NULL THEN NULL ELSE {_NOW} END, ?)",
+        (*(clean[c] for c in _COLUMNS), price, price, alert))
     new_id = cur.lastrowid
     _log(conn, "create", new_id, None, _snapshot(_fetch(conn, new_id)), source)
     return new_id
@@ -250,6 +270,9 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
     price_changed = given and price != row["price_cents_per_kg"]
     if price_changed:
         changes["price_cents_per_kg"] = price
+    alert_given, alert = _alert(data)
+    if alert_given and alert != row["stock_alert_g"]:
+        changes["stock_alert_g"] = alert
     if not changes:
         return {}
 
@@ -285,14 +308,20 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
     return {c: (row[c], changes[c]) for c in changes}
 
 
-def archive_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> None:
-    """Archiviert einen Rohstoff (R03-9). Rezepte, die ihn nutzen, bleiben unverändert."""
+def archive_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin",
+                  stock_zero: bool = False) -> None:
+    """Archiviert einen Rohstoff (R03-9). Rezepte, die ihn nutzen, bleiben unverändert.
+
+    ``stock_zero``: Antwort auf „Bestand auf Null setzen?“ (VC03-b, B9) – Inventur auf 0.
+    """
     row = _fetch(conn, raw_material_id)
     if row["archived"]:
         raise ConflictError("Der Rohstoff ist bereits archiviert.", code="already_archived")
     conn.execute("UPDATE raw_material SET archived = 1, "
                  "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (raw_material_id,))
     _log(conn, "archive", raw_material_id, {"archived": 0}, {"archived": 1}, source)
+    if stock_zero:
+        stock_mod.zero_in_tx(conn, raw_material_id, note="beim Archivieren auf 0 gesetzt", source=source)
 
 
 def restore_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> None:
@@ -321,6 +350,7 @@ def create_raw_material(conn: sqlite3.Connection, data: dict, source: str = "adm
     """Legt einen eigenen Rohstoff an (eigene Transaktion)."""
     validate(data)          # Eingabefehler vor dem Sperren der Datenbank melden
     _price(data, None)
+    _alert(data)
     warnings: list = []
     try:
         with transaction(conn):
@@ -346,10 +376,11 @@ def update_raw_material(conn: sqlite3.Connection, raw_material_id: int, data: di
     return _with_warnings(get_raw_material(conn, raw_material_id), warnings)
 
 
-def archive_raw_material(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin") -> dict:
+def archive_raw_material(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin",
+                         stock_zero: bool = False) -> dict:
     """Archiviert einen Rohstoff (eigene Transaktion)."""
     with transaction(conn):
-        archive_in_tx(conn, raw_material_id, source)
+        archive_in_tx(conn, raw_material_id, source, stock_zero=stock_zero)
     return get_raw_material(conn, raw_material_id)
 
 

@@ -202,11 +202,11 @@ def test_export_has_price_columns_at_end(conn):
     make(conn, "Wasser", number=3, price_per_kg="0")
     lines = build_csv(list_raw_materials(conn)).decode("utf-8-sig").split("\r\n")
     header = lines[0].split(";")
-    assert header[-2:] == ["Preis je kg €", "Preis geändert am"]
+    assert header[11:13] == ["Preis je kg €", "Preis geändert am"]
     assert header[:11] == HEADER.split(";")
     mehl, salz, wasser = (line.split(";") for line in lines[1:4])
     assert mehl[11] == "2,35" and mehl[12]
-    assert salz[11:] == ["", ""]
+    assert salz[11:13] == ["", ""]
     assert wasser[11] == "0,00"
 
 

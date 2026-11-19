@@ -28,7 +28,7 @@ EXPECTED_TABLES = {
     "station", "raw_material",
     "recipe_group", "recipe", "recipe_version", "recipe_version_step", "recipe_item", "recipe_batch_size",
     "recipe_piece_weight", "production_order", "order_piece", "order_batch_size", "order_dough",
-    "order_item_override", "batch", "batch_item", "weighing_event",
+    "order_item_override", "batch", "batch_item", "weighing_event", "stock_movement",
     "setting", "change_log", "migration_log",
 }
 

@@ -63,7 +63,7 @@
   </div>
   <div id="msg" class="msg hidden" role="alert"></div>
   <div id="confirm" class="msg info hidden"><span id="confirm-text"></span><br>
-    <button type="button" id="confirm-yes">Ja, bestätigen</button><button type="button" id="confirm-no">Nein</button></div>
+    <button type="button" id="confirm-yes">Ja, bestätigen</button><button type="button" id="confirm-alt" class="hidden">Nein, zurückbuchen</button><button type="button" id="confirm-no">Nein</button></div>
 
   <h2>Teig an dieser Station</h2>
   <div id="batch" class="card"><span class="small">Kein Teig an dieser Station.</span></div>
@@ -192,9 +192,16 @@ async function act(path, body, okText) {
     await refresh();
     return data;
   } catch (err) {
-    if (err.status === 409 && (err.data.code === "confirm_required" || err.data.code === "resume_deviation")) {
-      const extra = err.data.code === "resume_deviation" ? { confirm_deviation: true } : { confirm: true };
-      pending = { path: path, body: Object.assign({}, body, extra), okText: okText };
+    const EXTRA = { confirm_required: { confirm: true }, resume_deviation: { confirm_deviation: true },
+                    stock_short: { confirm_stock: true }, stock_question: { stock_keep: true } };
+    if (err.status === 409 && EXTRA[err.data.code]) {
+      pending = { path: path, body: Object.assign({}, body, EXTRA[err.data.code]), okText: okText };
+      // Bestand (VC03-b): beim Abbruch „abgezogen lassen?“ – Ja = bleibt, „Nein, zurückbuchen“ = Rückbuchung
+      pending.alt = err.data.code === "stock_question" ? Object.assign({}, body, { stock_keep: false }) : null;
+      $("confirm-alt").classList.toggle("hidden", !pending.alt);
+      $("confirm-yes").textContent = err.data.code === "stock_question" ? "Ja, abgezogen lassen"
+        : err.data.code === "stock_short" ? "OK, trotzdem starten" : "Ja, bestätigen";
+      $("confirm-no").textContent = err.data.code === "stock_question" || err.data.code === "stock_short" ? "Abbrechen" : "Nein";
       $("confirm-text").textContent = err.message;
       $("confirm").classList.remove("hidden");
       return null;
@@ -203,8 +210,14 @@ async function act(path, body, okText) {
     return null;
   }
 }
-$("confirm-yes").addEventListener("click", async () => {
+function closeConfirm() {
   $("confirm").classList.add("hidden");
+  $("confirm-alt").classList.add("hidden");
+  $("confirm-yes").textContent = "Ja, bestätigen";
+  $("confirm-no").textContent = "Nein";
+}
+$("confirm-yes").addEventListener("click", async () => {
+  closeConfirm();
   if (!pending) return;
   const p = pending;
   pending = null;
@@ -217,7 +230,12 @@ $("confirm-yes").addEventListener("click", async () => {
   }
   await act(p.path, p.body, p.okText);
 });
-$("confirm-no").addEventListener("click", () => { pending = null; $("confirm").classList.add("hidden"); });
+$("confirm-alt").addEventListener("click", () => {
+  if (!pending || !pending.alt) return;
+  pending.body = pending.alt;
+  $("confirm-yes").click();
+});
+$("confirm-no").addEventListener("click", () => { pending = null; closeConfirm(); });
 
 // ---------------------------------------------------------------- Teig an der Station
 

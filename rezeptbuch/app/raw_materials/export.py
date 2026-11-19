@@ -11,12 +11,15 @@ import csv
 import io
 
 from .models import euro_text
+from .stock import kg_text
 
 HEADER = [
     "Nummer", "Name", "Kurzname", "Typ", "Toleranz", "Toleranzeinheit",
     "Gebindegröße g", "Gebindebezeichnung", "Herkunft", "archiviert", "geändert am",
     # ab 0.6.2 am Ende (VC03-a, docs/rohstoffe.md 15.5)
     "Preis je kg €", "Preis geändert am",
+    # ab VC03-b am Ende (docs/bestand.md B8): kg mit Komma, leer = keine Bestandsführung / kein Meldewert
+    "Bestand kg", "Meldewert kg",
 ]
 
 TYPE_LABEL = {"standard": "Standard", "flour": "Mehl"}
@@ -49,5 +52,7 @@ def build_csv(rows: list[dict]) -> bytes:
             row["updated_at"],
             euro_text(row["price_cents_per_kg"]) if row["price_cents_per_kg"] is not None else "",
             row["price_changed_at"] or "",
+            kg_text(row["stock_g"]),
+            kg_text(row["stock_alert_g"]),
         ])
     return b"\xef\xbb\xbf" + out.getvalue().encode("utf-8")

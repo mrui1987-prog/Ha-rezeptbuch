@@ -13,7 +13,7 @@ from fastapi import APIRouter, Body, Depends, Response
 
 from ..auth.dependencies import require_admin
 from ..deps import get_db
-from . import service
+from . import service, stock
 from .export import build_csv
 
 router = APIRouter(prefix="/api/v1", tags=["raw-materials"])
@@ -24,13 +24,27 @@ admin = [Depends(require_admin)]
 
 @router.get("/raw-materials")
 def list_raw_materials(search: str | None = None, include_archived: bool = False,
-                       zero_percent: bool = False, db: sqlite3.Connection = Depends(get_db)):
+                       zero_percent: bool = False, below_alert: bool = False,
+                       db: sqlite3.Connection = Depends(get_db)):
     return service.list_raw_materials(db, search=search, include_archived=include_archived,
-                                      zero_percent=zero_percent)
+                                      zero_percent=zero_percent, below_alert=below_alert)
 
 
 @router.get("/raw-materials/{raw_material_id}")
 def get_raw_material(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
+    return service.get_raw_material(db, raw_material_id)
+
+
+@router.get("/raw-materials/{raw_material_id}/stock/movements")
+def stock_movements(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """Buchungsverlauf (VC03-b, B8), die letzten 50."""
+    return stock.movements(db, raw_material_id)
+
+
+@router.post("/raw-materials/{raw_material_id}/stock/receipt")
+def stock_receipt(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """„Zugang buchen“ – bewusst ohne PIN, auch an der Station (M03-13)."""
+    stock.receipt(db, raw_material_id, payload)
     return service.get_raw_material(db, raw_material_id)
 
 
@@ -69,8 +83,16 @@ def update(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connecti
 
 
 @router.post("/admin/raw-materials/{raw_material_id}/archive", dependencies=admin)
-def archive(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
-    return service.archive_raw_material(db, raw_material_id)
+def archive(raw_material_id: int, payload: dict | None = Body(None), db: sqlite3.Connection = Depends(get_db)):
+    stock_zero = isinstance(payload, dict) and payload.get("stock_zero") is True
+    return service.archive_raw_material(db, raw_material_id, stock_zero=stock_zero)
+
+
+@router.post("/admin/raw-materials/{raw_material_id}/stock/inventory", dependencies=admin)
+def stock_inventory(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """„Bestand setzen“ (Inventur, leer = Bestandsführung beenden), mit PIN (M03-13)."""
+    stock.inventory(db, raw_material_id, payload)
+    return service.get_raw_material(db, raw_material_id)
 
 
 @router.post("/admin/raw-materials/{raw_material_id}/restore", dependencies=admin)

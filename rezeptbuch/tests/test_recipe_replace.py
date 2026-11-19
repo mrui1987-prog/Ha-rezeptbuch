@@ -278,3 +278,16 @@ def test_current_version_has_no_comparison(conn, rm):
     a = make(conn, "A", [line(rm["mehl"], 1000)])
     current = get_version(conn, a, 1)
     assert "current_only" not in current and "current" not in current["items"][0]
+
+
+def test_replace_asks_stock_zero(conn, rm):
+    # VC03-b, B9: Bestand des alten Rohstoffs auf 0 setzen, wenn gewünscht; nichts geht auf den neuen über
+    from app.raw_materials.stock import receipt
+    a = make(conn, "Butterkuchen", [line(rm["mehl"], 1000), line(rm["butter"], 500)])
+    receipt(conn, rm["butter"], {"amount_kg": "4"})
+    preview = replace_raw_material(conn, {"old_raw_material_id": rm["butter"], "new_raw_material_id": rm["marg"],
+                                          "factor": "1"})
+    assert preview["old_stock_g"] == 4000 and preview["stock_zeroed"] is False
+    result = run(conn, rm, [{"id": a, "revision": get_recipe(conn, a)["revision"]}], stock_zero=True)
+    assert result["stock_zeroed"] is True
+    assert get_raw_material(conn, rm["butter"])["stock_g"] == 0 and get_raw_material(conn, rm["marg"])["stock_g"] is None

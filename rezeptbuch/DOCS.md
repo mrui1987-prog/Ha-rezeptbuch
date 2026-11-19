@@ -45,7 +45,16 @@ Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CS
 - Viele Rohstoffe bearbeiten: CSV-Export → in Excel ändern → als CSV speichern → CSV-Import.
 - Namen und Kurznamen dürfen nicht mit `=`, `+`, `-` oder `@` beginnen (Schutz vor Excel-Formeln).
 - **Preis je kg €** (€ netto, z. B. „2,35“): leere Zelle löscht den Preis, fehlt die Spalte ganz, bleibt er. Mehr als 2 Nachkommastellen werden kaufmännisch gerundet (Hinweis im Bericht). „Preis geändert am“ setzt das Rezeptbuch selbst. Der Preis steht nur im CSV, nicht in der Importvorlage .xlsx.
+- **Bestand kg** und **Meldewert kg** (seit 0.10.7, am Ende): ein geänderter Bestand wird als Inventur gebucht; leere Zelle beendet die Bestandsführung bzw. löscht den Meldewert; fehlt die Spalte, bleibt der Wert. Achtung: Eine ältere Exportdatei setzt den Bestand auf ihren alten Stand zurück.
 - Höchstens 5 MB und 5 000 Zeilen je Datei.
+
+## Rohstoffbestand (seit 0.10.7)
+
+- Jeder Rohstoff kann einen **Bestand** und einen **Meldewert** (kg, bis 3 Nachkommastellen) haben. Taste **„Bestand“** in der Rohstoffliste: **„Zugang buchen“** (zählt dazu, auch ohne PIN über die Schnittstelle, später am Tablet), **„Bestand setzen“** (Inventur; leer = Bestandsführung beenden) und der Verlauf aller Buchungen. Meldewert im Formular „Bearbeiten“.
+- Bestand leer = keine Bestandsführung (z. B. Wasser). 0 heißt „nichts da“. Der Bestand darf negativ werden (rot).
+- Beim Verwiegen wird abgezogen: gewogen das Ist, Gebinde Stück × Größe + Rest, Sollhandzugabe das Soll. Nichts bei „nach Bedarf“, übergangenen Zutaten, Unterrezept-Zeilen (deren Zutaten zieht der Unterrezept-Teig ab) und im Handbetrieb.
+- Reicht der Bestand für einen Teig nicht, fragt der Start „Folgende Zutaten werden über den Bestand hinaus ins Minus gebucht“ (OK/Abbrechen). Beim Abbrechen eines Teigs: „Gewogenes vom Bestand abgezogen lassen?“ – Nein bucht zurück.
+- Filter **„am/unter Meldewert“** in der Rohstoffliste (gelb markiert). Beim Archivieren und bei „Rohstoff austauschen“ kommt die Frage „Bestand auf Null setzen?“.
 
 ## Rezepte
 

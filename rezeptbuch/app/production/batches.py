@@ -18,6 +18,7 @@ from datetime import date
 from ..calculation.service import build_batch_items
 from ..db import transaction
 from ..errors import ConflictError, NotFoundError, ValidationError
+from ..raw_materials import stock
 from . import orders as orders_mod
 from .common import require_confirm, station_busy, station_row, utc_now, whole
 from .runner import ProductionRunner
@@ -227,6 +228,10 @@ def _complete(conn: sqlite3.Connection, row, item, ack_type: str, actual_g, stat
         "WHERE id = ? AND ack_type IS NULL", (ack_type, actual_g, station, now, item["id"])).rowcount
     if changed != 1:
         raise ConflictError(f"Zeile {item['position']} ist bereits erledigt.", code="item_done")
+    if item["item_type"] == "raw_material" and ack_type != "skipped":
+        # Bestand (VC03-b, B4): Ist abziehen; nach Bedarf (Ist leer) und Unterrezept-Zeilen nichts
+        stock.consume_in_tx(conn, item["raw_material_id"], actual_g, batch_id=row["id"], batch_item_id=item["id"],
+                            station=station)
     nxt = _next_position(conn, row["id"])
     if nxt is None:
         conn.execute("UPDATE batch SET status = 'done', finished_at = ?, current_position = NULL WHERE id = ?",
@@ -235,6 +240,53 @@ def _complete(conn: sqlite3.Connection, row, item, ack_type: str, actual_g, stat
         return True
     conn.execute("UPDATE batch SET current_position = ? WHERE id = ?", (nxt, row["id"]))
     return False
+
+
+def needs_of(rows) -> dict[int, int]:
+    """Bedarf je Rohstoff aus den Zeilen von ``build_batch_items`` (B6); Unterrezept-Zeilen zählen nicht."""
+    needs: dict[int, int] = {}
+    for item in rows:
+        if item["item_type"] == "raw_material" and item["raw_material_id"] is not None and item["target_g"] > 0:
+            needs[item["raw_material_id"]] = needs.get(item["raw_material_id"], 0) + item["target_g"]
+    return needs
+
+
+def _dough_rows(conn: sqlite3.Connection, order, dough_index: int | None) -> list[dict]:
+    """Zeilen eines Teigs: mit fixierter Version wie beim Start, vorher mit der aktuellen Version
+    (Rechenweg aus Modul 06, nur gelesen – wie ``sub_order_targets``)."""
+    if order["recipe_version_id"] is not None:
+        return build_batch_items(conn, order["id"], order["recipe_version_id"], dough_index)
+    from ..calculation.service import _dough_result, _order_row, load_recipe
+    row, overrides = _order_row(conn, order["id"])
+    result = _dough_result(conn, row, load_recipe(conn, row["recipe_id"]), overrides, dough_index)
+    return [{"item_type": "sub_recipe" if i["kind"] == "sub_recipe" else "raw_material",
+             "raw_material_id": i["raw_material"]["id"] if i["raw_material"] else None,
+             "target_g": i["target_g"]} for i in result["items"]]
+
+
+def order_stock(conn: sqlite3.Connection, order_id: int, dough_index: int | None = None) -> dict:
+    """Bestandsstatus je Rohstoff für die Rezeptübersicht (B6): ein Teig oder der ganze Auftrag (alle Teige).
+
+    Vor dem ersten Start gilt die aktuelle Rezeptversion, danach die fixierte. Gestartete Teige zählen
+    nicht mehr mit (ihr Gewogenes ist schon abgezogen).
+    """
+    order = conn.execute("SELECT * FROM production_order WHERE id = ?", (order_id,)).fetchone()
+    if order is None:
+        raise NotFoundError("Auftrag nicht gefunden.", code="not_found")
+    started = {r[0] for r in conn.execute("SELECT dough_index FROM batch WHERE order_id = ?", (order_id,))}
+    if dough_index is not None and not 1 <= dough_index <= order["dough_count"]:
+        raise ValidationError(f"Teig {dough_index} gibt es im Auftrag nicht.", field="dough_index")
+    doughs = [dough_index] if dough_index is not None else list(range(1, order["dough_count"] + 1))
+    needs: dict[int, int] = {}
+    for d in doughs:
+        if d in started:
+            continue
+        for rm_id, grams in needs_of(_dough_rows(conn, order, d if order["dough_count"] > 1 else None)).items():
+            needs[rm_id] = needs.get(rm_id, 0) + grams
+    items = stock.need_status(conn, needs)
+    return {"order_id": order_id, "dough_index": dough_index, "items": items,
+            "short": [i for i in items if i["stock_status"] == "short"],
+            "alert": [i for i in items if i["stock_status"] == "alert"]}
 
 
 def next_batch_no(conn: sqlite3.Connection, day: str | None = None) -> str:
@@ -290,6 +342,13 @@ def start_dough(conn: sqlite3.Connection, order_id: int, payload, runner: Produc
             orders_mod.create_sub_orders(conn, order)
 
         rows = build_batch_items(conn, order_id, version_id, dough_index if order["dough_count"] > 1 else None)
+        short = [s for s in stock.need_status(conn, needs_of(rows)) if s["stock_status"] == "short"]
+        if short and not (isinstance(payload, dict) and payload.get("confirm_stock") is True):
+            # B6: Rückfrage vor dem Start; Abbrechen rollt alles zurück (auch die Fixierung der Version)
+            names = ", ".join(f"{s['station_name']} ({stock.kg_text(s['need_g'])} kg, Bestand "
+                              f"{stock.kg_text(s['stock_g'])} kg)" for s in short)
+            raise ConflictError(f"Folgende Zutaten werden über den Bestand hinaus ins Minus gebucht: {names}",
+                                code="stock_short", field="confirm_stock", items=short)
         subs = {(r["parent_item_position"], r["parent_dough_index"]): r["id"] for r in conn.execute(
             "SELECT id, parent_item_position, parent_dough_index FROM production_order WHERE parent_order_id = ?",
             (order_id,))}
@@ -605,7 +664,16 @@ def cancel(conn, batch_id: int, payload, runner=None, *, now: str | None = None)
     if row["status"] == "running" and row["owner_station_id"] != station:
         raise ConflictError(f"Der Teig ist in Arbeit an Waage {row['owner_station_id']}.", code="other_station")
     require_confirm(payload, "Teig wirklich abbrechen? Bereits Gewogenes bleibt im Protokoll.")
+    booked = stock.consumed(conn, batch_id)
+    keep = payload.get("stock_keep")
+    if booked and not isinstance(keep, bool):
+        total = sum(b["grams"] for b in booked)
+        raise ConflictError(
+            f"Gewogenes ({len(booked)} Zutat{'en' if len(booked) != 1 else ''}, {stock.kg_text(total)} kg) "
+            "vom Bestand abgezogen lassen?", code="stock_question", field="stock_keep", items=booked)
     with transaction(conn):
+        if booked and keep is False:
+            stock.reverse_batch_in_tx(conn, batch_id, station=station)     # B5: Rückbuchung
         conn.execute("UPDATE batch SET status = 'cancelled', finished_at = ?, current_position = NULL "
                      "WHERE id = ?", (now, batch_id))
         orders_mod.update_order_status(conn, row["order_id"], now)

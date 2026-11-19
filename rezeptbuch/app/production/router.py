@@ -65,6 +65,12 @@ def delete_order(order_id: int, request: Request, payload: dict | None = Body(de
     return Response(status_code=204)
 
 
+@router.get("/orders/{order_id}/stock")
+def order_stock(order_id: int, dough_index: int | None = None, db: sqlite3.Connection = Depends(get_db)):
+    """Bestandsstatus je Rohstoff für die Rezeptübersicht (VC03-b, B6)."""
+    return batches.order_stock(db, order_id, dough_index)
+
+
 @router.post("/orders/{order_id}/start", status_code=201)
 def start(order_id: int, request: Request, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
     runner = get_runner(request)

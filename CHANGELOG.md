@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.10.7 – Modul 03: Rohstoffbestand und Meldewert (in Entwicklung)
+
+- **Bestand und Meldewert je Rohstoff** (VC03-b, docs/bestand.md): Spalten und Filter „am/unter Meldewert“ in der Rohstoffliste, Taste „Bestand“ mit „Zugang buchen“, „Bestand setzen“ (Inventur, leer = Führung beenden) und Verlauf; Meldewert im Formular; CSV-Export und -Import mit „Bestand kg“ und „Meldewert kg“
+- **Abzug beim Verwiegen** bei jeder Quittung; Rückfrage beim Start, wenn der Bestand nicht reicht; beim Abbrechen Rückfrage, ob das Gewogene abgezogen bleibt (sonst Rückbuchung); Bestand darf negativ werden
+- **Archivieren und „Rohstoff austauschen“** fragen „Bestand auf Null setzen?“
+- Schnittstelle: `GET /api/v1/orders/{id}/stock` (Bestandsstatus für die Rezeptübersicht, orange/gelb in Modul 10), `POST /api/v1/raw-materials/{id}/stock/receipt` (ohne PIN), `POST /api/v1/admin/raw-materials/{id}/stock/inventory` (PIN), `GET /api/v1/raw-materials/{id}/stock/movements`
+- Migration 0008 (`raw_material.stock_g`, `stock_alert_g`, Tabelle `stock_movement`)
+
 ## 0.10.6 – Modul 10: neue Aufteilung der Wiegeansicht, ausblendbare Leiste, Kompaktansicht (in Entwicklung)
 
 - **Oben:** Mitte die aktuelle Zutat sehr groß (lange Namen werden kleiner, bis sie passen), darunter „Zutat x von y“; rechts eine Infotafel mit Waage, Rezept, Teig, Charge und nächstem Auftrag in kleiner Schrift – dort darf das Bild-im-Bild-Fenster liegen

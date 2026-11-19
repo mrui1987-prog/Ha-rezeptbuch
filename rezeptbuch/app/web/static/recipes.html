@@ -1439,9 +1439,17 @@ $("rep-run").addEventListener("click", async () => {
   if (body.mark_review) text += "\nGeänderte Zeilen bekommen „*“.";
   if (body.archive_old) text += "\n„" + repPreview.old.name + "“ wird archiviert, wenn er danach in keinem Rezept mehr vorkommt.";
   if (!(await ask(text, [{ label: "Austauschen", value: true }]))) return;
+  if (repPreview.old_stock_g !== null && repPreview.old_stock_g !== undefined && repPreview.old_stock_g !== 0) {
+    // VC03-b, B9: Rückfrage „Bestand auf Null setzen?“; der Bestand geht nicht auf den neuen Rohstoff über
+    const zero = await ask("„" + repPreview.old.name + "“ hat noch " + String(repPreview.old_stock_g / 1000).replace(".", ",")
+      + " kg Bestand. Bestand auf Null setzen?", [{ label: "Ja, auf 0", value: "yes" }, { label: "Nein, behalten", value: "no" }]);
+    if (zero === null) return;
+    body.stock_zero = zero === "yes";
+  }
   try {
     const result = await api("admin/recipes/replace-raw-material", { method: "POST", body: body });
     let msg = result.summary;
+    if (result.stock_zeroed) msg += "\nBestand von „" + result.old.name + "“ auf 0 gesetzt.";
     if (result.skipped.length) msg += "\nÜbersprungen:\n" + nameList(result.skipped, true);
     if (result.archive_old.requested) msg += "\n" + result.archive_old.reason.replace("wird archiviert", "wurde archiviert");
     await loadChoices();

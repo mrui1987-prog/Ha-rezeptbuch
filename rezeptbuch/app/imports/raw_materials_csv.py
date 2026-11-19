@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from ..errors import ConflictError, PayloadTooLargeError, ServiceError, ValidationError
 from ..raw_materials import service
 from ..raw_materials.models import euro_text, normalize_text
+from ..raw_materials.stock import inventory_in_tx, kg_text, parse_kg
 from .report import ImportReport
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -61,6 +62,7 @@ COLUMN_LABEL = {
     "number": "Nummer", "name": "Name", "display_name": "Kurzname", "type": "Typ",
     "tolerance": "Toleranz", "tolerance_unit": "Toleranzeinheit", "unit_size_g": "Gebindegröße g",
     "unit_label": "Gebindebezeichnung", "archived": "archiviert", "price_per_kg": "Preis je kg €",
+    "stock_kg": "Bestand kg", "stock_alert_kg": "Meldewert kg",
 }
 
 TYPE_VALUES = {"standard": "standard", "mehl": "flour", "flour": "flour"}
@@ -117,6 +119,9 @@ HEADERS = {_header_key(label): target for label, target in _HEADER_LABELS.items(
 _PRICE_LABELS = {
     "Preis je kg €": "price_per_kg", "Preis je kg": "price_per_kg", "Preis €/kg": "price_per_kg",
     "Preis/kg": "price_per_kg", "Preis geändert am": None,
+    # Bestand und Meldewert (VC03-b, docs/bestand.md B8): leer = Führung beenden bzw. kein Meldewert,
+    # fehlt die Spalte, bleibt der Wert. Ein geänderter Bestand wird als Inventur gebucht.
+    "Bestand kg": "stock_kg", "Bestand": "stock_kg", "Meldewert kg": "stock_alert_kg", "Meldewert": "stock_alert_kg",
 }
 CSV_HEADERS = {**HEADERS, **{_header_key(label): target for label, target in _PRICE_LABELS.items()}}
 
@@ -225,6 +230,8 @@ def _row_input(row: SourceRow, existing: bool) -> tuple[dict, bool | None, bool]
     if row.has("price_per_kg"):
         # K03-5: leere Zelle löscht den Preis; fehlt die Spalte ganz, bleibt er unverändert
         data["price_per_kg"] = row.get("price_per_kg") or None
+    if row.has("stock_alert_kg"):
+        data["stock_alert_kg"] = row.get("stock_alert_kg") or None
     if row.has("unit_size_g"):
         data["unit_size_g"] = _int_text(row.get("unit_size_g")) or None
     if row.get("type"):
@@ -263,6 +270,8 @@ def _show(item: dict) -> dict:
         "archiviert": "ja" if item["archived"] else "nein",
         "Preis je kg": (euro_text(item["price_cents_per_kg"]) + " €"
                         if item["price_cents_per_kg"] is not None else "(leer)"),
+        "Bestand": kg_text(item["stock_g"]) + " kg" if item["stock_g"] is not None else "(keine Führung)",
+        "Meldewert": kg_text(item["stock_alert_g"]) + " kg" if item["stock_alert_g"] is not None else "(leer)",
     }
 
 
@@ -270,6 +279,16 @@ def _price_hints(report: ImportReport, warnings: list, row: SourceRow, sheet: st
     """Gerundeter Preis (K03-8): Import möglich, Hinweis mit Zeile im Bericht."""
     for warning in warnings:
         report.hint(warning["detail"], line=row.line, sheet=sheet)
+
+
+def _apply_stock(conn: sqlite3.Connection, raw_material_id: int, row: SourceRow) -> None:
+    """Bestand aus der Datei als Inventur buchen, wenn er sich ändert (B8)."""
+    if not row.has("stock_kg"):
+        return
+    grams = parse_kg(row.get("stock_kg"), "stock_kg", allow_empty=True)
+    current = conn.execute("SELECT stock_g FROM raw_material WHERE id = ?", (raw_material_id,)).fetchone()[0]
+    if grams != current:
+        inventory_in_tx(conn, raw_material_id, grams, note="CSV-Import", source="import")
 
 
 def _is_zero_percent(item: dict) -> bool:
@@ -345,6 +364,7 @@ def _apply_one(conn: sqlite3.Connection, row: SourceRow, report: ImportReport, s
             data["number"] = number
         warnings: list = []
         new_id = service.create_in_tx(conn, data, source="import", warnings=warnings)
+        _apply_stock(conn, new_id, row)
         _price_hints(report, warnings, row, sheet)
         if archived:
             service.archive_in_tx(conn, new_id, source="import")
@@ -373,6 +393,7 @@ def _apply_one(conn: sqlite3.Connection, row: SourceRow, report: ImportReport, s
                                        warnings=warnings)
         if archived is False and before["archived"]:
             service.restore_in_tx(conn, target, source="import")
+    _apply_stock(conn, target, row)
     after = service.get_raw_material(conn, target)
     _price_hints(report, warnings, row, sheet)
 

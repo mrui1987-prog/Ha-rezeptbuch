@@ -31,6 +31,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from ..errors import ConflictError, NotFoundError, ServiceError, ValidationError
 from ..raw_materials import service as rm_service
+from ..raw_materials import stock as stock_mod
 from . import service
 
 MAX_EXTRAS = 2
@@ -273,6 +274,10 @@ def replace_raw_material(conn: sqlite3.Connection, payload, *, source: str = "ad
         archive = {"requested": False, "done": False, "reason": None}
         if spec["archive_old"]:
             archive = _archive_old(conn, spec["old"], source)
+        # VC03-b, B9: „Bestand auf Null setzen?“ – Antwort im Feld stock_zero; nichts geht auf den neuen über
+        old_stock = conn.execute("SELECT stock_g FROM raw_material WHERE id = ?", (spec["old"]["id"],)).fetchone()[0]
+        stock_zeroed = payload.get("stock_zero") is True and stock_mod.zero_in_tx(
+            conn, spec["old"]["id"], note="beim Austauschen auf 0 gesetzt", source=source)
 
         needs_confirm = mode == "run" and not confirm
         executed = mode == "run" and not needs_confirm
@@ -296,6 +301,7 @@ def replace_raw_material(conn: sqlite3.Connection, payload, *, source: str = "ad
         "extras": [{"id": e["id"], "number": e["number"], "name": e["name"], "factor": _factor_text(e["factor"])}
                    for e in spec["extras"]],
         "mark_review": spec["mark_review"], "archive_old": archive,
+        "old_stock_g": old_stock, "stock_zeroed": bool(stock_zeroed) and executed,
         "recipes": entries, "done": done, "skipped": skipped, "summary": summary,
         "counts": {"found": len(found), "selected": len(selected), "done": n, "skipped": len(skipped)},
     }
