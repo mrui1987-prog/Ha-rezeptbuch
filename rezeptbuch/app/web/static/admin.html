@@ -18,6 +18,7 @@
   td.stock-neg { color: #b00020; font-weight: bold; }
   td.stock-alert { background: #fff3b0; }
   #confirm-box .row { display: flex; gap: .6rem; margin-top: 1rem; }
+  #confirm-text { white-space: pre-line; }
   html { background: #fafafa; }
   body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
   main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
@@ -152,6 +153,7 @@
         <div id="form-msg" class="msg error hidden" role="alert"></div>
         <button type="submit" id="form-save">Speichern</button>
         <button type="button" id="form-cancel">Abbrechen</button>
+        <button type="button" id="form-archive" class="hidden">Archivieren</button>
       </form>
     </div>
 
@@ -192,6 +194,7 @@ let token = null;
 try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
 let pendingPage = null;      // Reiter, der nach abgelaufener Sitzung nach der Anmeldung geöffnet wird
 let editingId = null;        // null = neuer Rohstoff
+let editingItem = null;      // geöffneter Rohstoff (für „Archivieren/Wiederherstellen“ im Formular, 0.10.9)
 let searchTimer = null;
 let similarTimer = null;
 
@@ -485,9 +488,12 @@ function renderRows(items) {
   show("empty", items.length === 0);
 }
 
-async function act(item, action) {
+async function act(item, action, fromForm) {
   showMsg("list-msg", "");
   let body = {};
+  // B2 (Michael 19.11.2026, 21:35): Archivieren nur nach Rückfrage (vorher ging es mit einem Tippen)
+  if (action === "archive" && !(await askConfirm("Rohstoff „" + item.name + "“ (Nr. " + item.number + ") archivieren?"
+      + (fromForm ? "\nNicht gespeicherte Eingaben im Formular gehen verloren." : ""), "Archivieren"))) return false;
   if (action === "archive" && item.stock_g !== null && item.stock_g !== 0) {
     // VC03-b, B9: Rückfrage „Bestand auf Null setzen?“ (archiviert wird in beiden Fällen)
     body.stock_zero = await askConfirm("„" + item.name + "“ hat noch " + kgText(item.stock_g)
@@ -496,8 +502,18 @@ async function act(item, action) {
   try {
     await api("admin/raw-materials/" + item.id + "/" + action, { method: "POST", body: body });
     await loadList();
-  } catch (err) { handleError(err); }
+    return true;
+  } catch (err) { handleError(err, fromForm ? "form-msg" : undefined); return false; }
 }
+
+$("form-archive").addEventListener("click", async () => {
+  const item = editingItem;
+  if (!item) return;
+  const action = item.archived ? "restore" : "archive";
+  if (!(await act(item, action, true))) return;
+  closeForm();
+  showMsg("list-msg", "„" + item.name + "“ " + (action === "archive" ? "archiviert." : "wiederhergestellt."));
+});
 
 // Eigene Rückfrage statt confirm(): In der HA-App (iOS) fehlt dort die Taste „Abbrechen“
 function askConfirm(text, okLabel, cancelLabel) {
@@ -663,12 +679,17 @@ function closeForm() {
   showMsg("form-msg", "");
   showMsg("similar-msg", "");
   editingId = null;
+  editingItem = null;
 }
 
 async function openForm(item) {
   showMsg("form-msg", "");
   showMsg("similar-msg", "");
   editingId = item ? item.id : null;
+  editingItem = item || null;
+  // B3 (Michael 19.11.2026, 21:35): Archivieren/Wiederherstellen direkt im Formular, z. B. nach dem Sprung aus einem Rezept
+  show("form-archive", Boolean(item));
+  if (item) $("form-archive").textContent = item.archived ? "Wiederherstellen" : "Archivieren";
   $("form-title").textContent = item ? "Rohstoff bearbeiten" : "Neuer Rohstoff";
   $("f-name").value = item ? item.name : "";
   $("f-display").value = item && item.display_name ? item.display_name : "";

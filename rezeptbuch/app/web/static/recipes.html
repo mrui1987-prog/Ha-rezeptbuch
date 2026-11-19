@@ -317,6 +317,7 @@ let recipesAll = [];         // alle Rezepte (für Unterrezepte)
 let rec = null;              // Rezept im Editor
 let loaded = null;           // Rezept, wie es vom Server kam
 let dirty = false, portionDirty = false;
+const TRAIL_KEY = "rezeptbuch_trail";   // Rückweg beim Sprung zur Rohstoffseite (B1, 0.10.9)
 let backStack = [];          // Sprung ins Unterrezept: Rezepte, zu denen „Zurück zu …“ führt (0.6.3)
 let searchTimer = null;
 
@@ -438,6 +439,8 @@ async function jumpTo(type, id) {
   if (type === "raw_material") {
     if (!(await checkSession("rohstoffe"))) return;
     dirty = false; portionDirty = false;
+    // B1 (Michael 19.11.2026): den ganzen Rückweg über den Seitenwechsel mitnehmen (nur dieser Tab)
+    try { sessionStorage.setItem(TRAIL_KEY, JSON.stringify({ open: rec.id, stack: backStack })); } catch (e) { /* egal */ }
     location.href = BASE + "admin/rohstoffe?edit=" + id + "&back=" + rec.id;
     return;
   }
@@ -1658,7 +1661,15 @@ async function start() {
   const open = new URLSearchParams(location.search).get("open");
   if (open && /^[0-9]{1,9}$/.test(open)) {
     try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ }
-    await openRecipe(Number(open));
+    // B1: Rückweg wiederherstellen, wenn wir von der Rohstoffseite zu genau diesem Rezept zurückkommen
+    let trail = null;
+    try { trail = JSON.parse(sessionStorage.getItem(TRAIL_KEY) || "null"); sessionStorage.removeItem(TRAIL_KEY); } catch (e) { trail = null; }
+    if (trail && trail.open === Number(open) && Array.isArray(trail.stack)) {
+      backStack = trail.stack.filter((t) => t && Number.isInteger(t.id) && typeof t.label === "string");
+      await openRecipe(Number(open), true);
+    } else {
+      await openRecipe(Number(open));
+    }
   }
 }
 window.addEventListener("beforeunload", (ev) => { if (dirty || portionDirty) { ev.preventDefault(); ev.returnValue = ""; } });

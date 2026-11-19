@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.10.9 – Befunde aus der Praxisprüfung Modul 06 (in Entwicklung)
+
+- **Ganzer Rückweg beim Springen** (B1): Rezept → „Unterrezept öffnen“ → „Rohstoff öffnen“ → „Zurück zum Rezept“ führt ins Unterrezept, dort steht wieder „← Zurück zu <Hauptrezept>“; jedes „Zurück“ geht einen Schritt zurück, „← Zur Liste“ bleibt immer da
+- **Rohstoff archivieren nur nach Rückfrage** (B2): „Rohstoff „…“ (Nr. …) archivieren?“ im eigenen Fenster (vorher ohne Rückfrage)
+- **Archivieren/Wiederherstellen im Rohstoff-Formular** (B3), z. B. nach dem Sprung aus einem Rezept, mit derselben Rückfrage
+
 ## 0.10.8 – Rückfragefenster auf Höhe der Taste (in Entwicklung)
 
 - **Bestätigungs- und Hinweisfenster öffnen sich auf Höhe der gedrückten Taste** statt in der Bildschirmmitte (Wunsch Michael 19.11.2026, 20:52): In der HA-App auf dem iPhone ist die Seite so hoch wie ihr Inhalt, „Mitte“ lag deshalb mitten auf der Seite und man musste dorthin scrollen. Liegt die Taste am Rand, rückt das Fenster so weit, dass es ganz sichtbar bleibt. Gilt für Rohstoffe (auch Fenster „Bestand“), Rezepte, Import/Export, Berechnung (Erklärung „ⓘ“) und die Prüfseite Ablauf (Rückfragen schweben über der Taste). Die Station bleibt unverändert
