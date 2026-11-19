@@ -23,12 +23,24 @@ def payload(station=1, **over):
     return json.dumps(data).encode()
 
 
+async def _stop_connect_task(service):
+    task = service._tasks[0]
+    task.cancel()
+    try:
+        await task
+    except BaseException:  # noqa: BLE001 – abgebrochen oder schon fertig
+        pass
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("REZEPTBUCH_DB", str(tmp_path / "rezeptbuch.db"))
     monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
     with TestClient(app) as c:
         c.hub = app.state.scales.hub
+        # Der Verbindungsversuch des Dienstes (ohne Supervisor → „unavailable“) darf den
+        # nachgestellten MQTT-Stand der Tests nicht überschreiben: Aufgabe vorher beenden.
+        c.portal.call(_stop_connect_task, app.state.scales)
         c.sent = []
         yield c
 
