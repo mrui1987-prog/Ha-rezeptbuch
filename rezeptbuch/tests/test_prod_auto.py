@@ -368,6 +368,21 @@ def test_container_weigh_flow(conn, recipes, runner, hub, clock):
     assert batch["container_g"] == 1200
 
 
+def test_container_weigh_mid_ingredient_starts_at_zero(conn, brot, runner, hub, clock):
+    # Michael 16:18: „Behälter wiegen“ mitten in der Zutat – im neuen Behälter wieder bei 0, keine Teilmenge
+    hub.put(1, 800 + 400)                                         # 400 g Mehl im alten Behälter
+    batch = batches.container(conn, brot["id"], st(action="weigh"), runner)
+    assert batch["partial_saved_g"] == 0 and batch["items"][0]["partial_g"] == 0
+    hub.put(1, 0)                                                 # alter Behälter weg
+    run(conn, runner, clock, 0.2)
+    hub.put(1, 950)                                               # neuer Behälter
+    run(conn, runner, clock, 2.2)
+    assert runner.flow(1) is None
+    batch = batches.get_batch(conn, brot["id"], runner)
+    assert batch["container_g"] == 950 and batch["scale"]["actual_g"] == 0
+    assert batch["items"][0]["done"] is False and events(conn, "partial") == []
+
+
 def test_container_weigh_without_container(conn, brot, runner, hub, clock):
     hub.put(1, 0)                                                 # Behälter weg: -----
     batches.container(conn, brot["id"], st(action="weigh"), runner)

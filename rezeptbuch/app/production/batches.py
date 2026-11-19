@@ -698,7 +698,9 @@ def container(conn, batch_id: int, payload, runner: ProductionRunner, *, now: st
     if action in ("weigh", "change"):
         if flow is not None:
             raise ConflictError("Der Behälter-Schritt läuft bereits.", code="container_busy")
-        partial = _store_partial(conn, row, station, runner, now)
+        # Nur beim Wechseln zählt das bisher Gewogene als Teilmenge (K09-14). Beim „Behälter wiegen“
+        # beginnt die Zutat im neuen Behälter wieder bei 0 (Michael 19.11.2026, 16:18).
+        partial = _store_partial(conn, row, station, runner, now) if action == "change" else 0
         runner.start_flow(station, action, batch_id)
         data = get_batch(conn, batch_id, runner)
         data["partial_saved_g"] = partial

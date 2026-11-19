@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.10.3 – Modul 09: „Behälter wiegen“ beginnt bei 0 (in Entwicklung)
+
+- **„Behälter wiegen“ mitten in einer Zutat** speichert das bisher Gewogene nicht mehr als Teilmenge: Im neuen Behälter beginnt die Zutat wieder bei 0 (Michael, Praxisprüfung). Teilmengen gibt es nur bei „Behälter wechseln“
+
 ## 0.10.2 – Modul 10: Stationsoberfläche nach der ersten Praxisprüfung (in Entwicklung)
 
 - **Ecke oben links umgedreht** (M10-15 geändert): oben Datum und Wetter – dort darf das Bild-im-Bild-Fenster liegen –, darunter die Uhrzeit, die frei bleibt

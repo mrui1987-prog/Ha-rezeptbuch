@@ -103,7 +103,7 @@ Taste **„Behälter wiegen“**, **jederzeit** während der Charge (geändert 1
 4. Wert stabil über 50 g → Software speichert ihn als **Behältergewicht** (`batch.container_g`) und sendet erneut `tare` (Phasen wie 6.2). „Ohne Behälter“ → `container_g = 0`, keine weitere Tara.
 5. Das Behältergewicht wird angezeigt und ist **von Hand änderbar**. Das ändert nur den gespeicherten Wert (Höchstlast, Protokoll), nicht das Wiegen.
 
-Mitten in einer Zutat mit schon gewogener Menge wird diese zuerst als **Teilmenge** gespeichert (wie 6.2b, Schritt 1); danach beginnt die **Tara-Summe neu** beim neuen Behälter.
+Mitten in einer Zutat beginnt die Zutat im neuen Behälter **wieder bei 0**; das bisher Gewogene wird **nicht** als Teilmenge gezählt (geändert 19.11.2026, 16:18, Michael – Teilmengen nur bei „Behälter wechseln“, 6.2b). Die **Tara-Summe beginnt neu** beim neuen Behälter.
 
 `container_g` leer = unbekannt (Normalfall). Bekanntes Gewicht zählt zur Tara-Summe (Höchstlast 6.4). Protokoll: Ereignis `container` mit Gewicht, Herkunft gewogen/von Hand/ohne Behälter in `note`.
 
