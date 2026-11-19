@@ -7,6 +7,7 @@
 - **„Zutat überspringen“** statt „Zutat übergehen“: die Zutat bleibt offen, es geht mit der nächsten offenen weiter; die übersprungene kommt am Ende wieder. Dafür geht es nach jeder Quittung hinter der quittierten Zutat weiter und erst danach wieder vorn (Server, Modul 09; im normalen Ablauf unverändert)
 - **Endgültig weglassen** nur noch in der Übersicht (Zutat antippen → „Weglassen“, Rückfrage); im Protokoll „weggelassen“ statt „übergangen“; Prüfseite „Ablauf“: Taste „Weglassen“
 - **Grobbalken:** das Soll liegt bei 2/3 der Skala (vorher am rechten Rand); bei sehr kleinem Soll mit großer Toleranz reicht die Skala bis Soll + 2 × Toleranz
+- **Kompaktansicht:** oben große Tasten Tara, Behälter, Behälter wechseln, Zutat überspringen, Quittieren und „Normale Ansicht“; Grobbalken dafür etwas niedriger, „Zutat x von y“ klein oben im Grobbalken
 
 ## 0.10.8 – Rückfragefenster auf Höhe der Taste (in Entwicklung)
 
