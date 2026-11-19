@@ -123,17 +123,17 @@
 - **Ohne MQTT** läuft das Rezeptbuch weiter (Rezepte, Rohstoffe, Berechnung); neuer Versuch alle 30 s. `/api/v1/health` meldet zusätzlich `mqtt` (Status bleibt 200)
 - Versionsnummer folgt ab jetzt dem zuletzt begonnenen Modul (0.8.0); Korrekturen an Modul 06 erscheinen als 0.8.x
 
-## 0.6.4 – Wiederherstellen mit archiviertem Unterrezept (in Entwicklung)
+## 0.6.4 – Wiederherstellen mit archiviertem Unterrezept (freigegeben 19.11.2026 mit Modul 06)
 
 - **Alte Version wiederherstellen:** Enthält die alte Version ein archiviertes Unterrezept, fragt die Oberfläche „„Vorteig“ ist archiviert – mit wiederherstellen?“. „Mit wiederherstellen“ holt das Unterrezept (und dessen archivierte Unterrezepte) und die alte Version in einem Schritt zurück, alles oder nichts. R05-23 bleibt bestehen (kein aktives Rezept mit archiviertem Unterrezept). Schnittstelle: `POST …/versions/{n}/restore` mit zusätzlichem `restore_sub_recipes: true`; ohne dieses Feld weiterhin 409 `archived_sub_recipe`, jetzt mit der Liste `sub_recipes`
 
-## 0.6.3 – Wünsche aus der Praxisprüfung C2 (in Entwicklung)
+## 0.6.3 – Wünsche aus der Praxisprüfung C2 (freigegeben 19.11.2026 mit Modul 06)
 
 - **Erklärung zu „Anteil %“ und „Bäcker %“:** Taste „ⓘ“ an den Spalten auf der Rezeptseite (Zutaten und alte Versionen) und auf der Prüfseite „Berechnung“ (Zeilen und Zusammenfassung); eigenes Fenster, kein Browser-Dialog
 - **Sprung aus einer Rezeptzeile:** „Rohstoff öffnen ↗“ öffnet den Rohstoff auf der Rohstoffseite, „← Zurück zum Rezept“ führt zurück; „Unterrezept öffnen ↗“ öffnet das Unterrezept, „← Zurück zu …“ zum Hauptrezept. Ungespeicherte Änderungen: zuerst Rückfrage „verwerfen?“. Die Rezeptseite öffnet mit `?open=<id>` direkt ein Rezept (auch nach der Anmeldung)
 - **Alte Version wiederherstellen:** Taste „Diese Version wiederherstellen“ in der Ansicht einer alten Version; legt den Inhalt als neue aktuelle Version an, die alte bleibt unverändert. Geht auch bei produzierten Versionen; „*“-Markierungen und archivierte Rohstoffe werden übernommen; ein archiviertes Unterrezept verhindert es weiterhin (R05-23). Schnittstelle `POST /api/v1/admin/recipes/{id}/versions/{n}/restore`
 
-## 0.6.2 – Modul 06, Teil C3, und Preis je kg (in Entwicklung)
+## 0.6.2 – Modul 06, Teil C3, und Preis je kg (freigegeben 19.11.2026 mit Modul 06)
 
 - **Bezugsarten kombinieren** (V06-1): Gesamtteig, Stückzahlen, Chargengrößen (auch dieselbe mehrmals) und **Faktor × Grundrezept** (neu, VC06-e) in einem Auftrag, in Gramm zusammengezählt; „Mehl gesamt“ und Leitrohstoff nur allein
 - **Obergrenze und Aufteilung in Teige** (V06-2): Haken **„aktiv (Obergrenze)“** bei den Chargengrößen in der Rezeptbearbeitung (höchstens einer je Rezept; Kopie, Export und Import übernehmen ihn, Spalte „Obergrenze“ im Blatt Chargengrößen). Liegt der Bedarf darüber, wird in mehrere Teige geteilt: „voll auffüllen“ oder „gleichmäßig“, Anzahl Teige nur erhöhbar. Obergrenze nur für den Auftrag eingebbar (mit aktiver Chargengröße nur kleiner). Bei „Mehl gesamt“ und Leitrohstoff Rückfrage „Nach Obergrenze teilen?“. Bei Unterrezepten Auswahl „je Teig“ oder „einmal für alle“
@@ -142,13 +142,13 @@
 - **Preis je kg am Rohstoff** (Modul 03, VC03-a): Feld „Preis je kg (€ netto)“ auf der Rohstoffseite und Spalte „€/kg“, „Preis geändert am“ automatisch, ohne PIN lesbar; mehr als 2 Nachkommastellen werden mit Hinweis gerundet. CSV-Export mit zwei neuen Spalten am Ende, CSV-Import liest die Preisspalte (leere Zelle löscht, fehlende Spalte lässt den Preis stehen)
 - Datenbank-Migration `0006_order_doughs.sql`: `recipe_batch_size.is_limit`, Bezugsarten `factor`/`combined`, Obergrenze und Teilungsart am Auftrag, Tabellen `order_batch_size` und `order_dough`, `parent_dough_index`, Preisspalten am Rohstoff. Die Tabelle `production_order` wird dabei neu aufgebaut (SQLite kann CHECK-Regeln nicht ändern); dafür kennt die Migration den Schalter `-- migration: foreign_keys=off` in der ersten Zeile
 
-## 0.6.1 – Modul 06, Teil C2 (in Entwicklung)
+## 0.6.1 – Modul 06, Teil C2 (freigegeben 19.11.2026 mit Modul 06)
 
 - **Anteil und Bäckerprozent in der Rezeptverwaltung:** neue Spalten „Anteil %“ und „Bäcker %“ in den Zutaten und in alten Versionen, dazu „Mehl gesamt (mit Unterrezepten)“; die Lese-Schnittstelle liefert zusätzlich `sums.flour_total_g` und je Zeile `share_tenths`/`baker_tenths` (vorhandene Felder unverändert)
 - **Ansicht „Zusammenfassung“** auf der Prüfseite „Berechnung“: jeder Rohstoff einmal über alle Unterrezepte, Anteil, Bäckerprozent, Mehlmischung; die Schnittstelle `POST /api/v1/calculation` liefert dafür `summary` und `flour_mix`
 - **Sitzungsprüfung** beim Öffnen und beim Reiterwechsel der Seiten Rohstoffe, Rezepte und Berechnung: abgelaufene Sitzung → gleich PIN-Eingabe, danach weiter zur gewählten Seite; neue Schnittstelle `GET /api/v1/admin/session` (verlängert die Sitzung nicht)
 
-## 0.6.0 – Modul 06, Teil C1 (in Entwicklung)
+## 0.6.0 – Modul 06, Teil C1 (freigegeben 19.11.2026 mit Modul 06)
 
 - **Rezeptberechnung** als eigenes Paket `app/calculation/` (Rechenkern ohne Datenbank, exakte Brüche, Rundung nur einmal je Zeile)
 - Bezugsgrößen Gesamtteig, Stückzahlen, Chargengröße, Mehl gesamt (inklusive Unterrezepten) und Leitrohstoff („gesamt“ oder je Zeile, Eingabe auch in kg oder Liter)
