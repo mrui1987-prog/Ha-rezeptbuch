@@ -2,7 +2,7 @@
 
 Liest bis zu zwei KERN-Waagen (IFB 30K-3 mit Anzeigegerät KFB-TM) über je einen Waveshare-Konverter und meldet **Gewicht in ganzen Gramm, Stabilität und Status** per MQTT an das HA-Rezeptbuch. Das Add-on kennt keine Rezepte; es läuft auch allein (Simulator).
 
-**Stand 0.7.6 (Modul 07, Teil C2 mit Korrekturen):** Lesen, Stabilität, Status, Meldungen und Befehle Tara/Nullstellen (Nullstellen nur bei leerer Waage). Im Rezeptbuch sichtbar wird der Zustand erst mit Modul 08.
+**Stand 0.7.6 (Modul 07, freigegeben am 19.11.2026):** Lesen, Stabilität, Status, Meldungen und Befehle Tara/Nullstellen (Nullstellen nur bei leerer Waage). Im Rezeptbuch sichtbar wird der Zustand erst mit Modul 08.
 
 ## Aufbau
 

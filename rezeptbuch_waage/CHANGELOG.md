@@ -1,37 +1,37 @@
 # Änderungen – HA-Rezeptbuch Waage
 
-## 0.7.6 – Korrektur Nullstellen (Z07-2)
+## 0.7.6 – Korrektur Nullstellen (Z07-2) – freigegeben am 19.11.2026
 
 - **`zero` auch bei `-----`:** wird ohne Gewichtsgrenze angenommen (wie im Konzept; leere Waage im Minus lässt sich wieder per Befehl nullstellen)
 - **`zero` auch bei Tara an der Waage:** erlaubt, wenn der Nettowert höchstens ±`zero_limit_g` (Standard 50 g) zeigt
 - Meldung nennt jetzt „brutto“ bzw. „netto“; bei `error` bleibt `zero` verworfen
 
-## 0.7.5 – Korrektur aus der Praxisprüfung C2
+## 0.7.5 – Korrektur aus der Praxisprüfung C2 – freigegeben am 19.11.2026
 
 - **Nullstellen nur bei leerer Waage (Z07-1):** `zero` wird nur angenommen, wenn die Waage ein gültiges Gewicht **brutto** zeigt und höchstens **±50 g** (neues Feld „Nullstellen nur bis ±g“ je Waage, 0–1000). Sonst „Befehl Nullstellen verworfen – …“. Grund: Die KFB-TM stellt bis knapp 10 kg auf 0 und meldet danach brutto 0 g, obwohl Last aufliegt. Die Bedingung wird beim Senden noch einmal geprüft. Die Null-Taste an der Waage selbst ist davon nicht betroffen.
 - **Protokoll in Ortszeit (Befund O1):** 0.7.3 wirkte nicht, weil das Programm unter s6 ohne `TZ` startet. `TZ` wird jetzt wie das Supervisor-Token aus der s6-Umgebungsdatei gelesen, sonst Europe/Berlin. Startzeile „Protokoll in Ortszeit …“. `ts` in den Meldungen bleibt UTC.
 - Neues Feld ist optional: Beim Update bleibt die bisherige Konfiguration gültig (Standard 50 g).
 
-## 0.7.4 – Modul 07, Teil C2 (in Entwicklung)
+## 0.7.4 – Modul 07, Teil C2 – freigegeben am 19.11.2026
 
 - **Befehle Tara und Nullstellen:** `{"v":2,"cmd":"tare"|"zero"}` auf `rezeptbuch/v1/station/<nr>/scale/cmd` geht als `T`/`Z` + CR LF an die Waage – per TCP über die offene Verbindung, beim MQTT-Weg auf das Befehls-Topic des Waveshare, beim Simulator im Simulator
 - **Warteschlange je Waage:** mindestens 1 s zwischen zwei Befehlen, höchstens einer je Art wartet, doppelte werden zusammengefasst; bei `offline` verworfen; ungültige Befehle mit Protokolleintrag verworfen
 - **Werkzeug `tools/waagen_simulator`:** Waveshare-Ersatz per TCP (Port 8899) mit simulierter KERN-Waage, nimmt `T`/`Z` an; zum Prüfen des TCP-Wegs ohne Hardware
 
-## 0.7.3 – Korrektur aus der Praxisprüfung C1
+## 0.7.3 – Korrektur aus der Praxisprüfung C1 – freigegeben am 19.11.2026
 
 - **Protokoll:** Zeitstempel in Ortszeit (Europe/Berlin) statt UTC
 
-## 0.7.2 – Korrektur aus der Praxisprüfung C1
+## 0.7.2 – Korrektur aus der Praxisprüfung C1 – freigegeben am 19.11.2026
 
 - **Telegramm:** Zeilen mit einem Komma nach dem Modus (`ST,G ,   0.000kg`) werden gelesen; sie galten bisher als unlesbar
 
-## 0.7.1 – Korrektur aus der Praxisprüfung C1
+## 0.7.1 – Korrektur aus der Praxisprüfung C1 – freigegeben am 19.11.2026
 
 - **MQTT-Zugangsdaten:** Das Add-on findet das Supervisor-Token jetzt auch in der s6-Umgebungsdatei (`/run/s6/container_environment`); in 0.7.0 meldete es bei `init: false` „SUPERVISOR_TOKEN fehlt“
 - **Hinweis beim Update von 0.1.0:** Die alte Konfiguration (`stations`) passt nicht mehr; im Reiter Konfiguration über ⋮ „Auf Standardwerte zurücksetzen“ wählen
 
-## 0.7.0 – Modul 07, Teil C1 (in Entwicklung)
+## 0.7.0 – Modul 07, Teil C1 – freigegeben am 19.11.2026
 
 - **KERN-Treiber:** liest die Zeilen der KFB-TM im Sendemodus CONT (`ST`/`US`, brutto/netto, `-----`) und rechnet exakt in ganze Gramm um; Längenschutz gegen Datenmüll
 - **Anbindung je Waage wählbar:** TCP zum Waveshare (Standard, Port 8899, Neuaufbau 1/2/5/10 s) oder Roh-Topic der Waveshare-MQTT-Funktion (wie im Feldtest)

@@ -1,6 +1,6 @@
 # Modul 07 – Waagenkommunikation (Schritt B: Konzept)
 
-Status: **Konzept erstellt am 18.11.2026, 21:00, von Michael am 18.11.2026, 21:12 freigegeben.** Umgesetzt in 0.7.0–0.7.6 (Stand 19.11.2026: Freigabebericht erstellt, Freigabe Modul 07 offen). Konzeptfragen K07-1 bis K07-9 (Abschnitt 13) wie vorgeschlagen entschieden.
+Status: **Konzept erstellt am 18.11.2026, 21:00, von Michael am 18.11.2026, 21:12 freigegeben.** Umgesetzt in 0.7.0–0.7.6. **Modul 07 am 19.11.2026, 07:44 von Michael freigegeben (Version 0.7.6).** TCP-Weg mit echter Waage noch nicht praktisch geprüft (Modul 14). Konzeptfragen K07-1 bis K07-9 (Abschnitt 13) wie vorgeschlagen entschieden.
 Grundlage: Entscheidungen M07-1 bis M07-14 und Test CONT (18.11.2026, docs/modulstatus-07.md Abschnitt 6), docs/feldtest.md (12./13.11.2026), docs/architektur.md (Abschnitte 2, 5, 6), docs/bedienkonzept.md (R4–R6, Handbetrieb), Code-Stand `main` 29aa529 (Add-on `rezeptbuch_waage` 0.1.0, Gerüst aus Modul 01).
 Zielversion: Add-on `rezeptbuch_waage` **0.7.0** (Zweig `modul07`). Add-on 1 `rezeptbuch` bleibt unverändert.
 
@@ -276,3 +276,4 @@ Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (n
 | 19.11.2026 | **Teil C2 umgesetzt als 0.7.4** (Auftrag Michael): Befehle nach 6.3, Warteschlange in eigener Datei `app/commands.py` (statt in `station.py`), Werkzeug `tools/waagen_simulator` mit Option `--fest`; eigener GitHub-Testlauf für das Werkzeug. Keine Entscheidung geändert. |
 | 19.11.2026, 06:50 | **0.7.5:** `zero` nur bei leerer Waage (Z07-1), Protokoll in Ortszeit (Befund O1). |
 | 19.11.2026, 07:10 | **Z07-2 (Michael), 0.7.6:** `zero` auch bei `invalid` (ohne Grenze) und bei Tara an der Waage (netto ≤ ±50 g); Hinweise Claude zu nicht sendbaren Befehlen und TCP-Neuaufbau bestätigt. |
+| 19.11.2026, 07:44 | **Modul 07 von Michael freigegeben (0.7.6)**, Nachprüfung 0.7.6 (a)–(d) bestanden; Freigabebericht docs/freigabebericht-modul07.md (Projektwissen). |
