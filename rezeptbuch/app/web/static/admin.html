@@ -819,5 +819,57 @@ start();
     window.addEventListener('pageshow', repaint);
   })();
 </script>
+<script>
+  // Fenster auf Höhe der gedrückten Taste (Wunsch Michael 19.11.2026, 20:52; 0.10.8). In der HA-App auf dem iPhone ist
+  // die Seite so hoch wie ihr Inhalt; „mittig im Bildschirm“ landete deshalb in der Mitte der ganzen Seite.
+  // Overlays (grauer Hintergrund) und schwebende Rückfragen werden beim Öffnen an die zuletzt gedrückte Stelle gesetzt.
+  (function (overlays, floating) {
+    var last = null, lastAt = 0;
+    function remember(ev) {
+      var t = ev.target && ev.target.closest ? ev.target.closest("button, a, input, select, label, summary, td, th, li") : null;
+      if (!t) return;
+      var r = t.getBoundingClientRect();
+      last = { top: r.top + window.scrollY, h: r.height }; lastAt = Date.now();
+    }
+    document.addEventListener("pointerdown", remember, true);
+    document.addEventListener("click", remember, true);
+    function docHeight() { return Math.max(document.documentElement.scrollHeight, document.body.scrollHeight); }
+    function target(h, docH) {
+      var viewTop = window.scrollY, viewBottom = viewTop + window.innerHeight;
+      var y = (last && Date.now() - lastAt < 10000) ? last.top + last.h / 2 - h / 2 : viewTop + (window.innerHeight - h) / 2;
+      y = Math.min(y, viewBottom - h - 8, docH - h - 8);
+      return Math.max(y, viewTop + 8, 8);
+    }
+    function shown(el) { return getComputedStyle(el).display !== "none"; }
+    function placeOverlay(box) {
+      var dlg = box.firstElementChild; if (!dlg) return;
+      box.style.height = "0px";
+      var docH = docHeight();
+      box.style.position = "absolute"; box.style.left = "0"; box.style.right = "0"; box.style.top = "0"; box.style.bottom = "auto";
+      box.style.alignItems = "flex-start"; dlg.style.marginTop = "0px";
+      var pad = parseFloat(getComputedStyle(box).paddingTop) || 0;
+      var y = target(dlg.offsetHeight, docH);
+      dlg.style.marginTop = Math.max(0, Math.round(y - pad)) + "px";
+      box.style.height = Math.max(docH, y + dlg.offsetHeight + 16) + "px";
+    }
+    function placeFloating(el) {
+      el.style.position = "absolute"; el.style.left = "1rem"; el.style.right = "1rem"; el.style.top = "0px";
+      el.style.zIndex = "1000"; el.style.boxShadow = "0 6px 24px rgba(0,0,0,.35)"; el.style.margin = "0";
+      el.style.top = Math.round(target(el.offsetHeight, docHeight())) + "px";
+    }
+    function resetFloating(el) { ["position", "left", "right", "top", "zIndex", "boxShadow", "margin"].forEach(function (k) { el.style[k] = ""; }); }
+    function watch(id, place, reset) {
+      var el = document.getElementById(id); if (!el) return;
+      var open = false;
+      new MutationObserver(function () {
+        var now = shown(el);
+        if (now && !open) { open = true; place(el); }
+        else if (!now && open) { open = false; if (reset) reset(el); }
+      }).observe(el, { attributes: true, attributeFilter: ["style", "class"] });
+    }
+    overlays.forEach(function (id) { watch(id, placeOverlay); });
+    floating.forEach(function (id) { watch(id, placeFloating, resetFloating); });
+  })(["stock-box", "confirm-box"], []);
+</script>
 </body>
 </html>

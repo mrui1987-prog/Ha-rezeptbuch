@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.10.8 – Rückfragefenster auf Höhe der Taste (in Entwicklung)
+
+- **Bestätigungs- und Hinweisfenster öffnen sich auf Höhe der gedrückten Taste** statt in der Bildschirmmitte (Wunsch Michael 19.11.2026, 20:52): In der HA-App auf dem iPhone ist die Seite so hoch wie ihr Inhalt, „Mitte“ lag deshalb mitten auf der Seite und man musste dorthin scrollen. Liegt die Taste am Rand, rückt das Fenster so weit, dass es ganz sichtbar bleibt. Gilt für Rohstoffe (auch Fenster „Bestand“), Rezepte, Import/Export, Berechnung (Erklärung „ⓘ“) und die Prüfseite Ablauf (Rückfragen schweben über der Taste). Die Station bleibt unverändert
+
 ## 0.10.7 – Modul 03: Rohstoffbestand und Meldewert (in Entwicklung)
 
 - **Bestand und Meldewert je Rohstoff** (VC03-b, docs/bestand.md): Spalten und Filter „am/unter Meldewert“ in der Rohstoffliste, Taste „Bestand“ mit „Zugang buchen“, „Bestand setzen“ (Inventur, leer = Führung beenden) und Verlauf; Meldewert im Formular; CSV-Export und -Import mit „Bestand kg“ und „Meldewert kg“
