@@ -4,9 +4,10 @@ docs/ablauf.md Abschnitte 3 bis 8 (M09-6, M09-9 bis M09-12, K09-1, K09-2, K09-4,
 Die Wahrheit liegt in der Datenbank; jede ändernde Funktion nennt die Station und prüft Besitzer und
 Status. Den Messwert liefert der ``runner`` (Waage über den Mittelsmann, Tara-Bezug der Software).
 
-Stand Teil C1 (0.9.0): Quittieren beim Wiegen von Hand mit dem Waagenwert („manuell stabil/nicht
-stabil“). Auto-Quittung, Tara an der Waage, Lastprüfung beim „Weiter“ (K09-12) und Abschluss durch
-Abnehmen des Behälters folgen in Teil C2.
+Teil C1 (0.9.0): Quittieren von Hand mit dem Waagenwert („manuell stabil/nicht stabil“).
+Teil C2 (0.9.1): Auto-Quittung (``ack_auto``, aus ``automation``), Tara an der Waage über den Runner,
+Lastprüfung beim „Weiter“ (K09-12), Abschluss durch Abnehmen (``finish_auto``), Behälter wiegen und
+wechseln mit Teilmengen (``container``, K09-13/K09-14), Tara im Handbetrieb (``hand_tare``).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from ..errors import ConflictError, NotFoundError, ValidationError
 from . import orders as orders_mod
 from .common import require_confirm, station_busy, station_row, utc_now, whole
 from .runner import ProductionRunner
+from .settings import load_settings
 
 ITEM_COLUMNS = ("position", "recipe_item_id", "item_type", "raw_material_id", "raw_material_number",
                 "raw_material_name", "sub_order_id", "target_g", "tolerance_g", "unit_size_g", "unit_label",
@@ -54,7 +56,9 @@ def _item_rows(conn: sqlite3.Connection, batch_id: int) -> list[sqlite3.Row]:
         "SELECT bi.*, rm.display_name, so.status AS sub_status, so.parent_dough_index AS sub_dough_index, "
         "       sv.name AS sub_name, "
         "       EXISTS (SELECT 1 FROM weighing_event e WHERE e.batch_item_id = bi.id "
-        "               AND e.event_type = 'units_ack') AS units_acked "
+        "               AND e.event_type = 'units_ack') AS units_acked, "
+        "       (SELECT COALESCE(SUM(e.weight_g), 0) FROM weighing_event e WHERE e.batch_item_id = bi.id "
+        "               AND e.event_type = 'partial') AS partial_g "
         "FROM batch_item bi "
         "LEFT JOIN raw_material rm ON rm.id = bi.raw_material_id "
         "LEFT JOIN production_order so ON so.id = bi.sub_order_id "
@@ -98,6 +102,7 @@ def _item_dict(item) -> dict:
         "unit_label": item["unit_label"],
         "units_target": item["units_target"],
         "units_acked": bool(item["units_acked"]),
+        "partial_g": item["partial_g"],
         "rest_target_g": item["rest_target_g"],
         "actual_g": item["actual_g"],
         "ack_type": item["ack_type"],
@@ -137,7 +142,7 @@ def get_batch(conn: sqlite3.Connection, batch_id: int, runner: ProductionRunner 
         "items": items,
         "progress": {"done": sum(1 for i in items if i["done"]), "total": len(items)},
     }
-    if runner is not None and row["owner_station_id"] is not None and row["status"] == "running":
+    if runner is not None and row["owner_station_id"] is not None and row["status"] in ("running", "done"):
         data["scale"] = runner.reading(row["owner_station_id"]).to_dict()
     return data
 
@@ -314,6 +319,7 @@ def select_item(conn, batch_id: int, payload, runner=None) -> dict:
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
+    _refuse_flow(runner, station)
     item = _open_item(conn, batch_id, payload, None)
     with transaction(conn):
         conn.execute("UPDATE batch SET current_position = ? WHERE id = ? AND status = 'running'",
@@ -321,34 +327,60 @@ def select_item(conn, batch_id: int, payload, runner=None) -> dict:
     return get_batch(conn, batch_id, runner)
 
 
-def ack_weighed(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | None = None) -> dict:
-    """Wiegen von Hand quittieren (Taste): nur in der Toleranz und bei gültigem Waagenwert (R4, K09-2)."""
-    now = now or utc_now()
-    station = _station_of(payload)
+def _refuse_flow(runner, station: int) -> None:
+    if runner is not None and runner.flow(station) is not None:
+        raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
+
+
+def _refuse_busy(runner: ProductionRunner, station: int) -> None:
+    busy = runner.busy(station)
+    if busy == "taring":
+        raise ConflictError("Tara läuft – bitte kurz warten.", code="taring")
+    if busy == "container":
+        raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
+
+
+def _weigh_ack(conn, batch_id: int, station: int, payload, runner: ProductionRunner, *, auto: bool,
+               now: str) -> dict:
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
     item = _open_item(conn, batch_id, payload, row["current_position"])
     kind = item_kind(item)
     if kind != "weigh":
         raise ConflictError("Diese Zutat wird nicht gewogen.", code="not_weighable", kind=kind)
+    _refuse_busy(runner, station)
     reading = runner.reading(station)
     if not reading.usable:
         raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok", scale=reading.to_dict())
     if reading.reference_g is None:
         raise ConflictError("Tara fehlt – bitte Tara drücken.", code="tare_missing")
-    rest = reading.actual_g
+    rest = item["partial_g"] + reading.actual_g          # Teilmengen beim Behälterwechsel (K09-14)
     if abs(rest - item["rest_target_g"]) > item["tolerance_g"]:
         raise ConflictError(
             f"Außerhalb der Toleranz: {rest} g statt {item['rest_target_g']} g ± {item['tolerance_g']} g.",
             code="out_of_tolerance", actual_g=rest)
-    ack_type = "manual_stable" if reading.stable else "manual_unstable"
+    if auto:
+        ack_type = "auto_stable"
+    else:
+        ack_type = "manual_stable" if reading.stable else "manual_unstable"
     actual = rest + (item["units_target"] * item["unit_size_g"] if item["unit_size_g"] else 0)
+    note = f"mit Teilmengen {item['partial_g']} g" if item["partial_g"] else None
     with transaction(conn):
-        _event(conn, item["id"], "weighed", station, now, weight_g=rest, tare_g=reading.reference_g,
-               stable=reading.stable)
+        _event(conn, item["id"], "weighed", station, now, weight_g=rest, tare_g=runner.tare_total(station),
+               stable=reading.stable, note=note)
         _complete(conn, _batch_row(conn, batch_id), item, ack_type, actual, station, now)
-    runner.set_reference(station)               # nächster Nullpunkt (6.2)
+    runner.set_reference(station)               # nächster Nullpunkt: Tara an der Waage (6.2)
     return get_batch(conn, batch_id, runner)
+
+
+def ack_weighed(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | None = None) -> dict:
+    """Wiegen von Hand quittieren (Taste): nur in der Toleranz und bei gültigem Waagenwert (R4, K09-2)."""
+    return _weigh_ack(conn, batch_id, _station_of(payload), payload, runner, auto=False, now=now or utc_now())
+
+
+def ack_auto(conn, batch_id: int, station: int, runner: ProductionRunner, *, now: str | None = None) -> dict:
+    """Automatische Quittung (M09-4): aus ``automation``, wenn 2 s stabil in der Toleranz."""
+    return _weigh_ack(conn, batch_id, station, {}, runner, auto=True, now=now or utc_now())
 
 
 def ack_units(conn, batch_id: int, payload, runner=None, *, now: str | None = None) -> dict:
@@ -357,6 +389,7 @@ def ack_units(conn, batch_id: int, payload, runner=None, *, now: str | None = No
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
+    _refuse_flow(runner, station)
     item = _open_item(conn, batch_id, payload, row["current_position"])
     if item_kind(item) != "units":
         raise ConflictError("Für diese Zutat gibt es keine ganzen Einheiten zu quittieren.", code="no_units")
@@ -375,6 +408,7 @@ def ack_hand(conn, batch_id: int, payload, runner=None, *, now: str | None = Non
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
+    _refuse_flow(runner, station)
     item = _open_item(conn, batch_id, payload, row["current_position"])
     kind = item_kind(item)
     if kind not in ("hand_need", "hand_target"):
@@ -394,6 +428,7 @@ def skip_item(conn, batch_id: int, payload, runner=None, *, now: str | None = No
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
+    _refuse_flow(runner, station)
     item = _open_item(conn, batch_id, payload, row["current_position"])
     require_confirm(payload, f"Zeile {item['position']} wirklich übergehen?")
     with transaction(conn):
@@ -411,6 +446,7 @@ def check_sub(conn, batch_id: int, payload, runner=None, *, now: str | None = No
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
+    _refuse_flow(runner, station)
     item = _open_item(conn, batch_id, payload, row["current_position"])
     if item["item_type"] != "sub_recipe":
         raise ConflictError("Diese Zeile ist kein Unterrezept.", code="not_sub_recipe")
@@ -437,14 +473,17 @@ def check_sub(conn, batch_id: int, payload, runner=None, *, now: str | None = No
 
 
 def tare(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | None = None) -> dict:
-    """Tara von Hand: neuer Bezug der Software (Tara an der Waage ab Teil C2)."""
+    """Tara von Hand: neuer Bezug, dazu Tara an der Waage (6.2)."""
     now = now or utc_now()
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
+    if runner.flow(station) is not None:
+        raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
     reference = runner.set_reference(station)
     if reference is None:
         raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
+    reference = runner.tare_total(station)
     if row["current_position"] is not None:
         item = conn.execute("SELECT id FROM batch_item WHERE batch_id = ? AND position = ?",
                             (batch_id, row["current_position"])).fetchone()
@@ -464,21 +503,47 @@ def pause(conn, batch_id: int, payload, runner=None, *, reason: str = "manual", 
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
     owner = station if reason == "hand_scale" else row["fixed_station_id"]
+    load = None
+    if runner is not None and reason != "scale_offline":
+        if runner.flow(station) is not None:
+            raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
+        load = runner.gross(station)
     with transaction(conn):
         changed = conn.execute(
-            "UPDATE batch SET status = 'paused', pause_reason = ?, paused_at = ?, owner_station_id = ? "
-            "WHERE id = ? AND status = 'running' AND owner_station_id = ?",
-            (reason, now, owner, batch_id, station)).rowcount
+            "UPDATE batch SET status = 'paused', pause_reason = ?, paused_at = ?, owner_station_id = ?, "
+            "pause_load_g = ? WHERE id = ? AND status = 'running' AND owner_station_id = ?",
+            (reason, now, owner, load, batch_id, station)).rowcount
         if changed != 1:
             raise ConflictError("Der Teig wurde inzwischen geändert.", code="batch_changed")
     if runner is not None:
+        runner.remember_pause(batch_id, station, load)
         runner.clear(station)
     return get_batch(conn, batch_id, runner)
 
 
-def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None) -> dict:
+def _load_check(conn, row, station: int, payload, runner) -> tuple[int, int, int] | None:
+    """Lastprüfung beim „Weiter“ an derselben Station (K09-12): Gesamtlast jetzt gegen die beim Pausieren.
+    Gibt (vorher, jetzt, Abweichung) zurück, wenn die Abweichung bestätigt wurde; wirft sonst 409."""
+    memo = runner.pause_memo(row["id"]) if runner is not None else None
+    if memo is None or memo[0] != station:
+        return None                              # andere Waage oder Gesamtlast unbekannt: keine Prüfung
+    now_g = runner.gross(station)
+    if now_g is None:
+        return None
+    before = memo[1]
+    deviation = now_g - before
+    if abs(deviation) <= load_settings(conn)["resume_check_g"]:
+        return None
+    if payload.get("confirm_deviation") is not True:
+        raise ConflictError(f"Gewicht weicht um {deviation:+d} g ab – richtiger Behälter?",
+                            code="resume_deviation", deviation_g=deviation, before_g=before, now_g=now_g)
+    return before, now_g, deviation
+
+
+def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None, *, now: str | None = None) -> dict:
     """Weiter an dieser Station – atomar: die zweite Station bekommt „bereits übernommen“ (M09-11).
-    Danach neue Tara an dieser Station (K09-4)."""
+    Lastprüfung an derselben Station (K09-12), danach neue Tara an dieser Station (K09-4)."""
+    now = now or utc_now()
     station = station_row(conn, _station_of(payload))["id"]
     row = _batch_row(conn, batch_id)
     if row["status"] == "running":
@@ -493,6 +558,7 @@ def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None)
     busy = station_busy(conn, station)
     if busy is not None and busy["id"] != batch_id:
         raise ConflictError(f"An Waage {station} ist noch Teig {busy['batch_no']} offen.", code="station_busy")
+    checked = _load_check(conn, row, station, payload, runner)
     try:
         with transaction(conn):
             changed = conn.execute(
@@ -502,9 +568,15 @@ def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None)
             if changed != 1:
                 raise ConflictError("Der Teig wurde bereits an einer anderen Waage übernommen.",
                                     code="already_resumed")
+            if checked is not None and row["current_position"] is not None:
+                item = conn.execute("SELECT id FROM batch_item WHERE batch_id = ? AND position = ?",
+                                    (batch_id, row["current_position"])).fetchone()
+                _event(conn, item["id"], "resume_deviation", station, now, weight_g=checked[2],
+                       note=f"Pause {checked[0]} g, jetzt {checked[1]} g – bestätigt")
     except sqlite3.IntegrityError as exc:
         raise ConflictError(f"An Waage {station} läuft bereits ein Teig.", code="station_busy") from exc
     if runner is not None:
+        runner.forget_pause(batch_id)
         runner.set_reference(station)
     return get_batch(conn, batch_id, runner)
 
@@ -542,7 +614,12 @@ def cancel(conn, batch_id: int, payload, runner=None, *, now: str | None = None)
     return get_batch(conn, batch_id, runner)
 
 
-def finish(conn, batch_id: int, payload, runner=None, *, now: str | None = None) -> dict:
+def finish_auto(conn, batch_id: int, station: int, runner=None, *, now: str | None = None) -> dict:
+    """Behälter abgenommen (K09-10): Station frei. ``automation`` hat vorher ``zero`` gesendet."""
+    return finish(conn, batch_id, {"station": station}, runner, now=now, auto=True)
+
+
+def finish(conn, batch_id: int, payload, runner=None, *, now: str | None = None, auto: bool = False) -> dict:
     """Abschließen von Hand: Station frei (K09-10). In Teil C2 schließt zusätzlich das Abnehmen ab."""
     now = now or utc_now()
     station = _station_of(payload)
@@ -557,4 +634,113 @@ def finish(conn, batch_id: int, payload, runner=None, *, now: str | None = None)
         conn.execute("UPDATE batch SET finish_ack_at = ? WHERE id = ?", (now, batch_id))
     if runner is not None:
         runner.clear(station)
+        if not auto:
+            runner.set_reference(station)          # Waage frei für den Handbetrieb
     return get_batch(conn, batch_id, runner)
+
+
+# ---------------------------------------------------------------------------
+# Behälter wiegen und wechseln (Abschnitte 6.2a und 6.2b, K09-13, K09-14)
+# ---------------------------------------------------------------------------
+
+def _current_item_id(conn, row) -> int | None:
+    if row["current_position"] is None:
+        return None
+    item = conn.execute("SELECT id FROM batch_item WHERE batch_id = ? AND position = ?",
+                        (row["id"], row["current_position"])).fetchone()
+    return item["id"] if item else None
+
+
+def _store_partial(conn, row, station: int, runner: ProductionRunner, now: str) -> int:
+    """Bisher gewogene Menge der aktuellen Zutat als Teilmenge speichern (nur stabil)."""
+    if row["current_position"] is None:
+        return 0
+    items = {i["position"]: i for i in _item_rows(conn, row["id"])}
+    item = items.get(row["current_position"])
+    if item is None or item["ack_type"] is not None or item_kind(item) != "weigh":
+        return 0
+    reading = runner.reading(station)
+    if reading.taring:
+        raise ConflictError("Tara läuft – bitte kurz warten.", code="taring")
+    actual = reading.actual_g
+    if actual is None or abs(actual) <= runner.settings["auto_ack_span_g"]:
+        return 0
+    if not reading.stable:
+        raise ConflictError("Waage ist unruhig – bitte kurz warten.", code="scale_unstable")
+    with transaction(conn):
+        _event(conn, item["id"], "partial", station, now, weight_g=actual, tare_g=runner.tare_total(station),
+               stable=True, note="Behälterwechsel")
+    return actual
+
+
+def save_container(conn, batch_id: int, station: int, runner: ProductionRunner, weight_g: int, note: str, *,
+                   now: str | None = None) -> None:
+    """Behältergewicht speichern und protokollieren; beendet den Behälter-Schritt."""
+    now = now or utc_now()
+    row = _batch_row(conn, batch_id)
+    item_id = _current_item_id(conn, row)
+    with transaction(conn):
+        conn.execute("UPDATE batch SET container_g = ? WHERE id = ? AND status = 'running'", (weight_g, batch_id))
+        if item_id is not None:
+            _event(conn, item_id, "container", station, now, weight_g=weight_g, note=note)
+    runner.end_flow(station)
+
+
+def container(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | None = None) -> dict:
+    """``action``: ``weigh`` (Behälter wiegen), ``change`` (Behälter wechseln), ``none`` (ohne Behälter),
+    ``set`` (Gewicht von Hand), ``confirm`` (anderer Behälter bestätigt), ``cancel`` (Schritt abbrechen)."""
+    now = now or utc_now()
+    station = _station_of(payload)
+    row = _batch_row(conn, batch_id)
+    _require_running_at(row, station)
+    action = payload.get("action")
+    flow = runner.flow(station)
+    if action in ("weigh", "change"):
+        if flow is not None:
+            raise ConflictError("Der Behälter-Schritt läuft bereits.", code="container_busy")
+        partial = _store_partial(conn, row, station, runner, now)
+        runner.start_flow(station, action, batch_id)
+        data = get_batch(conn, batch_id, runner)
+        data["partial_saved_g"] = partial
+        return data
+    if action == "set":
+        weight = whole(payload.get("container_g"), "container_g", "das Behältergewicht", minimum=0)
+        item_id = _current_item_id(conn, row)
+        with transaction(conn):
+            conn.execute("UPDATE batch SET container_g = ? WHERE id = ?", (weight, batch_id))
+            if item_id is not None:
+                _event(conn, item_id, "container", station, now, weight_g=weight, note="von Hand")
+        return get_batch(conn, batch_id, runner)
+    if flow is None or flow.batch_id != batch_id:
+        raise ConflictError("Es läuft kein Behälter-Schritt.", code="no_container_step")
+    if action == "none":
+        if flow.kind != "weigh" or flow.step != "place":
+            raise ConflictError("„Ohne Behälter“ geht nur beim Aufstellen.", code="container_step")
+        save_container(conn, batch_id, station, runner, 0, "ohne Behälter", now=now)
+        runner.weigh_state(station).software_only(runner.sample(station))
+        return get_batch(conn, batch_id, runner)
+    if action == "confirm":
+        if flow.step != "confirm" or flow.measured_g is None:
+            raise ConflictError("Nichts zu bestätigen.", code="container_step")
+        save_container(conn, batch_id, station, runner, flow.measured_g, "gewogen, Abweichung bestätigt", now=now)
+        runner.set_reference(station)
+        return get_batch(conn, batch_id, runner)
+    if action == "cancel":
+        runner.end_flow(station)
+        runner.set_reference(station)
+        return get_batch(conn, batch_id, runner)
+    raise ValidationError("Unbekannte Aktion.", field="action", code="action_invalid")
+
+
+# ---------------------------------------------------------------------------
+# Handbetrieb (Abschnitt 9, M09-13)
+# ---------------------------------------------------------------------------
+
+def hand_tare(conn, station_no, runner: ProductionRunner) -> dict:
+    """Tara im Handbetrieb: nur ohne laufenden Teig an der Station (Handwaage-Pause ist erlaubt)."""
+    station = station_row(conn, station_no)["id"]
+    if conn.execute("SELECT 1 FROM batch WHERE owner_station_id = ? AND status = 'running'", (station,)).fetchone():
+        raise ConflictError("An dieser Station läuft ein Teig – Tara dort über den Teig.", code="batch_running")
+    if runner.set_reference(station) is None:
+        raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
+    return runner.reading(station).to_dict()

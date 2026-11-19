@@ -17,9 +17,9 @@ H = "X-Rezeptbuch-Session"
 TOPIC = "rezeptbuch/v1/station/{}/scale/state"
 
 
-def scale(weight, station=1, stable=True, status="ok"):
+def scale(weight, station=1, stable=True, status="ok", net=False):
     return json.dumps({"v": 2, "station": station, "status": status, "weight_g": weight if status == "ok" else None,
-                       "stable": stable, "scale_stable": stable, "net": False, "capacity_g": 30000,
+                       "stable": stable, "scale_stable": stable, "net": net, "capacity_g": 30000,
                        "resolution_g": 1, "ts": "2026-11-20T08:00:00.000+00:00"}).encode()
 
 
@@ -91,16 +91,22 @@ def test_whole_flow_over_rest(client, recipe):
     batch = r.json()
     bid = batch["id"]
     assert batch["status"] == "running" and batch["scale"]["actual_g"] == 0
-    put(client, 1700)
+    # Die Waage führt die Tara aus und zeigt netto (Nachbildung über den Zustand)
+    r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
+    assert r.status_code == 409 and r.json()["code"] == "taring"
+    put(client, 0, net=True)
+    put(client, 1000, net=True)
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.status_code == 200, r.text
     assert r.json()["items"][0]["actual_g"] == 1000
-    put(client, 2500)
+    put(client, 0, net=True)
+    put(client, 800, net=True)
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.status_code == 409 and r.json()["code"] == "out_of_tolerance"
-    put(client, 2300)
+    put(client, 600, net=True)
     client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
-    put(client, 2320)
+    put(client, 0, net=True)
+    put(client, 20, net=True)
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.json()["status"] == "done"
     r = client.post(f"/api/v1/batches/{bid}/finish", json={"station": 1})
@@ -108,6 +114,7 @@ def test_whole_flow_over_rest(client, recipe):
     assert client.get(f"/api/v1/orders/{order['id']}").json()["status"] == "done"
     events = client.portal.call(_drain, queue)
     batch_events = [e["event"] for e in events if e["type"] == "batch"]
+    assert any(e["type"] == "weigh" for e in events)
     assert batch_events == ["started", "acked", "acked", "finished_dough", "finished"]
     assert any(e["type"] == "orders" for e in events)
 
@@ -167,3 +174,24 @@ def test_page(client):
     r = client.get("/admin/ablauf")
     assert r.status_code == 200 and "Ablauf" in r.text
     assert r.headers["cache-control"] == "no-store"
+
+
+def test_container_hand_tare_and_weigh_view(client, recipe):
+    order = client.post("/api/v1/orders", json={"recipe_id": recipe, "basis_type": "total", "value": 1620}).json()
+    put(client, 0)
+    bid = client.post(f"/api/v1/orders/{order['id']}/start", json={"station": 1}).json()["id"]
+    r = client.post(f"/api/v1/batches/{bid}/container", json={"station": 1, "action": "set", "container_g": 750})
+    assert r.status_code == 200 and r.json()["container_g"] == 750
+    r = client.post(f"/api/v1/batches/{bid}/container", json={"station": 1, "action": "weigh"})
+    assert r.status_code == 200 and r.json()["scale"]["container_step"] in ("empty", "place")
+    r = client.post(f"/api/v1/batches/{bid}/container", json={"station": 1, "action": "cancel"})
+    assert r.status_code == 200 and r.json()["scale"]["container_step"] is None
+    r = client.post(f"/api/v1/batches/{bid}/container", json={"station": 1, "action": "kaffee"})
+    assert r.status_code == 409
+    assert client.post("/api/v1/stations/1/hand/tare").status_code == 409
+    client.post(f"/api/v1/batches/{bid}/cancel", json={"station": 1, "confirm": True})
+    put(client, 400)
+    r = client.post("/api/v1/stations/1/hand/tare")
+    assert r.status_code == 200, r.text
+    view = client.get("/api/v1/stations/1/weigh").json()
+    assert view["reference_g"] == 400 and view["status"] == "ok"

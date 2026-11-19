@@ -188,6 +188,10 @@ class ScaleHub:
     def subscribe(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_SIZE)
         self._subs.append(queue)
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> None:
@@ -195,7 +199,19 @@ class ScaleHub:
             self._subs.remove(queue)
 
     def broadcast(self, event: dict) -> None:
-        """Weitere Nachrichten an alle Abonnenten des Live-Kanals (Modul 09: Typen ``batch``, ``orders``)."""
+        """Weitere Nachrichten an alle Abonnenten des Live-Kanals (Modul 09: ``batch``, ``orders``, ``weigh``).
+
+        Darf auch aus einem Thread (Anfrage) kommen: dann über die Ereignisschleife der Abonnenten.
+        """
+        loop = getattr(self, "_loop", None)
+        if loop is not None and not loop.is_closed():
+            try:
+                running = asyncio.get_running_loop()
+            except RuntimeError:
+                running = None
+            if running is not loop:
+                loop.call_soon_threadsafe(self._emit, dict(event))
+                return
         self._emit(dict(event))
 
     # ------------------------------------------------------------ Befehle

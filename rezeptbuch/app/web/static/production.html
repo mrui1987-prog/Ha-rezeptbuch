@@ -37,6 +37,7 @@
   .weight { font-size: 2.4rem; font-weight: bold; font-variant-numeric: tabular-nums; }
   .row { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; align-items: center; }
   .ok { color: #2e7d32; } .bad { color: #c62828; } .warn { color: #9a6b00; }
+  .tag.bad { background: #fdecea; }
   .small { font-size: .9rem; color: #555; }
   .tag { display: inline-block; padding: .05rem .4rem; border-radius: 3px; background: #eee; font-size: .85rem; }
 </style>
@@ -57,8 +58,8 @@
   <div class="row">
     <label>Station <select id="station"><option value="1">Waage 1</option><option value="2">Waage 2</option></select></label>
     <label>Datum <input type="date" id="day"></label>
-    <span class="small">Prüfseite für den Wiegeablauf (Modul 09). Quittieren nimmt den aktuellen Wert der Waage;
-      automatische Quittung und Tara an der Waage folgen mit Teil C2.</span>
+    <span class="small">Prüfseite für den Wiegeablauf (Modul 09). Die Waage wird tariert; quittiert wird automatisch
+      (stabil in der Toleranz) oder mit „Quittieren“.</span>
   </div>
   <div id="msg" class="msg hidden" role="alert"></div>
   <div id="confirm" class="msg info hidden"><span id="confirm-text"></span><br>
@@ -191,8 +192,9 @@ async function act(path, body, okText) {
     await refresh();
     return data;
   } catch (err) {
-    if (err.status === 409 && err.data.code === "confirm_required") {
-      pending = { path: path, body: Object.assign({}, body, { confirm: true }), okText: okText };
+    if (err.status === 409 && (err.data.code === "confirm_required" || err.data.code === "resume_deviation")) {
+      const extra = err.data.code === "resume_deviation" ? { confirm_deviation: true } : { confirm: true };
+      pending = { path: path, body: Object.assign({}, body, extra), okText: okText };
       $("confirm-text").textContent = err.message;
       $("confirm").classList.remove("hidden");
       return null;
@@ -225,12 +227,40 @@ const STATUS_TEXT = { running: "läuft", paused: "pausiert", done: "fertig", can
 const PAUSE_TEXT = { manual: "Pause", scale_offline: "Waage getrennt", restart: "Neustart", hand_scale: "Handwaage" };
 
 let current = null;     // angezeigte Charge
+const live = {};        // letzte Nachricht „weigh“ je Station
+
+function connectLive() {
+  let ws;
+  try {
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + API + "live");
+  } catch (e) { setTimeout(connectLive, 3000); return; }
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.type === "weigh") live[m.station] = m;
+    if (m.type === "batch" || m.type === "orders") refresh();
+  };
+  ws.onclose = () => setTimeout(connectLive, 3000);
+}
 
 function renderBatch(b) {
   const box = $("batch");
   box.textContent = "";
   current = b;
-  if (!b) { box.appendChild(el("span", "Kein Teig an dieser Station.", "small")); return; }
+  if (!b) {
+    box.appendChild(el("span", "Kein Teig an dieser Station – Handbetrieb.", "small"));
+    const w = live[station()];
+    if (w) {
+      const sc = el("div", "", "row");
+      sc.appendChild(el("span", w.actual_g === null || w.actual_g === undefined ? "–" : g(w.actual_g), "weight"));
+      sc.appendChild(el("span", "Gesamtlast " + g(w.gross_g) + (w.taring ? " · Tara läuft" : ""), "small"));
+      box.appendChild(sc);
+    }
+    box.appendChild(btn("Tara (Handbetrieb)", async () => {
+      try { await api("stations/" + station() + "/hand/tare", { method: "POST" }); showMsg("Tara gesetzt.", "info"); await refresh(); }
+      catch (err) { showMsg(err.message); }
+    }));
+    return;
+  }
   const head = el("div", "", "row");
   head.appendChild(el("b", (b.recipe ? b.recipe.name + " (V" + b.recipe.version_no + ")" : "?") +
                             " – Teig " + b.dough_index + "/" + b.dough_count + " – Charge " + b.batch_no));
@@ -243,12 +273,21 @@ function renderBatch(b) {
   }
   if (b.scale) {
     const s = b.scale;
+    const w = live[station()] || {};
+    const cur = b.items.find((i) => i.position === b.current_position);
+    let shown = s.actual_g;
+    if (shown !== null && cur && cur.partial_g) shown += cur.partial_g;
     const sc = el("div", "", "row");
-    sc.appendChild(el("span", s.actual_g === null ? "–" : g(s.actual_g), "weight"));
-    sc.appendChild(el("span", "Anzeige " + g(s.weight_g) + " · Bezug " + g(s.reference_g) + " · " +
-      (s.status === "ok" ? (s.stable ? "stabil" : "unruhig") : "Waage: " + s.status),
+    sc.appendChild(el("span", shown === null ? "–" : g(shown), "weight " + (w.zone === "ok" ? "ok" : (w.zone ? "warn" : ""))));
+    sc.appendChild(el("span", "Anzeige " + g(s.weight_g) + " · Bezug " + g(s.reference_g) + " · Gesamtlast " + g(s.gross_g) + " · " +
+      (s.status === "ok" ? (s.stable ? "stabil" : "unruhig") : "Waage: " + s.status) + (s.taring ? " · Tara läuft" : ""),
       s.status === "ok" ? (s.stable ? "ok" : "warn") : "bad"));
+    if (w.auto_ack_progress) sc.appendChild(el("span", "Auto-Quittung " + w.auto_ack_progress + " %", "tag"));
+    if (w.capacity_warning) sc.appendChild(el("span", "Höchstlast bald erreicht", "tag bad"));
+    if (cur && cur.partial_g) sc.appendChild(el("span", "Teilmengen " + g(cur.partial_g), "tag"));
+    sc.appendChild(el("span", "Behälter " + (b.container_g === null ? "unbekannt" : g(b.container_g)), "small"));
     box.appendChild(sc);
+    if (s.hint) box.appendChild(el("div", s.hint, "msg info"));
   }
   const t = el("table");
   const hr = el("tr");
@@ -286,7 +325,21 @@ function renderBatch(b) {
   box.appendChild(t);
   const bar = el("div");
   const s0 = { station: station() };
-  if (b.status === "running") {
+  if (b.status === "running" && b.scale && b.scale.container_step) {
+    const c = (action) => Object.assign({ action: action }, s0);
+    if (b.scale.container_step === "place") bar.appendChild(btn("Ohne Behälter", () => act("batches/" + b.id + "/container", c("none"))));
+    if (b.scale.container_step === "confirm") bar.appendChild(btn("Anderer Behälter – bestätigen", () => act("batches/" + b.id + "/container", c("confirm"))));
+    bar.appendChild(btn("Behälter-Schritt abbrechen", () => act("batches/" + b.id + "/container", c("cancel"))));
+  } else if (b.status === "running") {
+    bar.appendChild(btn("Behälter wiegen", () => act("batches/" + b.id + "/container", Object.assign({ action: "weigh" }, s0))));
+    bar.appendChild(btn("Behälter wechseln", () => act("batches/" + b.id + "/container", Object.assign({ action: "change" }, s0))));
+    bar.appendChild(btn("Behältergewicht ändern", () => {
+      const v = $("container-input").value.trim();
+      act("batches/" + b.id + "/container", Object.assign({ action: "set", container_g: v }, s0), "Behältergewicht geändert.");
+    }));
+    const inp = el("input"); inp.id = "container-input"; inp.size = 6; inp.placeholder = "g"; inp.inputMode = "numeric";
+    bar.appendChild(inp);
+    bar.appendChild(el("br"));
     bar.appendChild(btn("Tara", () => act("batches/" + b.id + "/tare", s0, "Tara gesetzt.")));
     bar.appendChild(btn("Pause", () => act("batches/" + b.id + "/pause", s0, "Pausiert.")));
     bar.appendChild(btn("Handwaage", () => act("batches/" + b.id + "/hand-scale", s0, "Pausiert – Handwaage, an dieser Station reserviert.")));
@@ -296,6 +349,7 @@ function renderBatch(b) {
     bar.appendChild(btn("Weiter", () => act("batches/" + b.id + "/resume", s0, "Weiter.")));
   }
   if (b.status === "done" && !b.finish_ack_at) {
+    box.appendChild(el("div", "Fertig – Behälter abnehmen schließt automatisch ab.", "msg info"));
     bar.appendChild(btn("Abschließen (Station frei)", () => act("batches/" + b.id + "/finish", s0, "Teig abgeschlossen.")));
   }
   box.appendChild(bar);
@@ -450,6 +504,8 @@ $("settings-save").addEventListener("click", async () => {
 let busy = false;
 async function refresh() {
   if (busy) return;
+  // Während der Eingabe des Behältergewichts nicht neu zeichnen
+  if (document.activeElement && document.activeElement.id === "container-input") return;
   busy = true;
   try {
     const list = (await api("batches")).batches;
@@ -482,9 +538,9 @@ async function loadInfo() {
   await loadRecipes();
   await loadSettings();
   await refresh();
-  // Waagenwert und Stand jede Sekunde (Live-Nachrichten „weigh“ folgen mit Teil C2)
-  setInterval(() => { if (current && current.status === "running") refresh(); }, 1000);
-  setInterval(refresh, 10000);
+  connectLive();
+  // Waagenwert und Stand jede Sekunde (Live-Nachrichten „weigh“ ergänzen die Anzeige)
+  setInterval(refresh, 1000);
 })();
 
 // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen

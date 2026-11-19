@@ -2,7 +2,7 @@
 
 Ohne PIN (Stationsbedienung, K09-6), außer dem Ändern der Einstellungen. Jede ändernde Anfrage
 nennt die Station. Nach jeder Änderung geht eine Nachricht über den Live-Kanal ``/api/v1/live``
-(Typen ``batch`` und ``orders``).
+(Typen ``batch`` und ``orders``; ``weigh`` sendet der Runner laufend).
 """
 
 from __future__ import annotations
@@ -106,6 +106,20 @@ _action("hand-scale", batches.pause, "paused", reason="hand_scale")
 _action("resume", batches.resume, "resumed")
 _action("cancel", batches.cancel, "cancelled")
 _action("finish", batches.finish, "finished")
+_action("container", batches.container, "container")
+
+
+# -- Station: Waage im Ablauf und Handbetrieb (Abschnitt 9) ------------------------------------
+
+@router.get("/stations/{station}/weigh")
+def station_weigh(station: int, request: Request):
+    """Stand der Waage im Ablauf: Anzeige, Bezug, Ist, Gesamtlast, Tara läuft, Behälter-Schritt."""
+    return get_runner(request).reading(station).to_dict()
+
+
+@router.post("/stations/{station}/hand/tare")
+def hand_tare(station: int, request: Request, db: sqlite3.Connection = Depends(get_db)):
+    return batches.hand_tare(db, station, get_runner(request))
 
 
 # -- Einstellungen ---------------------------------------------------------------------------

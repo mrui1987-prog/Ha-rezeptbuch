@@ -1,9 +1,9 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.9.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.9.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
 Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06),
-Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
+Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teile C1 und C2). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -62,9 +62,11 @@ async def lifespan(app: FastAPI):
     # Waagen-Anbindung (Modul 08): läuft auch ohne MQTT oder ohne Datenbank weiter (M08-10)
     app.state.scales = ScaleService(db_path=app.state.db_path)
     await app.state.scales.start()
-    # Wiegeablauf (Modul 09): Waage über den Mittelsmann
+    # Wiegeablauf (Modul 09): Waage über den Mittelsmann, Hintergrund für Auto-Quittung & Co. (Teil C2)
     app.state.production = ProductionRunner(app.state.scales.hub)
+    await app.state.production.start(app.state.db_path)
     yield
+    await app.state.production.stop()
     await app.state.scales.stop()
     if app.state.db is not None:
         app.state.db.close()

@@ -293,3 +293,16 @@ Hinweise Claude zur Umsetzung (19.11.2026), im Rahmen des freigegebenen Konzepts
 - **Lastprüfung beim „Weiter“ (K09-12)** braucht die Tara-Summe und folgt in C2; in C1 setzt „Weiter“ nur den neuen Bezug.
 - **Mittelsmann (Modul 08):** neue öffentliche Methode `broadcast()` für die Live-Nachrichten `batch`/`orders` (eine Zeile, Verhalten sonst unverändert).
 - Gesperrte und archivierte Rezepte können nicht als Auftrag angelegt werden (Vorwahl zeigt nur freigeschaltete, Modul 05); Unterrezepte dürfen gesperrt sein (R05-9).
+
+## 20. Umsetzung Teil C2 (0.9.1) – Ergänzungen
+
+Hinweise Claude zur Umsetzung (19.11.2026), im Rahmen des freigegebenen Konzepts; bei Einwand ändern:
+
+- **Hintergrund:** `app/production/automation.py` prüft jede Waage alle 0,2 s (Auto-Quittung, 45-s-Pause, Abschluss durch Abnehmen, Behälter-Schritte, Live `weigh`). Die Wiegelogik ohne Datenbank steht in `weigh.py`.
+- **Gesamtlast:** Die Software verfolgt die Tara der Waage (jede Tara/Null). Zeigt die Waage brutto, ist sie 0. Nach einem Neustart mit netto zeigender Waage ist sie unbekannt; dann rechnet die Höchstlast-Warnung mit der Anzeige, und die Lastprüfung beim „Weiter“ entfällt.
+- **Lastprüfung (K09-12):** Der Stand beim Pausieren wird zusätzlich in `pause_load_g` gespeichert; geprüft wird nur an derselben Waage und ohne Neustart dazwischen.
+- **Höchstlast vor der Zutat:** Gesamtlast plus alle noch offenen Rohstoffmengen des Teigs.
+- **Protokoll:** `tare_g` = Tara gesamt (Tara der Waage + Bezug der Software); bei Teilmengen Vermerk „mit Teilmengen … g“ am Ereignis `weighed`.
+- **Behälter wiegen:** Steht ein tarierter Behälter noch auf der Waage und ist die Gesamtlast bekannt, wartet die Software bei „Waage leeren“ (Schritt abbrechbar). „Ohne Behälter“ geht im Schritt „aufstellen“. Bestätigung „anderer Behälter“ nur beim Wechseln und nur, wenn ein Behältergewicht bekannt ist.
+- **Abschließen von Hand** bleibt in der Schnittstelle immer möglich; das Tablet (Modul 10) kann die Taste auf „Waage getrennt“ beschränken.
+- **Mittelsmann:** `broadcast()` ist jetzt auch aus Anfragen (Threads) sicher (Übergabe an die Ereignisschleife).

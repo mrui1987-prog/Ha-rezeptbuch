@@ -111,14 +111,17 @@ Das Rezeptbuch liest die Waagen nicht selbst, sondern über das Add-on **„HA-R
 - **Live-Kanal** für Tablets: WebSocket `/api/v1/live` (relativer Pfad, funktioniert hinter HA-Ingress).
 - Schnittstelle und Nachrichten im Einzelnen: `docs/schnittstellen.md` im Repository.
 
-## Wiegeablauf (Modul 09, Teil C1)
+## Wiegeablauf (Modul 09)
 
 Aufträge, Teige, Zutaten und Protokoll liegen im Rezeptbuch; die Tablets (Modul 10) zeigen nur an. Bis dahin lässt sich alles auf der Prüfseite **„Ablauf“** bedienen.
 
 - **Auftrag** anlegen (Rezept, Bezug, Menge, Obergrenze, Teige, „Fest an Waage“), dann je Teig **„Starten an Waage …“**. Beim ersten Teig wird die Rezeptversion fixiert; Unterrezepte werden eigene Aufträge.
-- **Wiegen:** Behälter steht beim Start auf der Waage (Bezug = angezeigter Wert). Zutat auflegen, „Quittieren“ übernimmt den Waagenwert, nur innerhalb der Toleranz. Danach ist der neue Bezug der angezeigte Wert. Automatische Quittung und Tara an der Waage folgen mit Teil C2.
+- **Wiegen:** Der Behälter steht beim Start auf der Waage; die Software tariert die Waage (Anzeige 0). Zutat auflegen: Liegt sie 2 s ruhig in der Toleranz, wird automatisch quittiert und neu tariert. „Quittieren“ geht auch von Hand. Mit **„Behälter wiegen“** lässt sich das Behältergewicht ermitteln, mit **„Behälter wechseln“** eine Zutat in mehreren Behältern wiegen (Teilmengen zählen mit).
+- **Waage getrennt:** Nach 45 s ohne Waage wird der Teig pausiert. **Höchstlast:** Warnung 1 kg vor der Höchstlast der Waage.
 - **Pause / Weiter:** Ein pausierter Teig kann an jeder eingerichteten Waage weitergehen (außer „Fest an Waage“). „Handwaage“ hält den Teig an der Station. Nach einem Neustart des Add-ons sind laufende Teige pausiert.
-- **Abschließen:** Ist die letzte Zutat quittiert, bleibt die Station belegt, bis „Abschließen (Station frei)“ gedrückt wird.
+- **Abschließen:** Nach der letzten Zutat den Behälter abnehmen – die Software stellt die Waage auf Null und gibt die Station frei. Ohne Waage gibt es die Taste „Abschließen (Station frei)“.
+- **Weiter an derselben Waage:** Weicht die Gesamtlast um mehr als 5 g vom Stand bei der Pause ab, fragt die Software „richtiger Behälter?“.
+- **Einstellungen** (Zeit und Wanderung der Auto-Quittung, 45 s, Vorwarnung, Tara-Bestätigung, Lastprüfung) auf der Prüfseite, Ändern mit PIN.
 - Ablauf und Regeln im Einzelnen: `docs/ablauf.md` im Repository.
 
 ## Haftung

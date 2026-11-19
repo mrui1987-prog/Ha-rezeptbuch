@@ -16,23 +16,77 @@ class FakeState:
     status: str
     weight_g: int | None
     stable: bool
+    net: bool = False
+    capacity_g: int = 30000
 
 
 class FakeHub:
-    """Steht für den Mittelsmann: Werte je Station von Hand setzen, Nachrichten werden gesammelt."""
+    """Steht für Mittelsmann und Waage: ``put`` setzt das Bruttogewicht; ``tare``/``zero`` wirken wie an der
+    KERN (Tara merkt die Anzeige, Anzeige darunter = ``-----``, Null nur bis ±50 g oder bei ``-----``)."""
 
     def __init__(self):
-        self.states: dict[int, FakeState] = {}
+        self.gross: dict[int, int | None] = {}
+        self.offset: dict[int, int] = {}
+        self.stable: dict[int, bool] = {}
+        self.status: dict[int, str] = {}
         self.events: list[dict] = []
+        self.commands: list[tuple[int, str]] = []
+        self.ignore_commands = False
 
     def put(self, station: int, weight_g: int | None, stable: bool = True, status: str = "ok") -> None:
-        self.states[station] = FakeState(status, weight_g if status == "ok" else None, stable)
+        self.gross[station] = weight_g
+        self.stable[station] = stable
+        self.status[station] = status
+        self.offset.setdefault(station, 0)
+
+    @property
+    def states(self):
+        return {n: self.current_state(n) for n in self.gross}
+
+    def known_stations(self):
+        return sorted(self.gross)
+
+    def display(self, station):
+        gross = self.gross.get(station)
+        return None if gross is None else gross - self.offset.get(station, 0)
 
     def current_state(self, station: int):
-        return self.states.get(station)
+        if station not in self.gross:
+            return None
+        status = self.status[station]
+        shown = self.display(station)
+        if status == "ok" and (shown is None or shown < 0):
+            status = "invalid"
+        weight = shown if status == "ok" else None
+        return FakeState(status, weight, self.stable[station] if status == "ok" else False,
+                         net=self.offset.get(station, 0) > 0)
+
+    def send_command(self, station: int, cmd: str) -> str:
+        self.commands.append((station, cmd))
+        if self.status.get(station) == "offline":
+            return "offline"
+        if self.ignore_commands:
+            return "sent"
+        shown = self.display(station)
+        if cmd == "tare" and shown is not None and shown > 0 and self.status[station] == "ok":
+            self.offset[station] = self.offset.get(station, 0) + shown
+        elif cmd == "zero" and (shown is None or shown < 0 or abs(shown) <= 50):
+            self.offset[station] = 0
+        return "sent"
 
     def broadcast(self, event: dict) -> None:
         self.events.append(event)
+
+
+class Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, seconds):
+        self.t += seconds
 
 
 def item(raw_material_id, amount):
@@ -45,8 +99,13 @@ def hub():
 
 
 @pytest.fixture
-def runner(hub):
-    return ProductionRunner(hub)
+def clock():
+    return Clock()
+
+
+@pytest.fixture
+def runner(hub, clock):
+    return ProductionRunner(hub, clock=clock)
 
 
 @pytest.fixture

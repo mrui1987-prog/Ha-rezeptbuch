@@ -10,7 +10,7 @@ from app.errors import ConflictError, NotFoundError, ValidationError
 from app.production import batches, orders
 from app.production.batches import next_batch_no
 
-from prod_helpers import hub, recipes, rm, runner, unlock  # noqa: F401  (Fixtures)
+from prod_helpers import clock, hub, recipes, rm, runner, unlock  # noqa: F401  (Fixtures)
 
 TODAY = "2026-11-20"
 
@@ -157,6 +157,9 @@ def test_weigh_whole_dough_by_hand(conn, recipes, runner, hub):
     hub.put(1, 1810 + 620, stable=False)
     batch = batches.ack_weighed(conn, bid, st(), runner)
     assert batch["items"][1]["ack_type"] == "manual_unstable"
+    assert batch["scale"]["taring"]                         # Tara wartet auf einen ruhigen Wert (K09-3)
+    hub.put(1, 2430)
+    assert batches.get_batch(conn, bid, runner)["scale"]["taring"] is False
     hub.put(1, 2430 + 21)
     batch = batches.ack_weighed(conn, bid, st(), runner)
     assert batch["status"] == "done" and batch["finish_ack_at"] is None

@@ -1,5 +1,18 @@
 # Änderungen
 
+## 0.9.1 – Modul 09 Teil C2: Waage im Wiegeablauf (in Entwicklung)
+
+- **Tara an der Waage** (M09-5, K09-3): Beim Start, nach jeder Quittung, beim „Weiter“ und auf Tastendruck tariert die Software und sendet `tare` an die Waage; die nächste Zutat wird erst gewogen, wenn die Waage stabil bei etwa 0 steht (höchstens 3 s, sonst rechnet die Software allein weiter und zeigt einen Hinweis). Eine verspätet ausgeführte Tara wird erkannt
+- **Automatische Quittung** (M09-4): 2 s stabil in der Toleranz, Wanderung höchstens 5 g – beides unter „Einstellungen“ änderbar. Ein Hintergrund prüft die Waagen fünfmal je Sekunde
+- **Höchstlast-Vorwarnung** (M09-7): Gesamtlast (Tara der Waage + Anzeige) plus noch zu wiegende Menge ab Höchstlast − 1 000 g; nur Warnung
+- **Waage getrennt** (M09-8): nach 45 s ohne Waage wird der Teig pausiert; die Rückkehr hebt die Pause nicht auf
+- **Abschluss durch Abnehmen** (K09-10): Nach der letzten Zutat schließt das Abnehmen des Behälters den Teig ab, die Software sendet `zero`, die Station ist frei
+- **Lastprüfung beim „Weiter“** (K09-12): an derselben Waage Vergleich der Gesamtlast mit dem Stand beim Pausieren; mehr als 5 g Abweichung nur mit Bestätigung (`confirm_deviation`), wird protokolliert
+- **Behälter wiegen** (K09-13) und **Behälter wechseln** (K09-14) über `POST /api/v1/batches/{id}/container` (`weigh`, `change`, `none`, `set`, `confirm`, `cancel`): Waage leeren bzw. Behälter abnehmen → Tara + Null → Behälter aufstellen → Gewicht gemerkt → Tara. Beim Wechseln wird die schon gewogene Menge als Teilmenge gespeichert und beim Rest mitgezählt
+- **Handbetrieb** (M09-13): `POST /api/v1/stations/{nr}/hand/tare`, Stand unter `GET /api/v1/stations/{nr}/weigh`
+- **Live-Kanal:** neue Nachricht `weigh` je Station (Ist, Soll, Toleranz, Bereich, Fortschritt der Auto-Quittung, Tara läuft, Gesamtlast, Höchstlast-Warnung, Hinweis, Behälter-Schritt)
+- **Prüfseite „Ablauf“:** Live-Werte, Behälter-Tasten, Handbetrieb, Bestätigung bei Abweichung
+
 ## 0.9.0 – Modul 09 Teil C1: Wiegeablauf im Server (in Entwicklung)
 
 - **Aufträge** (`/api/v1/orders`, ohne PIN, K09-6): anlegen mit derselben Eingabe wie die Berechnung plus „Fest an Waage“ und Datum; Produktionsliste je Tag; löschen nur offen und mit Bestätigung. Gesperrte und archivierte Rezepte sind nicht wählbar. Über der Obergrenze fragt die Schnittstelle „Nach Obergrenze teilen?“ (`split_question`)
