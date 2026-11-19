@@ -25,8 +25,9 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 | `/admin/rezepte` | Rezepte, Rezeptgruppen, Import/Export (PIN); Aufträge folgen in späteren Modulen |
 | `/admin/berechnung` | Berechnung nachprüfen (PIN, speichert nichts) |
 | `/admin/waagen` | Waagen – Verbindung prüfen: Live-Gewicht, Status, Tara/Null (PIN) |
+| `/admin/ablauf` | Ablauf prüfen: Aufträge, Teig starten, wiegen und quittieren, Pause/Weiter, Einstellungen (PIN; Prüfseite bis zur Tablet-Oberfläche) |
 
-Die Stationsadressen für die Tablets an den Waagen folgen in Modul 09/10 und sind in dieser Version noch nicht vorhanden.
+Die Stationsadressen für die Tablets an den Waagen folgen in Modul 10 und sind in dieser Version noch nicht vorhanden.
 
 Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung folgt in Modul 12. Es wird nur ein Hash gespeichert. Nach 5 Fehlversuchen ist die Eingabe 5 Minuten gesperrt. Die Sitzungsdauer stellt die Add-on-Option `admin_timeout_minutes` ein (Standard 5 Minuten). Beim Öffnen einer Admin-Seite und beim Reiterwechsel wird die Sitzung geprüft; ist sie abgelaufen, kommt gleich die PIN-Eingabe und danach die gewählte Seite (ungespeicherte Änderungen werden vorher abgefragt).
 
@@ -109,6 +110,16 @@ Das Rezeptbuch liest die Waagen nicht selbst, sondern über das Add-on **„HA-R
 - **Tara/Null** über die Prüfseite oder `POST /api/v1/stations/{nr}/scale/tare|zero` (ohne PIN). „Gesendet“ heißt nicht „ausgeführt“: Null nimmt das Waagen-Add-on nur bei leerer Waage (bis ±50 g) an; die Wirkung zeigt der nächste Wert.
 - **Live-Kanal** für Tablets: WebSocket `/api/v1/live` (relativer Pfad, funktioniert hinter HA-Ingress).
 - Schnittstelle und Nachrichten im Einzelnen: `docs/schnittstellen.md` im Repository.
+
+## Wiegeablauf (Modul 09, Teil C1)
+
+Aufträge, Teige, Zutaten und Protokoll liegen im Rezeptbuch; die Tablets (Modul 10) zeigen nur an. Bis dahin lässt sich alles auf der Prüfseite **„Ablauf“** bedienen.
+
+- **Auftrag** anlegen (Rezept, Bezug, Menge, Obergrenze, Teige, „Fest an Waage“), dann je Teig **„Starten an Waage …“**. Beim ersten Teig wird die Rezeptversion fixiert; Unterrezepte werden eigene Aufträge.
+- **Wiegen:** Behälter steht beim Start auf der Waage (Bezug = angezeigter Wert). Zutat auflegen, „Quittieren“ übernimmt den Waagenwert, nur innerhalb der Toleranz. Danach ist der neue Bezug der angezeigte Wert. Automatische Quittung und Tara an der Waage folgen mit Teil C2.
+- **Pause / Weiter:** Ein pausierter Teig kann an jeder eingerichteten Waage weitergehen (außer „Fest an Waage“). „Handwaage“ hält den Teig an der Station. Nach einem Neustart des Add-ons sind laufende Teige pausiert.
+- **Abschließen:** Ist die letzte Zutat quittiert, bleibt die Station belegt, bis „Abschließen (Station frei)“ gedrückt wird.
+- Ablauf und Regeln im Einzelnen: `docs/ablauf.md` im Repository.
 
 ## Haftung
 

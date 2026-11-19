@@ -70,6 +70,7 @@
   <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
   <a class="active" href="#" aria-current="page">Berechnung</a>
   <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
+  <a id="nav-production" href="#" data-next="ablauf">Ablauf</a>
   <span class="grow"></span>
   <button type="button" id="nav-logout">Abmelden</button>
 </nav>
@@ -224,6 +225,7 @@ let applied = null;        // zuletzt erfolgreich gerechnete Auswahl
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-recipes").href = BASE + "admin/rezepte";
 $("nav-scales").href = BASE + "admin/waagen";
+$("nav-production").href = BASE + "admin/ablauf";
 
 function toLogin(next) {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
@@ -279,6 +281,7 @@ async function goTab(ev) {
 $("nav-raw").addEventListener("click", goTab);
 $("nav-recipes").addEventListener("click", goTab);
 $("nav-scales").addEventListener("click", goTab);
+$("nav-production").addEventListener("click", goTab);
 window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
 function el(tag, text, cls) {
   const e = document.createElement(tag);

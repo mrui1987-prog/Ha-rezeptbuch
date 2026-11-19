@@ -1,6 +1,6 @@
 """Liefert die Seiten des Admin-Bereichs: PIN-Eingabe und Rohstoffliste (``admin.html``),
 Rezepte und Gruppen (``recipes.html``, Modul 05), Prüfseite „Berechnung“ (``calc.html``, Modul 06),
-Prüfseite „Waagen“ (``scales.html``, Modul 08).
+Prüfseite „Waagen“ (``scales.html``, Modul 08), Prüfseite „Ablauf“ (``production.html``, Modul 09).
 
 Jede Seite ist eine einzige, in sich geschlossene HTML-Datei (Stil und Skript eingebettet).
 Dadurch gibt es keine weiteren Adressen für Dateien, die hinter HA-Ingress wechseln
@@ -18,6 +18,7 @@ PAGE = Path(__file__).parent / "static" / "admin.html"
 RECIPES_PAGE = Path(__file__).parent / "static" / "recipes.html"
 CALC_PAGE = Path(__file__).parent / "static" / "calc.html"
 SCALES_PAGE = Path(__file__).parent / "static" / "scales.html"
+PRODUCTION_PAGE = Path(__file__).parent / "static" / "production.html"
 
 router = APIRouter(include_in_schema=False)
 
@@ -42,3 +43,8 @@ def calc_page() -> HTMLResponse:
 @router.get("/admin/waagen", response_class=HTMLResponse)
 def scales_page() -> HTMLResponse:
     return HTMLResponse(SCALES_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/admin/ablauf", response_class=HTMLResponse)
+def production_page() -> HTMLResponse:
+    return HTMLResponse(PRODUCTION_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})

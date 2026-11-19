@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch – Ablauf</title>
+<style>
+  /* Bewusst schlicht: Prüfseite für Modul 09 („Ablauf prüfen“), Tablet-Oberfläche in Modul 10 */
+  :root { color-scheme: light; }
+  html { background: #fafafa; }
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
+  main { padding: 1rem; max-width: 76rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
+  h2 { font-size: 1.2rem; margin: 1.2rem 0 .5rem; }
+  button { font-size: 1rem; padding: .5rem 1rem; margin: .15rem .3rem .15rem 0; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.small { font-size: .9rem; padding: .3rem .6rem; }
+  input, select { font-size: 1rem; padding: .35rem; }
+  label { margin-right: .8rem; white-space: nowrap; }
+  .hidden { display: none !important; }
+  #probe { background: #c62828; color: #fff; font-weight: bold; text-align: center; padding: .6rem; }
+  nav { display: flex; flex-wrap: wrap; gap: .3rem; background: #fff; border-bottom: 1px solid #ccc; padding: .4rem 1rem; }
+  nav a, nav button { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; margin: 0; }
+  nav .active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  nav .grow { flex: 1; }
+  .msg { margin: .6rem 0; padding: .5rem .7rem; border-radius: 4px; white-space: pre-line; }
+  .msg.error { background: #fdecea; color: #8a1c13; border: 1px solid #f5c2bd; }
+  .msg.info { background: #e8f1fb; color: #14406b; border: 1px solid #b9d3ee; }
+  .card { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: .8rem 1rem; margin: .6rem 0; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border-bottom: 1px solid #e3e3e3; padding: .35rem .45rem; text-align: left; vertical-align: top; }
+  th { background: #f1f1f1; font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.current td { background: #fff7e0; }
+  tr.done td { color: #666; }
+  tr.blocked td { color: #9a6b00; }
+  .weight { font-size: 2.4rem; font-weight: bold; font-variant-numeric: tabular-nums; }
+  .row { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; align-items: center; }
+  .ok { color: #2e7d32; } .bad { color: #c62828; } .warn { color: #9a6b00; }
+  .small { font-size: .9rem; color: #555; }
+  .tag { display: inline-block; padding: .05rem .4rem; border-radius: 3px; background: #eee; font-size: .85rem; }
+</style>
+</head>
+<body>
+<div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<nav>
+  <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
+  <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
+  <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
+  <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
+  <a class="active" href="#" aria-current="page">Ablauf</a>
+  <span class="grow"></span>
+  <button type="button" id="nav-logout">Abmelden</button>
+</nav>
+<main>
+  <h1>Ablauf prüfen</h1>
+  <div class="row">
+    <label>Station <select id="station"><option value="1">Waage 1</option><option value="2">Waage 2</option></select></label>
+    <label>Datum <input type="date" id="day"></label>
+    <span class="small">Prüfseite für den Wiegeablauf (Modul 09). Quittieren nimmt den aktuellen Wert der Waage;
+      automatische Quittung und Tara an der Waage folgen mit Teil C2.</span>
+  </div>
+  <div id="msg" class="msg hidden" role="alert"></div>
+  <div id="confirm" class="msg info hidden"><span id="confirm-text"></span><br>
+    <button type="button" id="confirm-yes">Ja, bestätigen</button><button type="button" id="confirm-no">Nein</button></div>
+
+  <h2>Teig an dieser Station</h2>
+  <div id="batch" class="card"><span class="small">Kein Teig an dieser Station.</span></div>
+
+  <h2>Pausierte Teige</h2>
+  <div id="paused" class="card"><span class="small">Keine.</span></div>
+
+  <h2>Aufträge</h2>
+  <div id="orders"></div>
+  <div class="card">
+    <b>Neuer Auftrag</b>
+    <div class="row" style="margin-top:.4rem">
+      <label>Rezept <select id="o-recipe"></select></label>
+      <label>Bezug <select id="o-basis">
+        <option value="total">Gesamtteig (g)</option>
+        <option value="flour_total">Mehl gesamt (g)</option>
+        <option value="factor">Faktor × Grundrezept</option>
+      </select></label>
+      <label><span id="o-value-label">Menge</span> <input id="o-value" size="8" inputmode="decimal"></label>
+      <label>Obergrenze g <input id="o-limit" size="7" inputmode="numeric" placeholder="frei"></label>
+      <label>Teige <input id="o-count" size="3" inputmode="numeric" placeholder="auto"></label>
+      <label>Teilung <select id="o-mode"><option value="fill">voll auffüllen</option><option value="even">gleichmäßig</option></select></label>
+      <label><input type="checkbox" id="o-split"> nach Obergrenze teilen</label>
+      <label><input type="checkbox" id="o-suball"> Unterrezepte für alle</label>
+      <label>Fest an <select id="o-fixed"><option value="">–</option><option value="1">Waage 1</option><option value="2">Waage 2</option></select></label>
+    </div>
+    <button type="button" id="o-create">Auftrag anlegen</button>
+  </div>
+
+  <h2>Einstellungen</h2>
+  <div class="card">
+    <table><thead><tr><th>Einstellung</th><th class="num">Wert</th><th>Bereich</th></tr></thead><tbody id="settings"></tbody></table>
+    <button type="button" id="settings-save">Einstellungen speichern</button>
+    <span class="small">Ändern mit Admin-Anmeldung (PIN).</span>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
+const API = BASE + "api/v1/";
+const SESSION_KEY = "rezeptbuch_admin_session";
+const $ = (id) => document.getElementById(id);
+
+let token = null;
+try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+
+$("nav-raw").href = BASE + "admin/rohstoffe";
+$("nav-recipes").href = BASE + "admin/rezepte";
+$("nav-calc").href = BASE + "admin/berechnung";
+$("nav-scales").href = BASE + "admin/waagen";
+
+function toLogin(next) {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
+  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "ablauf"));
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (token) headers["X-Rezeptbuch-Session"] = token;
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(API + path, { method: opts.method || "GET", headers: headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  } catch (e) {
+    const err = new Error("Keine Verbindung zum Rezeptserver."); err.status = 0; throw err;
+  }
+  let data = null;
+  if (res.status !== 204) { try { data = await res.json(); } catch (e) { data = null; } }
+  if (!res.ok) {
+    const err = new Error((data && typeof data.detail === "string") ? data.detail : "Fehler " + res.status);
+    err.status = res.status; err.data = data || {}; throw err;
+  }
+  return data;
+}
+
+function showMsg(text, kind) {
+  const box = $("msg");
+  box.textContent = text || "";
+  box.className = "msg " + (kind || "error") + (text ? "" : " hidden");
+}
+
+async function checkSession(next) {
+  if (!token) { toLogin(next); return false; }
+  try { await api("admin/session"); return true; }
+  catch (err) { if (err.status === 401) { toLogin(next); return false; } return true; }
+}
+async function goTab(ev) {
+  ev.preventDefault();
+  const target = ev.currentTarget.href;
+  if (await checkSession(ev.currentTarget.dataset.next)) location.href = target;
+}
+["nav-raw", "nav-recipes", "nav-calc", "nav-scales"].forEach((id) => $(id).addEventListener("click", goTab));
+window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
+$("nav-logout").addEventListener("click", async () => {
+  try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
+  toLogin();
+});
+
+// ---------------------------------------------------------------- Hilfen
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+function g(v) { return (v === null || v === undefined) ? "–" : v.toLocaleString("de-DE") + " g"; }
+function station() { return parseInt($("station").value, 10); }
+function btn(text, handler, small) {
+  const b = el("button", text, small ? "small" : "");
+  b.type = "button";
+  b.addEventListener("click", handler);
+  return b;
+}
+
+// Aktion mit Rückfrage: 409 „confirm_required“ → Bestätigung anzeigen, dann mit confirm: true wiederholen
+let pending = null;
+async function act(path, body, okText) {
+  try {
+    const data = await api(path, { method: "POST", body: body });
+    showMsg(okText || "", "info");
+    await refresh();
+    return data;
+  } catch (err) {
+    if (err.status === 409 && err.data.code === "confirm_required") {
+      pending = { path: path, body: Object.assign({}, body, { confirm: true }), okText: okText };
+      $("confirm-text").textContent = err.message;
+      $("confirm").classList.remove("hidden");
+      return null;
+    }
+    showMsg(err.message);
+    return null;
+  }
+}
+$("confirm-yes").addEventListener("click", async () => {
+  $("confirm").classList.add("hidden");
+  if (!pending) return;
+  const p = pending;
+  pending = null;
+  if (p.del) {
+    // Löschen mit Bestätigung (DELETE statt POST)
+    try { await api("orders/" + p.del, { method: "DELETE", body: { confirm: true } }); showMsg("Auftrag gelöscht.", "info"); }
+    catch (err) { showMsg(err.message); }
+    await refresh();
+    return;
+  }
+  await act(p.path, p.body, p.okText);
+});
+$("confirm-no").addEventListener("click", () => { pending = null; $("confirm").classList.add("hidden"); });
+
+// ---------------------------------------------------------------- Teig an der Station
+
+const KIND_TEXT = { weigh: "wiegen", units: "Einheiten", hand_need: "nach Bedarf", hand_target: "Handzugabe",
+                    sub_recipe: "Unterrezept" };
+const STATUS_TEXT = { running: "läuft", paused: "pausiert", done: "fertig", cancelled: "abgebrochen", open: "offen" };
+const PAUSE_TEXT = { manual: "Pause", scale_offline: "Waage getrennt", restart: "Neustart", hand_scale: "Handwaage" };
+
+let current = null;     // angezeigte Charge
+
+function renderBatch(b) {
+  const box = $("batch");
+  box.textContent = "";
+  current = b;
+  if (!b) { box.appendChild(el("span", "Kein Teig an dieser Station.", "small")); return; }
+  const head = el("div", "", "row");
+  head.appendChild(el("b", (b.recipe ? b.recipe.name + " (V" + b.recipe.version_no + ")" : "?") +
+                            " – Teig " + b.dough_index + "/" + b.dough_count + " – Charge " + b.batch_no));
+  head.appendChild(el("span", STATUS_TEXT[b.status] + (b.pause_reason ? " (" + PAUSE_TEXT[b.pause_reason] + ")" : ""), "tag"));
+  head.appendChild(el("span", b.progress.done + " von " + b.progress.total + " erledigt", "small"));
+  if (b.knead) head.appendChild(el("span", "Kneten " + b.knead, "small"));
+  box.appendChild(head);
+  if (b.note && (b.note.display === "start" || b.status === "done")) {
+    box.appendChild(el("div", "Hinweis: " + b.note.text, "msg info"));
+  }
+  if (b.scale) {
+    const s = b.scale;
+    const sc = el("div", "", "row");
+    sc.appendChild(el("span", s.actual_g === null ? "–" : g(s.actual_g), "weight"));
+    sc.appendChild(el("span", "Anzeige " + g(s.weight_g) + " · Bezug " + g(s.reference_g) + " · " +
+      (s.status === "ok" ? (s.stable ? "stabil" : "unruhig") : "Waage: " + s.status),
+      s.status === "ok" ? (s.stable ? "ok" : "warn") : "bad"));
+    box.appendChild(sc);
+  }
+  const t = el("table");
+  const hr = el("tr");
+  ["Pos.", "Zutat", "Art", "Soll", "Toleranz", "Ist", "Quittung", ""].forEach((h, i) =>
+    hr.appendChild(el("th", h, i === 3 || i === 4 || i === 5 ? "num" : "")));
+  t.appendChild(el("thead")).appendChild(hr);
+  const body = el("tbody");
+  b.items.forEach((it) => {
+    const tr = el("tr", "", it.done ? "done" : (it.position === b.current_position ? "current" : (it.blocked ? "blocked" : "")));
+    tr.appendChild(el("td", it.position));
+    let name = it.name;
+    if (it.unit_label && it.units_target) name += " (" + it.units_target + " × " + it.unit_label + " + " + g(it.rest_target_g) + ")";
+    tr.appendChild(el("td", name));
+    let kind = it.done ? "" : (KIND_TEXT[it.kind] || it.kind);
+    if (it.blocked) kind += " – wartet (" + STATUS_TEXT[it.sub_order ? it.sub_order.status : "open"] + ")";
+    tr.appendChild(el("td", kind));
+    tr.appendChild(el("td", g(it.target_g), "num"));
+    tr.appendChild(el("td", it.item_type === "sub_recipe" ? "" : "± " + it.tolerance_g + " g", "num"));
+    tr.appendChild(el("td", g(it.actual_g), "num"));
+    tr.appendChild(el("td", it.ack_text ? it.ack_text + (it.station_id ? " (W" + it.station_id + ")" : "") : ""));
+    const cell = el("td");
+    if (!it.done && b.status === "running") {
+      const body0 = { station: station(), position: it.position };
+      if (it.position !== b.current_position) cell.appendChild(btn("Wählen", () => act("batches/" + b.id + "/select", body0), true));
+      if (it.kind === "weigh") cell.appendChild(btn("Quittieren", () => act("batches/" + b.id + "/ack", body0, "Quittiert."), true));
+      if (it.kind === "units") cell.appendChild(btn(it.units_target + " × " + it.unit_label + " quittieren", () => act("batches/" + b.id + "/units", body0), true));
+      if (it.kind === "hand_need" || it.kind === "hand_target") cell.appendChild(btn("Zugegeben", () => act("batches/" + b.id + "/hand", body0), true));
+      if (it.kind === "sub_recipe") cell.appendChild(btn(it.blocked ? "Abhaken" : "Übernehmen", () => act("batches/" + b.id + "/sub-check", body0), true));
+      cell.appendChild(btn("Übergehen", () => act("batches/" + b.id + "/skip", body0), true));
+    }
+    tr.appendChild(cell);
+    body.appendChild(tr);
+  });
+  t.appendChild(body);
+  box.appendChild(t);
+  const bar = el("div");
+  const s0 = { station: station() };
+  if (b.status === "running") {
+    bar.appendChild(btn("Tara", () => act("batches/" + b.id + "/tare", s0, "Tara gesetzt.")));
+    bar.appendChild(btn("Pause", () => act("batches/" + b.id + "/pause", s0, "Pausiert.")));
+    bar.appendChild(btn("Handwaage", () => act("batches/" + b.id + "/hand-scale", s0, "Pausiert – Handwaage, an dieser Station reserviert.")));
+    bar.appendChild(btn("Abbrechen", () => act("batches/" + b.id + "/cancel", s0, "Teig abgebrochen.")));
+  }
+  if (b.status === "paused" && b.pause_reason === "hand_scale") {
+    bar.appendChild(btn("Weiter", () => act("batches/" + b.id + "/resume", s0, "Weiter.")));
+  }
+  if (b.status === "done" && !b.finish_ack_at) {
+    bar.appendChild(btn("Abschließen (Station frei)", () => act("batches/" + b.id + "/finish", s0, "Teig abgeschlossen.")));
+  }
+  box.appendChild(bar);
+}
+
+function renderPaused(list) {
+  const box = $("paused");
+  box.textContent = "";
+  const paused = list.filter((b) => b.status === "paused" && !(b.pause_reason === "hand_scale" && b.owner_station === station()));
+  if (!paused.length) { box.appendChild(el("span", "Keine.", "small")); return; }
+  paused.forEach((b) => {
+    const row = el("div", "", "row");
+    row.appendChild(el("span", b.recipe_name + " – Teig " + b.dough_index + " – Charge " + b.batch_no + " (" +
+      PAUSE_TEXT[b.pause_reason] + (b.owner_station ? ", Waage " + b.owner_station : "") +
+      (b.fixed_station ? ", fest an Waage " + b.fixed_station : "") + ")"));
+    row.appendChild(btn("Weiter an Waage " + station(), () => act("batches/" + b.id + "/resume", { station: station() }, "Übernommen.")));
+    row.appendChild(btn("Abbrechen", () => act("batches/" + b.id + "/cancel", { station: station() }, "Teig abgebrochen.")));
+    box.appendChild(row);
+  });
+}
+
+// ---------------------------------------------------------------- Aufträge
+
+function renderOrders(data) {
+  const box = $("orders");
+  box.textContent = "";
+  if (!data.orders.length) { box.appendChild(el("div", "Keine Aufträge an diesem Tag.", "card small")); return; }
+  const t = el("table");
+  const hr = el("tr");
+  ["Nr.", "Rezept", "Menge", "Status", "Teige", ""].forEach((h, i) => hr.appendChild(el("th", h, i === 2 ? "num" : "")));
+  t.appendChild(el("thead")).appendChild(hr);
+  const body = el("tbody");
+  data.orders.forEach((o) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", o.list_position + "/" + o.id));
+    let name = o.recipe.number + " " + o.recipe.name;
+    if (o.parent) name = "↳ " + name + " (Unterrezept für Auftrag " + o.parent.order_id +
+      (o.parent.dough_index ? ", Teig " + o.parent.dough_index : ", alle Teige") + ")";
+    if (o.fixed_station) name += " – fest an Waage " + o.fixed_station;
+    tr.appendChild(el("td", name));
+    tr.appendChild(el("td", g(o.target_g), "num"));
+    tr.appendChild(el("td", STATUS_TEXT[o.status] || o.status));
+    const doughs = el("td");
+    o.doughs.forEach((d) => {
+      const line = el("div");
+      line.appendChild(el("span", "Teig " + d.dough_index + ": " + g(d.target_g) + " "));
+      if (d.batch) {
+        line.appendChild(el("span", STATUS_TEXT[d.batch.status] + (d.batch.owner_station ? " an Waage " + d.batch.owner_station : "") +
+          " (" + d.batch.batch_no + ")", "tag"));
+      } else if (o.status === "open" || o.status === "in_progress") {
+        line.appendChild(btn("Starten an Waage " + station(), () =>
+          act("orders/" + o.id + "/start", { station: station(), dough_index: d.dough_index }, "Teig gestartet."), true));
+      }
+      doughs.appendChild(line);
+    });
+    tr.appendChild(doughs);
+    const cell = el("td");
+    if (o.status === "open" && o.doughs.every((d) => !d.batch)) {
+      cell.appendChild(btn("Löschen", async () => {
+        try { await api("orders/" + o.id, { method: "DELETE", body: {} }); }
+        catch (err) {
+          if (err.data && err.data.code === "confirm_required") {
+            pending = { del: o.id };
+            $("confirm-text").textContent = err.message;
+            $("confirm").classList.remove("hidden");
+            return;
+          }
+          showMsg(err.message);
+        }
+      }, true));
+    }
+    tr.appendChild(cell);
+    body.appendChild(tr);
+  });
+  t.appendChild(body);
+  box.appendChild(t);
+}
+
+async function loadRecipes() {
+  try {
+    const data = await api("recipes");
+    const list = Array.isArray(data) ? data : (data.recipes || []);
+    const sel = $("o-recipe");
+    sel.textContent = "";
+    list.forEach((r) => { const o = el("option", r.number + " " + r.name); o.value = r.id; sel.appendChild(o); });
+    if (!list.length) sel.appendChild(el("option", "– keine freigeschalteten Rezepte –"));
+  } catch (err) { showMsg(err.message); }
+}
+
+$("o-basis").addEventListener("change", () => {
+  $("o-value-label").textContent = $("o-basis").value === "factor" ? "Faktor" : "Menge g";
+});
+
+$("o-create").addEventListener("click", async () => {
+  const basis = $("o-basis").value;
+  const body = { recipe_id: parseInt($("o-recipe").value, 10), basis_type: basis, planned_date: $("day").value || null,
+                 split_mode: $("o-mode").value };
+  if (basis === "factor") body.factor = $("o-value").value; else body.value = $("o-value").value;
+  if ($("o-limit").value.trim()) body.order_limit = $("o-limit").value.trim();
+  if ($("o-count").value.trim()) body.dough_count = parseInt($("o-count").value, 10);
+  if ($("o-split").checked) body.split = true;
+  if ($("o-fixed").value) body.fixed_station = parseInt($("o-fixed").value, 10);
+  if ($("o-suball").checked) body.sub_modes = "ALL";
+  try {
+    if (body.sub_modes === "ALL") {
+      const opts = await api("recipes/" + body.recipe_id);
+      body.sub_modes = (opts.items || []).filter((i) => i.type === "sub_recipe").map((i) => ({ position: i.position, mode: "all" }));
+    }
+    const o = await api("orders", { method: "POST", body: body });
+    showMsg("Auftrag " + o.id + " angelegt: " + o.dough_count + " Teig(e), " + g(o.target_g) + ".", "info");
+    await refresh();
+  } catch (err) {
+    showMsg(err.message + (err.data && err.data.code === "split_question" ? " (Haken „nach Obergrenze teilen“ setzen)" : ""));
+  }
+});
+
+// ---------------------------------------------------------------- Einstellungen
+
+async function loadSettings() {
+  try {
+    const data = await api("production-settings");
+    const body = $("settings");
+    body.textContent = "";
+    data.settings.forEach((s) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", s.label));
+      const td = el("td", "", "num");
+      const inp = el("input");
+      inp.size = 6; inp.value = s.value; inp.dataset.key = s.key; inp.inputMode = "numeric";
+      td.appendChild(inp); td.appendChild(el("span", " " + s.unit));
+      tr.appendChild(td);
+      tr.appendChild(el("td", s.min + " bis " + s.max + " " + s.unit + " (Start " + s.default + ")", "small"));
+      body.appendChild(tr);
+    });
+  } catch (err) { showMsg(err.message); }
+}
+$("settings-save").addEventListener("click", async () => {
+  const data = {};
+  document.querySelectorAll("#settings input").forEach((i) => { data[i.dataset.key] = i.value.trim(); });
+  try {
+    await api("admin/production-settings", { method: "PUT", body: data });
+    showMsg("Einstellungen gespeichert.", "info");
+    await loadSettings();
+  } catch (err) {
+    if (err.status === 401) { toLogin("ablauf"); return; }
+    showMsg(err.message);
+  }
+});
+
+// ---------------------------------------------------------------- Laden
+
+let busy = false;
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  try {
+    const list = (await api("batches")).batches;
+    const mine = list.find((b) => b.owner_station === station() &&
+      (b.status === "running" || b.status === "done" || (b.status === "paused" && b.pause_reason === "hand_scale")));
+    renderBatch(mine ? await api("batches/" + mine.id) : null);
+    renderPaused(list);
+    renderOrders(await api("orders" + ($("day").value ? "?date=" + $("day").value : "")));
+  } catch (err) {
+    showMsg(err.message);
+  } finally {
+    busy = false;
+  }
+}
+
+async function loadInfo() {
+  try {
+    const info = await api("system/info");
+    $("probe").classList.toggle("hidden", info.pin_is_default !== true);
+  } catch (e) { /* egal */ }
+}
+
+(async function init() {
+  if (!(await checkSession("ablauf"))) return;
+  const d = new Date();
+  $("day").value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  $("station").addEventListener("change", refresh);
+  $("day").addEventListener("change", refresh);
+  loadInfo();
+  await loadRecipes();
+  await loadSettings();
+  await refresh();
+  // Waagenwert und Stand jede Sekunde (Live-Nachrichten „weigh“ folgen mit Teil C2)
+  setInterval(() => { if (current && current.status === "running") refresh(); }, 1000);
+  setInterval(refresh, 10000);
+})();
+
+// iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen
+function repaint() { document.body.style.display = "none"; void document.body.offsetHeight; document.body.style.display = ""; }
+window.addEventListener("load", function () { repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); });
+window.addEventListener("pageshow", repaint);
+</script>
+</body>
+</html>

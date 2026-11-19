@@ -194,6 +194,10 @@ class ScaleHub:
         if queue in self._subs:
             self._subs.remove(queue)
 
+    def broadcast(self, event: dict) -> None:
+        """Weitere Nachrichten an alle Abonnenten des Live-Kanals (Modul 09: Typen ``batch``, ``orders``)."""
+        self._emit(dict(event))
+
     # ------------------------------------------------------------ Befehle
 
     def send_command(self, station: int, cmd: str) -> str:

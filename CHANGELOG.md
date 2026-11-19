@@ -1,5 +1,18 @@
 # Änderungen
 
+## 0.9.0 – Modul 09 Teil C1: Wiegeablauf im Server (in Entwicklung)
+
+- **Aufträge** (`/api/v1/orders`, ohne PIN, K09-6): anlegen mit derselben Eingabe wie die Berechnung plus „Fest an Waage“ und Datum; Produktionsliste je Tag; löschen nur offen und mit Bestätigung. Gesperrte und archivierte Rezepte sind nicht wählbar. Über der Obergrenze fragt die Schnittstelle „Nach Obergrenze teilen?“ (`split_question`)
+- **Teig starten** (`POST /api/v1/orders/{id}/start`): fixiert beim ersten Teig die Rezeptversion für den ganzen Auftrag, legt die Unterrezept-Aufträge an (je Teig oder für alle), erzeugt Charge und Sollwerte; vorläufige Chargennummer `JJJJMMTT-NNN` (K09-5)
+- **Zutaten** (`/api/v1/batches/{id}/…`): Wiegen von Hand mit dem Waagenwert (nur in der Toleranz und bei gültigem Wert; „manuell (stabil)“ / „manuell (nicht stabil)“, K09-2), ganze Einheiten bei Gebinden, Handzugaben, Übergehen mit Bestätigung, Unterrezept „gewogen“ (Ist-Summe, K09-1) oder „abgehakt“ (Ist = Soll), Zutat wählen, Tara von Hand (Software)
+- **Pause und Übergabe:** Pause gibt den Teig für jede Station frei (außer „Fest an Waage“), „Weiter“ übernimmt atomar (die zweite Station bekommt „bereits übernommen“), Taste „Handwaage“ pausiert und hält den Teig an der Station (K09-11). Nach einem Neustart sind laufende Teige pausiert
+- **Abbruch** mit Bestätigung (Gewogenes bleibt im Protokoll), **Abschluss** von Hand („Station frei“); der Auftrag ist fertig, wenn alle Teige fertig oder abgebrochen sind
+- **Einstellungen** des Wiegeablaufs (`/api/v1/production-settings`, Ändern mit PIN): Auto-Quittung 2 s / 5 g, Waagenausfall 45 s, Vorwarnung Höchstlast 1 000 g, Tara-Bestätigung 3 s, Lastprüfung beim „Weiter“ 5 g – wirksam ab Teil C2
+- **Live-Kanal:** neue Nachrichten `batch` und `orders` auf `/api/v1/live`
+- **Prüfseite „Ablauf“** `/admin/ablauf` (PIN), neuer Reiter auf allen Admin-Seiten
+- **Datenbank – Migration 0007:** neue Quittierungsarten `manual_stable`, `sub_done`; neue Protokollarten `resume_deviation`, `container`, `partial` mit Vermerk; an der Charge Pausegrund, Pausezeit, Gesamtlast bei Pause, Abschluss, Behältergewicht, aktuelle Zutat; höchstens ein laufender Teig je Station; abgeschlossene Charge nimmt nur noch den Abschluss an
+- Folgt in Teil C2 (0.9.1): Auto-Quittung, Tara an der Waage mit Bestätigung, Höchstlast-Warnung, Pause nach 45 s Waagenausfall, Abschluss durch Abnehmen des Behälters, Lastprüfung beim „Weiter“, „Behälter wiegen“/„Behälter wechseln“, Handbetrieb, Live-Nachrichten `weigh`
+
 ## 0.8.1 – Korrektur aus der Praxisprüfung Modul 08 (Modul 08 freigegeben am 19.11.2026)
 
 - **Protokoll (Befund B1):** Die Add-on-Option „Protokollstufe“ (`log_level`) wird jetzt angewendet. Bisher zeigte das Protokoll des Rezeptbuchs nur Warnungen und Fehler; jetzt erscheinen auch Infomeldungen wie „MQTT verbunden“, „Waage 1 wieder verbunden“ oder „Befehl tare an Waage 1 gesendet“, jeweils mit Datum und Uhrzeit in Ortszeit (Startzeile „HA-Rezeptbuch 0.8.1 startet (Protokollstufe info, Ortszeit Europe/Berlin)“). Dafür ist `tzdata` im Abbild
