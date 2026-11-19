@@ -3,6 +3,7 @@
 ## 0.10.9 – Modul 10: Balken der Wiegeansicht (in Entwicklung)
 
 - **Soll-Strich wird grün**, sobald der Balken über der Toleranz rot ist – er bleibt so sichtbar (normale und Kompaktansicht)
+- **Feinbalken** von Anfang an sichtbar (vorher erst kurz vor dem Soll eingeblendet – das wirkte verzögert)
 - **Grobbalken:** das Soll liegt bei 2/3 der Skala (vorher am rechten Rand); bei sehr kleinem Soll mit großer Toleranz reicht die Skala bis Soll + 2 × Toleranz
 
 ## 0.10.8 – Rückfragefenster auf Höhe der Taste (in Entwicklung)

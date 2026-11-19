@@ -589,7 +589,8 @@
         ring.style.background = p ? "conic-gradient(var(--ok) " + (p * 3.6) + "deg, var(--track) 0)" : "var(--track)";
         coarse.set(actual, target, tol, zone);
         fine.set(actual, target, tol, zone);
-        fine.node.classList.toggle("hidden", !(actual !== null && actual !== undefined && actual >= target - 4 * tol && tol > 0));
+        // Feinbalken immer sichtbar (Michael 21:12: Einblenden verzögert), ohne Toleranz ausgeblendet
+        fine.node.classList.toggle("hidden", !(tol > 0));
         const h = w && w.hint;
         hint.textContent = h || "";
         hint.classList.toggle("hidden", !h);
