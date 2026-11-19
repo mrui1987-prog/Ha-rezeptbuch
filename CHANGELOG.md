@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.13 – Modul 09: Null doppelt, erst bei ruhiger Anzeige (in Entwicklung)
+
+- **Behälter wiegen / wechseln:** Die KERN piept auch, wenn sie `tare`/`zero` wegen unruhiger Anzeige verwirft (Michael 23:02) – das Piepen ist keine Bestätigung. Deshalb jetzt bei beiden Nullungen (leere Waage und nach dem Aufstellen des Behälters): `tare`, ½ s, `zero`, auf stabile Anzeige warten (höchstens 3 s), `zero` erneut. Bei leerer Waage danach wie bisher Bestätigung abwarten und bis zu zweimal wiederholen
+- Die Pause zwischen `tare` und dem ersten `zero` auf leerer Waage ist damit ½ s statt 2 s
+
 ## 0.10.12 – Modul 09: Null nach dem Behälter wiegen, „Weiter“ nur mit gültigem Wert (in Entwicklung)
 
 - **Behälter wiegen / wechseln:** Nach der letzten Tara mit dem Behälter wartet die Software ½ s und sendet `zero` – das Piepen der Waage zeigt dem Bediener das Ende an (Michael 22:38). Was die Waage danach zeigt, wird der neue Bezug

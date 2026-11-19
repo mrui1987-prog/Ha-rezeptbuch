@@ -21,9 +21,11 @@ from .weigh import EMPTY_LIMIT_G, capacity_warning, zone
 
 log = logging.getLogger("rezeptbuch.production")
 
-TARE_PAUSE_S = 2.0      # Pause zwischen Tara und Null, damit die Waage die Tara verarbeitet (Michael 17:14)
+TARE_PAUSE_S = 0.5      # ½ s nach der Tara das erste zero (Michael 23:02, vorher 2 s)
+SETTLE_MIN_S = 0.5      # nach dem ersten zero mindestens so lange warten, damit „stabil“ frisch ist
+SETTLE_MAX_S = 3.0      # höchstens so lange auf eine stabile Anzeige warten, dann das zweite zero trotzdem
 ZERO_WAIT_S = 2.0       # so lange auf die Bestätigung der Null warten, dann erneut senden
-ZERO_REPEATS = 2        # Null höchstens zweimal wiederholen (Michael 17:14)
+ZERO_REPEATS = 2        # Null nach dem zweiten zero höchstens zweimal wiederholen (Michael 17:14)
 FINAL_ZERO_DELAY_S = 0.5  # nach der letzten Tara beim Behälter wiegen ½ s warten, dann zero (Michael 22:38)
 FINAL_REF_TIMEOUT_S = 3.0  # danach ohne neuen Bezug weiter
 ZERO_OK_G = 5           # Null bestätigt: Waage stabil, ohne Tara, Anzeige höchstens ±5 g
@@ -127,21 +129,28 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             flow.zero_sent, flow.zero_at, flow.zero_failed = 0, None, False
         return
     if flow.step == "zeroing":
+        # Michael 23:02: die KERN verwirft tare/zero bei unruhiger Anzeige (piept trotzdem) – deshalb
+        # ½ s nach der Tara zero, auf stabile Anzeige warten, zero erneut; danach Bestätigung/Wiederholung
         if flow.zero_sent == 0:
             if now - flow.sent_at >= TARE_PAUSE_S:
                 runner.zero(station)
                 flow.zero_sent, flow.zero_at = 1, now
             return
-        if _zero_confirmed(sample):
+        if flow.zero_sent == 1:
+            if _settled(sample, now - flow.zero_at):
+                runner.zero(station)
+                flow.zero_sent, flow.zero_at = 2, now
+            return
+        if _zero_confirmed(sample) and now - flow.zero_at >= SETTLE_MIN_S:
             sw.clear()
             flow.step, flow.sent_at = "place", now
             log.info("Waage %d: Null bestätigt nach %d Befehl(en)", station, flow.zero_sent)
             return
         if now - flow.zero_at >= ZERO_WAIT_S:
-            if flow.zero_sent <= ZERO_REPEATS:
+            if flow.zero_sent < 2 + ZERO_REPEATS:
                 runner.zero(station)
                 flow.zero_sent, flow.zero_at = flow.zero_sent + 1, now
-                log.info("Waage %d: Null nicht bestätigt, %d. Wiederholung", station, flow.zero_sent - 1)
+                log.info("Waage %d: Null nicht bestätigt, %d. Wiederholung", station, flow.zero_sent - 2)
             elif not flow.zero_failed:
                 flow.zero_failed = True
                 log.warning("Waage %d: Null nach %d Versuchen nicht bestätigt – bitte von Hand", station,
@@ -155,10 +164,15 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             return
         if sample.ok and abs(sample.weight_g) <= EMPTY_LIMIT_G:
             runner.zero(station)
-            flow.step, flow.sent_at = "final_ref", now
+            flow.step, flow.sent_at = "final_settle", now
         else:
             log.info("Waage %d: Null nach dem Behälter ausgelassen (Anzeige %s)", station, sample.weight_g)
             runner.end_flow(station)
+        return
+    if flow.step == "final_settle":                      # auf stabile Anzeige warten, zero erneut (23:02)
+        if _settled(sample, now - flow.sent_at):
+            runner.zero(station)
+            flow.step, flow.sent_at = "final_ref", now
         return
     if flow.step == "final_ref":
         # Was die Waage nach zero zeigt (0 oder wieder brutto), wird der neue Bezug (Software-Tara, 6.1)
@@ -181,6 +195,11 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             batches.save_container(conn, flow.batch_id, station, runner, weight, "gewogen")
             runner.finish_container(station, flow.kind, flow.batch_id)    # Tara, dann Null
             log.info("Waage %d: Behälter %d g", station, weight)
+
+
+def _settled(sample, waited: float) -> bool:
+    """Zweites zero: Anzeige stabil (frühestens nach SETTLE_MIN_S) oder spätestens nach SETTLE_MAX_S."""
+    return (sample.ok and sample.stable and waited >= SETTLE_MIN_S) or waited >= SETTLE_MAX_S
 
 
 def _zero_confirmed(sample) -> bool:

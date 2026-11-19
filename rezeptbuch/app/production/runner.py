@@ -85,6 +85,8 @@ class ContainerFlow:
         ("change", "place"): "Leeren Behälter aufstellen",
         ("weigh", "final_zero"): "Waage wird genullt – bitte warten",
         ("change", "final_zero"): "Waage wird genullt – bitte warten",
+        ("weigh", "final_settle"): "Waage wird genullt – bitte warten",
+        ("change", "final_settle"): "Waage wird genullt – bitte warten",
         ("weigh", "final_ref"): "Waage wird genullt – bitte warten",
         ("change", "final_ref"): "Waage wird genullt – bitte warten",
         ("weigh", "confirm"): "Anderer Behälter? Bitte bestätigen",

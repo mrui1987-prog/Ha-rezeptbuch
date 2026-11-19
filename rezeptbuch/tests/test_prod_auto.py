@@ -26,7 +26,7 @@ def st(station=1, **kw):
     return {"station": station, **kw}
 
 
-ZEROED = 2.4    # Tara, 2 s Pause, Null, Bestätigung
+ZEROED = 2.4    # Tara, ½ s, Null, stabil, Null erneut, Bestätigung (Michael 23:02)
 
 
 def run(conn, runner, clock, seconds, step=0.2):
@@ -374,18 +374,22 @@ def test_container_weigh_flow(conn, recipes, runner, hub, clock):
     run(conn, runner, clock, 0.2)                                 # Waage ist leer: Tara
     assert hub.commands[-1] == (1, "tare") and runner.flow(1).step == "zeroing"
     assert runner.reading(1).hint == "Waage wird genullt – bitte warten"
-    run(conn, runner, clock, 1.8)
-    assert hub.commands[-1] == (1, "tare")                        # Pause zwischen Tara und Null
+    run(conn, runner, clock, 0.4)
+    assert hub.commands[-1] == (1, "tare")                        # ½ s zwischen Tara und Null
     run(conn, runner, clock, 0.2)
     assert hub.commands[-1] == (1, "zero")
-    run(conn, runner, clock, 0.2)                                 # Null bestätigt
+    run(conn, runner, clock, 0.6)                                 # Anzeige stabil: Null erneut (Michael 23:02)
+    assert hub.commands[-2:] == [(1, "zero"), (1, "zero")] and runner.flow(1).step == "zeroing"
+    run(conn, runner, clock, 0.6)                                 # Null bestätigt
     assert runner.flow(1).step == "place"
     hub.put(1, 1250)                                              # Behälter aufstellen
     run(conn, runner, clock, 0.4)
     assert runner.flow(1).step == "final_zero" and hub.commands[-1] == (1, "tare")
     assert runner.reading(1).hint == "Waage wird genullt – bitte warten"
     run(conn, runner, clock, 0.6)                                 # Michael 22:38: ½ s nach der Tara Null
-    assert hub.commands[-2:] == [(1, "tare"), (1, "zero")]
+    assert hub.commands[-2:] == [(1, "tare"), (1, "zero")] and runner.flow(1).step == "final_settle"
+    run(conn, runner, clock, 0.6)                                 # stabil: Null erneut (Michael 23:02)
+    assert hub.commands[-3:] == [(1, "tare"), (1, "zero"), (1, "zero")]
     run(conn, runner, clock, 0.6)                                 # neuer Bezug = Anzeige nach Null
     assert runner.flow(1) is None
     batch = batches.get_batch(conn, batch["id"], runner)
@@ -403,7 +407,7 @@ def test_container_weigh_mid_ingredient_starts_at_zero(conn, brot, runner, hub, 
     hub.put(1, 0)                                                 # alter Behälter weg
     run(conn, runner, clock, ZEROED)
     hub.put(1, 950)                                               # neuer Behälter
-    run(conn, runner, clock, 2.2)
+    run(conn, runner, clock, 2.8)
     assert runner.flow(1) is None
     batch = batches.get_batch(conn, brot["id"], runner)
     assert batch["container_g"] == 950 and batch["scale"]["actual_g"] == 0
@@ -439,7 +443,7 @@ def test_container_change_with_partial(conn, recipes, runner, hub, clock):
     hub.put(1, 0)
     run(conn, runner, clock, ZEROED)
     hub.put(1, 800)
-    run(conn, runner, clock, 2.2)
+    run(conn, runner, clock, 2.8)
     assert batches.get_batch(conn, batch["id"])["container_g"] == 800
     hub.put(1, 800 + 700)
     batch = batches.container(conn, batch["id"], st(action="change"), runner)
@@ -447,9 +451,9 @@ def test_container_change_with_partial(conn, recipes, runner, hub, clock):
     assert batch["scale"]["hint"] == "Behälter abnehmen und ausleeren"
     hub.put(1, 0)                                                 # abgenommen: -----
     run(conn, runner, clock, ZEROED)
-    assert hub.commands[-2:] == [(1, "tare"), (1, "zero")] and runner.flow(1).step == "place"
+    assert hub.commands[-3:] == [(1, "tare"), (1, "zero"), (1, "zero")] and runner.flow(1).step == "place"
     hub.put(1, 803)                                               # leerer Behälter wieder drauf (3 g Abweichung)
-    run(conn, runner, clock, 2.2)
+    run(conn, runner, clock, 2.8)
     assert runner.flow(1) is None
     hub.put(1, 803 + 310)
     reading = batches.get_batch(conn, batch["id"], runner)
@@ -472,12 +476,12 @@ def test_container_change_other_container_needs_confirm(conn, recipes, runner, h
     hub.put(1, 0)                                                 # Behälter abgenommen
     run(conn, runner, clock, ZEROED)
     hub.put(1, 1200)                                              # anderer Behälter
-    run(conn, runner, clock, 2.2)
+    run(conn, runner, clock, 2.8)
     assert runner.flow(1).step == "confirm"
     batch = batches.container(conn, batch["id"], st(action="confirm"), runner)
     assert batch["container_g"] == 1200 and runner.flow(1).step == "final_zero"
-    run(conn, runner, clock, 1.4)
-    assert runner.flow(1) is None and hub.commands[-1] == (1, "zero")
+    run(conn, runner, clock, 2.0)
+    assert runner.flow(1) is None and hub.commands[-2:] == [(1, "zero"), (1, "zero")]
     assert batches.get_batch(conn, batch["id"], runner)["scale"]["actual_g"] == 0
     assert events(conn, "container")[-1][4] == "gewogen, Abweichung bestätigt"
 
@@ -489,22 +493,24 @@ def test_container_zero_repeated(conn, brot, runner, hub, clock):
     batches.container(conn, brot["id"], st(action="weigh"), runner)
     run(conn, runner, clock, ZEROED)
     assert runner.flow(1).step == "zeroing" and hub.commands.count((1, "zero")) == 1
-    run(conn, runner, clock, 2.0)
+    run(conn, runner, clock, 1.6)                                 # „-----“ ist nie stabil: nach 3 s Null erneut
     assert hub.commands.count((1, "zero")) == 2 and runner.flow(1).step == "zeroing"
-    run(conn, runner, clock, 2.2)
-    assert hub.commands.count((1, "zero")) == 3 and runner.flow(1).step == "place"
+    run(conn, runner, clock, 2.0)                                 # Wiederholung
+    assert hub.commands.count((1, "zero")) == 3 and runner.flow(1).step == "zeroing"
+    run(conn, runner, clock, 0.6)
+    assert runner.flow(1).step == "place"
 
 
 def test_container_zero_fails_then_by_hand(conn, brot, runner, hub, clock):
     hub.put(1, 0)
     hub.zero_misses = 5
     batches.container(conn, brot["id"], st(action="weigh"), runner)
-    run(conn, runner, clock, ZEROED + 6.4)
-    assert hub.commands.count((1, "zero")) == 3                  # einmal + zwei Wiederholungen
+    run(conn, runner, clock, ZEROED + 7.6)
+    assert hub.commands.count((1, "zero")) == 4                  # zweimal + zwei Wiederholungen
     assert runner.flow(1).step == "zeroing"
     assert runner.reading(1).hint == "Waage leer lassen und an der Waage Null drücken"
     run(conn, runner, clock, 4)
-    assert hub.commands.count((1, "zero")) == 3                  # keine weiteren Befehle
+    assert hub.commands.count((1, "zero")) == 4                  # keine weiteren Befehle
     hub.offset[1] = 0                                             # Null von Hand an der Waage
     run(conn, runner, clock, 0.2)
     assert runner.flow(1).step == "place"

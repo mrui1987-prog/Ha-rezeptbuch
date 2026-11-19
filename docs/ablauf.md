@@ -98,10 +98,10 @@ Nach jeder Quittung (und beim Start, beim „Weiter“, auf Tastendruck):
 
 Taste **„Behälter wiegen“**, **jederzeit** während der Charge (geändert 12:22, Michael: „Vielleicht brauche ich einen anderen Behälter“):
 1. Hinweis „Waage leeren“. Die Software wartet auf eine leere Waage: stabil bei ~0 (|Wert| ≤ 50 g) oder `-----` (tarierter Behälter abgenommen).
-2. Befehl `tare`, **2 s Pause**, dann `zero` (geändert 19.11.2026, 17:14, Michael: `zero` direkt nach `tare` wurde an der KERN mehrfach nicht ausgeführt). Hinweis „Waage wird genullt – bitte warten“. Die Software wartet 2 s auf die Bestätigung (stabil, ohne Tara, Anzeige ≤ ±5 g) und sendet `zero` sonst erneut, **höchstens zweimal**. Bleibt die Null aus: Hinweis „Waage leer lassen und an der Waage Null drücken“; die Null von Hand wird erkannt. Tara auf leerer Waage löscht eine alte Tara, Null gleicht die Drift aus.
+2. Befehl `tare`, **½ s Pause, `zero`, auf stabile Anzeige warten (höchstens 3 s), `zero` erneut** (geändert 19.11.2026, 17:14 und 23:02, Michael: die KERN verwirft `tare`/`zero` bei unruhiger Anzeige und piept trotzdem). Hinweis „Waage wird genullt – bitte warten“. Nach dem zweiten `zero` wartet die Software 2 s auf die Bestätigung (stabil, ohne Tara, Anzeige ≤ ±5 g) und sendet `zero` sonst erneut, **höchstens zweimal**. Bleibt die Null aus: Hinweis „Waage leer lassen und an der Waage Null drücken“; die Null von Hand wird erkannt. Tara auf leerer Waage löscht eine alte Tara, Null gleicht die Drift aus.
 3. Hinweis „Behälter jetzt aufstellen“ mit Taste **„Ohne Behälter“**.
 4. Wert stabil über 50 g → Software speichert ihn als **Behältergewicht** (`batch.container_g`) und sendet erneut `tare` (Phasen wie 6.2). „Ohne Behälter“ → `container_g = 0`, keine weitere Tara.
-4a. **Nach der Tara mit dem Behälter ½ s warten, dann `zero`** (Michael 19.11.2026, 22:38: das Piepen der Waage zeigt dem Bediener das Ende an). Hinweis „Waage wird genullt – bitte warten“; was die Waage danach stabil zeigt, wird der Bezug der Software (gilt auch beim Behälter wechseln).
+4a. **Nach der Tara mit dem Behälter ½ s warten, dann `zero`, auf stabile Anzeige warten (höchstens 3 s), `zero` erneut** (Michael 19.11.2026, 22:38 und 23:02: das Piepen zeigt dem Bediener das Ende an, ist aber keine Bestätigung – die KERN piept auch, wenn sie den Befehl wegen Unruhe verwirft). Hinweis „Waage wird genullt – bitte warten“; was die Waage danach stabil zeigt, wird der Bezug der Software (gilt auch beim Behälter wechseln).
 5. Das Behältergewicht wird angezeigt und ist **von Hand änderbar**. Das ändert nur den gespeicherten Wert (Höchstlast, Protokoll), nicht das Wiegen.
 
 Mitten in einer Zutat beginnt die Zutat im neuen Behälter **wieder bei 0**; das bisher Gewogene wird **nicht** als Teilmenge gezählt (geändert 19.11.2026, 16:18, Michael – Teilmengen nur bei „Behälter wechseln“, 6.2b). Die **Tara-Summe beginnt neu** beim neuen Behälter.
@@ -284,6 +284,7 @@ docs/ablauf.md                               dieses Dokument (ins Repo mit C1)
 | 19.11.2026, 12:22 | Michael: „Behälter wiegen“ jederzeit (mit Teilmenge mitten in einer Zutat); beim Behälterwechsel nach dem Abnehmen `tare` + `zero`. Abschnitte 6.2a, 6.2b, 15 angepasst. |
 | 19.11.2026, 12:25 | **Konzept freigegeben (Michael).** Nächster Schritt: Teil C1 (0.9.0) auf Zweig `modul09`. |
 | 19.11.2026, 22:38 | Michael: nach dem Behälter wiegen ½ s nach der letzten Tara `zero` (6.2a 4a); Befund: „Weiter“ bei ungültigem Waagenwert wird abgelehnt (9). |
+| 19.11.2026, 23:02 | Michael: KERN verwirft `tare`/`zero` bei Unruhe und piept trotzdem → bei beiden Nullungen `tare`, ½ s, `zero`, stabil abwarten, `zero` erneut (6.2a 2 und 4a). |
 | 19.11.2026, 17:14 | Michael: beim Behälter wiegen/wechseln Pause zwischen `tare` und `zero`, `zero` bis zu zweimal wiederholen, wenn nicht bestätigt. Abschnitte 6.2a, 6.2b. |
 
 ## 19. Umsetzung Teil C1 (0.9.0) – Ergänzungen und Abweichungen
