@@ -1,5 +1,7 @@
 # Änderungen
 
+**Modul 06 – Rezeptberechnung & Skalierung: am 19.11.2026, 23:34 von Michael freigegeben** (Funktionsstand 0.6.4 mit den Korrekturen 0.10.8/0.10.9, geprüft auf 0.10.13; Freigabebericht im Projektwissen `docs/freigabebericht-modul06.md`). Keine Codeänderung.
+
 ## 0.10.13 – Modul 09: Null doppelt, erst bei ruhiger Anzeige (in Entwicklung)
 
 - **Behälter wiegen / wechseln:** Die KERN piept auch, wenn sie `tare`/`zero` wegen unruhiger Anzeige verwirft (Michael 23:02) – das Piepen ist keine Bestätigung. Deshalb jetzt bei beiden Nullungen (leere Waage und nach dem Aufstellen des Behälters): `tare`, ½ s, `zero`, auf stabile Anzeige warten (höchstens 3 s), `zero` erneut. Bei leerer Waage danach wie bisher Bestätigung abwarten und bis zu zweimal wiederholen
