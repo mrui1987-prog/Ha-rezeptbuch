@@ -101,6 +101,7 @@ Taste **„Behälter wiegen“**, **jederzeit** während der Charge (geändert 1
 2. Befehl `tare`, **2 s Pause**, dann `zero` (geändert 19.11.2026, 17:14, Michael: `zero` direkt nach `tare` wurde an der KERN mehrfach nicht ausgeführt). Hinweis „Waage wird genullt – bitte warten“. Die Software wartet 2 s auf die Bestätigung (stabil, ohne Tara, Anzeige ≤ ±5 g) und sendet `zero` sonst erneut, **höchstens zweimal**. Bleibt die Null aus: Hinweis „Waage leer lassen und an der Waage Null drücken“; die Null von Hand wird erkannt. Tara auf leerer Waage löscht eine alte Tara, Null gleicht die Drift aus.
 3. Hinweis „Behälter jetzt aufstellen“ mit Taste **„Ohne Behälter“**.
 4. Wert stabil über 50 g → Software speichert ihn als **Behältergewicht** (`batch.container_g`) und sendet erneut `tare` (Phasen wie 6.2). „Ohne Behälter“ → `container_g = 0`, keine weitere Tara.
+4a. **Nach der Tara mit dem Behälter ½ s warten, dann `zero`** (Michael 19.11.2026, 22:38: das Piepen der Waage zeigt dem Bediener das Ende an). Hinweis „Waage wird genullt – bitte warten“; was die Waage danach stabil zeigt, wird der Bezug der Software (gilt auch beim Behälter wechseln).
 5. Das Behältergewicht wird angezeigt und ist **von Hand änderbar**. Das ändert nur den gespeicherten Wert (Höchstlast, Protokoll), nicht das Wiegen.
 
 Mitten in einer Zutat beginnt die Zutat im neuen Behälter **wieder bei 0**; das bisher Gewogene wird **nicht** als Teilmenge gezählt (geändert 19.11.2026, 16:18, Michael – Teilmengen nur bei „Behälter wechseln“, 6.2b). Die **Tara-Summe beginnt neu** beim neuen Behälter.
@@ -156,7 +157,7 @@ Je Station ohne laufende Charge: Anzeige netto mit derselben Tara-Logik (6.2) ü
 
 **Handwaage mitten in der Verwiegung (K09-11, Michael 11:53):** Taste „Handwaage“ an der laufenden Charge → Charge `paused` mit Grund `hand_scale`, **bleibt an dieser Station reserviert** (die andere Station sieht „pausiert – Handwaage an Waage X“ und kann nicht übernehmen). Die Waage läuft als normale Waage mit Tara; jemand kann zwischendurch etwas anderes abwiegen.
 
-**Prüfung beim Zurückkehren (K09-12):** Beim Wechsel merkt sich die Software die **Gesamtlast** (Behälter + bisherige Zutaten). Bei „Weiter“ vergleicht sie die aktuelle Gesamtlast damit: Abweichung ≤ **5 g** (Einstellung `resume_check_g`) → weiter mit neuer Tara; größer → Meldung „Gewicht weicht um … g ab – richtiger Behälter?“, Weitermachen nur mit Bestätigung, die Abweichung wird protokolliert (Ereignis mit beiden Werten). Die Prüfung gilt auch für normale Pausen an derselben Station; bei Übernahme an der anderen Waage entfällt sie (andere Waage).
+**Prüfung beim Zurückkehren (K09-12):** Beim Wechsel merkt sich die Software die **Gesamtlast** (Behälter + bisherige Zutaten). Bei „Weiter“ vergleicht sie die aktuelle Gesamtlast damit: Abweichung ≤ **5 g** (Einstellung `resume_check_g`) → weiter mit neuer Tara; größer → Meldung „Gewicht weicht um … g ab – richtiger Behälter?“, Weitermachen nur mit Bestätigung, die Abweichung wird protokolliert (Ereignis mit beiden Werten). Die Prüfung gilt auch für normale Pausen an derselben Station; bei Übernahme an der anderen Waage entfällt sie (andere Waage). **Zeigt die Waage beim „Weiter“ keinen gültigen Wert** (`-----`, unter 0 oder Überlast), wird „Weiter“ abgelehnt mit „Bitte den Behälter des Teigs wieder aufstellen“ (Befund Michael 19.11.2026, 22:38).
 
 ## 10. Einstellungen (M09-4, Admin mit PIN)
 
@@ -282,6 +283,7 @@ docs/ablauf.md                               dieses Dokument (ins Repo mit C1)
 | 19.11.2026, 12:17 | K09-14 Behälter wechseln neu (Michael): Teilmenge, Ausleeren, `zero` bei `-----`, leerer Behälter, Tara, Rest. Abschnitte 6.2b, 11, 12, 15 angepasst. |
 | 19.11.2026, 12:22 | Michael: „Behälter wiegen“ jederzeit (mit Teilmenge mitten in einer Zutat); beim Behälterwechsel nach dem Abnehmen `tare` + `zero`. Abschnitte 6.2a, 6.2b, 15 angepasst. |
 | 19.11.2026, 12:25 | **Konzept freigegeben (Michael).** Nächster Schritt: Teil C1 (0.9.0) auf Zweig `modul09`. |
+| 19.11.2026, 22:38 | Michael: nach dem Behälter wiegen ½ s nach der letzten Tara `zero` (6.2a 4a); Befund: „Weiter“ bei ungültigem Waagenwert wird abgelehnt (9). |
 | 19.11.2026, 17:14 | Michael: beim Behälter wiegen/wechseln Pause zwischen `tare` und `zero`, `zero` bis zu zweimal wiederholen, wenn nicht bestätigt. Abschnitte 6.2a, 6.2b. |
 
 ## 19. Umsetzung Teil C1 (0.9.0) – Ergänzungen und Abweichungen

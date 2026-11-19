@@ -24,6 +24,8 @@ log = logging.getLogger("rezeptbuch.production")
 TARE_PAUSE_S = 2.0      # Pause zwischen Tara und Null, damit die Waage die Tara verarbeitet (Michael 17:14)
 ZERO_WAIT_S = 2.0       # so lange auf die Bestätigung der Null warten, dann erneut senden
 ZERO_REPEATS = 2        # Null höchstens zweimal wiederholen (Michael 17:14)
+FINAL_ZERO_DELAY_S = 0.5  # nach der letzten Tara beim Behälter wiegen ½ s warten, dann zero (Michael 22:38)
+FINAL_REF_TIMEOUT_S = 3.0  # danach ohne neuen Bezug weiter
 ZERO_OK_G = 5           # Null bestätigt: Waage stabil, ohne Tara, Anzeige höchstens ±5 g
 
 
@@ -145,6 +147,29 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
                 log.warning("Waage %d: Null nach %d Versuchen nicht bestätigt – bitte von Hand", station,
                             flow.zero_sent)
         return
+    if flow.step == "final_zero":
+        if sw.taring:                                    # erst die Tara-Bestätigung abwarten
+            flow.sent_at = now
+            return
+        if now - flow.sent_at < FINAL_ZERO_DELAY_S:
+            return
+        if sample.ok and abs(sample.weight_g) <= EMPTY_LIMIT_G:
+            runner.zero(station)
+            flow.step, flow.sent_at = "final_ref", now
+        else:
+            log.info("Waage %d: Null nach dem Behälter ausgelassen (Anzeige %s)", station, sample.weight_g)
+            runner.end_flow(station)
+        return
+    if flow.step == "final_ref":
+        # Was die Waage nach zero zeigt (0 oder wieder brutto), wird der neue Bezug (Software-Tara, 6.1)
+        if sample.ok and sample.stable and now - flow.sent_at >= FINAL_ZERO_DELAY_S:
+            sw.reference_g = sample.weight_g
+            sw.reset_ack()
+            runner.end_flow(station)
+        elif now - flow.sent_at >= FINAL_REF_TIMEOUT_S:
+            log.warning("Waage %d: nach Null kein stabiler Wert – Bezug unverändert", station)
+            runner.end_flow(station)
+        return
     if flow.step == "place":
         if sample.ok and sample.stable and sample.net is not True and sample.weight_g > EMPTY_LIMIT_G:
             weight = sample.weight_g
@@ -154,7 +179,7 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
                 flow.step, flow.measured_g = "confirm", weight
                 return
             batches.save_container(conn, flow.batch_id, station, runner, weight, "gewogen")
-            runner.set_reference(station)        # Tara mit dem Behälter
+            runner.finish_container(station, flow.kind, flow.batch_id)    # Tara, dann Null
             log.info("Waage %d: Behälter %d g", station, weight)
 
 

@@ -336,6 +336,21 @@ def test_resume_load_check_same_station(conn, brot, runner, hub):
     assert "Pause 1302 g, jetzt 1400 g" in events(conn, "resume_deviation")[0][4]
 
 
+def test_resume_refused_while_scale_invalid(conn, brot, runner, hub):
+    # Befund Michael 22:38: Handwaage, Behälter weg, Waage zeigt „-----“ – „Weiter“ ohne Rückfrage war möglich
+    hub.put(1, 1300)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    hub.put(1, -50)                                               # unter 0: Status invalid
+    with pytest.raises(ConflictError) as exc:
+        batches.resume(conn, brot["id"], st(), runner)
+    assert exc.value.code == "resume_invalid" and "keinen gültigen Wert" in exc.value.message
+    with pytest.raises(ConflictError):
+        batches.resume(conn, brot["id"], st(confirm_deviation=True), runner)
+    assert batches.get_batch(conn, brot["id"])["status"] == "paused"
+    hub.put(1, 1300)                                              # Behälter wieder drauf
+    assert batches.resume(conn, brot["id"], st(), runner)["status"] == "running"
+
+
 def test_resume_other_station_no_load_check(conn, brot, runner, hub):
     conn.execute("UPDATE station SET active = 1 WHERE id = 2")
     hub.put(1, 1300)
@@ -367,6 +382,11 @@ def test_container_weigh_flow(conn, recipes, runner, hub, clock):
     assert runner.flow(1).step == "place"
     hub.put(1, 1250)                                              # Behälter aufstellen
     run(conn, runner, clock, 0.4)
+    assert runner.flow(1).step == "final_zero" and hub.commands[-1] == (1, "tare")
+    assert runner.reading(1).hint == "Waage wird genullt – bitte warten"
+    run(conn, runner, clock, 0.6)                                 # Michael 22:38: ½ s nach der Tara Null
+    assert hub.commands[-2:] == [(1, "tare"), (1, "zero")]
+    run(conn, runner, clock, 0.6)                                 # neuer Bezug = Anzeige nach Null
     assert runner.flow(1) is None
     batch = batches.get_batch(conn, batch["id"], runner)
     assert batch["container_g"] == 1250 and batch["scale"]["actual_g"] == 0 and batch["scale"]["gross_g"] == 1250
@@ -455,7 +475,10 @@ def test_container_change_other_container_needs_confirm(conn, recipes, runner, h
     run(conn, runner, clock, 2.2)
     assert runner.flow(1).step == "confirm"
     batch = batches.container(conn, batch["id"], st(action="confirm"), runner)
-    assert batch["container_g"] == 1200 and runner.flow(1) is None
+    assert batch["container_g"] == 1200 and runner.flow(1).step == "final_zero"
+    run(conn, runner, clock, 1.4)
+    assert runner.flow(1) is None and hub.commands[-1] == (1, "zero")
+    assert batches.get_batch(conn, batch["id"], runner)["scale"]["actual_g"] == 0
     assert events(conn, "container")[-1][4] == "gewogen, Abweichung bestätigt"
 
 

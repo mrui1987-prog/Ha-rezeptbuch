@@ -597,7 +597,12 @@ def _load_check(conn, row, station: int, payload, runner) -> tuple[int, int, int
         return None                              # andere Waage oder Gesamtlast unbekannt: keine Prüfung
     now_g = runner.gross(station)
     if now_g is None:
-        return None
+        if runner.sample(station).status == "invalid":
+            # Befund Michael 22:38: Handwaage, Behälter getauscht, an der Waage tariert und wieder abgenommen –
+            # die Waage zeigt „-----“ (unter 0 oder Überlast). Ohne gültigen Wert kein „Weiter“.
+            raise ConflictError("Die Waage zeigt keinen gültigen Wert (unter 0 oder Überlast). Bitte den Behälter "
+                                "des Teigs wieder aufstellen, dann „Weiter“.", code="resume_invalid")
+        return None                              # Waage getrennt oder Gesamtlast unbekannt: keine Prüfung
     before = memo[1]
     deviation = now_g - before
     if abs(deviation) <= load_settings(conn)["resume_check_g"]:
@@ -802,7 +807,7 @@ def container(conn, batch_id: int, payload, runner: ProductionRunner, *, now: st
         if flow.step != "confirm" or flow.measured_g is None:
             raise ConflictError("Nichts zu bestätigen.", code="container_step")
         save_container(conn, batch_id, station, runner, flow.measured_g, "gewogen, Abweichung bestätigt", now=now)
-        runner.set_reference(station)
+        runner.finish_container(station, flow.kind, batch_id)
         return get_batch(conn, batch_id, runner)
     if action == "cancel":
         runner.end_flow(station)

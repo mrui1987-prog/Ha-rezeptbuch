@@ -294,6 +294,8 @@
           { label: "Abbrechen", value: false },
           { label: "OK, trotzdem starten", value: true, kind: "primary" }] });
         if (ok === true) return act(button, path, Object.assign({}, body || { station: ST }, { confirm_stock: true }));
+      } else if (err.status === 409 && err.code === "resume_invalid") {
+        await RB.dialog({ title: "Weiter nicht möglich", text: err.message });
       } else if (err.status === 400 || err.status === 422) {
         await RB.dialog({ title: "Nicht möglich", text: err.message });
       } else if (err.status && err.status < 500) {

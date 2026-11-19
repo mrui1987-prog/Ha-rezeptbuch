@@ -83,6 +83,10 @@ class ContainerFlow:
         ("change", "zeroing"): "Waage wird genullt – bitte warten",
         ("weigh", "place"): "Behälter jetzt aufstellen",
         ("change", "place"): "Leeren Behälter aufstellen",
+        ("weigh", "final_zero"): "Waage wird genullt – bitte warten",
+        ("change", "final_zero"): "Waage wird genullt – bitte warten",
+        ("weigh", "final_ref"): "Waage wird genullt – bitte warten",
+        ("change", "final_ref"): "Waage wird genullt – bitte warten",
         ("weigh", "confirm"): "Anderer Behälter? Bitte bestätigen",
         ("change", "confirm"): "Anderer Behälter? Bitte bestätigen",
     }
@@ -254,6 +258,15 @@ class ProductionRunner:
             flow = ContainerFlow(kind, batch_id, "empty" if kind == "weigh" else "remove")
             self._flows[station] = flow
             return flow
+
+    def finish_container(self, station: int, kind: str, batch_id: int) -> None:
+        """Behälter gemerkt: ``tare`` mit dem Behälter, danach Schritt ``final_zero`` – nach der bestätigten
+        Tara ½ s warten und ``zero`` senden; das Piepen der Waage zeigt dem Bediener das Ende an
+        (Michael 19.11.2026, 22:38)."""
+        with self._lock:
+            self._flows.pop(station, None)
+            self.set_reference(station)
+            self._flows[station] = ContainerFlow(kind, batch_id, "final_zero", sent_at=self.clock())
 
     def end_flow(self, station: int) -> None:
         with self._lock:
