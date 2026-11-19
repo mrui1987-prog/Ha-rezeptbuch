@@ -123,7 +123,7 @@ Ist das Behältergewicht schon bekannt und weicht der neue Wert um mehr als `res
 
 ### 6.3 Auto-Quittung (M09-4)
 
-Automatisch quittiert wird, wenn **durchgehend für die Einstellung „Zeit“ (2 s)**: Status `ok`, `stable` wahr, |Ist − Soll| ≤ Toleranz, **und** Höchst- minus Mindestwert im Zeitraum ≤ Einstellung „Wanderung“ (5 g). Ist-Wert = letzter Wert. Jeder Ausreißer (aus der Toleranz, nicht stabil, `invalid`) startet die Zeit neu. Fortschritt (0–100 %) geht über den Live-Kanal (Balken in Modul 10).
+Automatisch quittiert wird, wenn **durchgehend für die Einstellung „Zeit“ (2 s)**: Status `ok`, `stable` wahr, |Ist − Soll| ≤ Toleranz, **und** Höchst- minus Mindestwert im Zeitraum ≤ Einstellung „Wanderung“ (5 g). **Zusätzlich (Befund B1, Michael 19.11.2026, 14:58): Ist mindestens das halbe Soll (aufgerundet) und mindestens 1 g** – sonst würde eine Zutat mit Toleranz größer als das Soll schon bei 0 g quittiert; von Hand gilt die volle Toleranz. Ist-Wert = letzter Wert. Jeder Ausreißer (aus der Toleranz, nicht stabil, `invalid`) startet die Zeit neu. Fortschritt (0–100 %) geht über den Live-Kanal (Balken in Modul 10).
 
 ### 6.4 Höchstlast (M09-7)
 

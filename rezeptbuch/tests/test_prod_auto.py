@@ -91,6 +91,19 @@ def test_auto_ack_window():
     assert not sw.auto_ack(4, 1100, 1000, 20, 2, 5) and sw.progress == 0        # außerhalb der Toleranz
 
 
+def test_auto_ack_needs_half_target():
+    # Befund B1: Boerol 4 g ± 20 g darf nicht bei 0 g automatisch quittiert werden
+    from app.production.weigh import auto_ack_minimum
+    assert [auto_ack_minimum(t) for t in (0, 1, 2, 3, 4, 1000)] == [1, 1, 1, 2, 2, 500]
+    sw = StationWeigh(reference_g=0)
+    sw.observe(0, Sample("ok", 0, True), 3, 5)
+    assert not sw.auto_ack(0, 0, 4, 20, 2, 5)
+    assert not sw.auto_ack(3, 0, 4, 20, 2, 5) and sw.progress == 0
+    sw.observe(3, Sample("ok", 2, True), 3, 5)
+    assert not sw.auto_ack(3, 2, 4, 20, 2, 5)
+    assert sw.auto_ack(5, 2, 4, 20, 2, 5)
+
+
 def test_zone_and_capacity():
     assert [zone(v, 1000, 20) for v in (979, 980, 1020, 1021, None)] == ["low", "ok", "ok", "high", None]
     assert not capacity_warning(28_000, 500, 30_000, 1000)

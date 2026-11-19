@@ -10,7 +10,9 @@ Alles hier rechnet mit Werten und einer Uhr (Sekunden), damit es ohne Warten get
 * **Gesamtlast** (6.4) = Tara der Waage + angezeigter Wert. Die Tara der Waage ist bekannt, solange
   die Software jede Tara/Null mitverfolgt hat; zeigt die Waage brutto (``net`` falsch), ist sie 0.
 * **Auto-Quittung** (6.3, M09-4): durchgehend ``auto_ack_seconds`` lang Status ok, stabil, in der
-  Toleranz und Wanderung (Höchst- minus Mindestwert) ≤ ``auto_ack_span_g``.
+  Toleranz und Wanderung (Höchst- minus Mindestwert) ≤ ``auto_ack_span_g``; dazu Ist mindestens
+  das halbe Soll und mindestens 1 g (Befund B1, Michael 19.11.2026: sonst würde z. B. 4 g ± 20 g schon
+  bei 0 g quittiert).
 """
 
 from __future__ import annotations
@@ -178,7 +180,7 @@ class StationWeigh:
         """Fortschritt der Auto-Quittung; True, sobald quittiert werden darf (6.3)."""
         sample = self.last
         good = (sample is not None and sample.ok and sample.stable and not self.taring and actual_g is not None
-                and abs(actual_g - target_g) <= tolerance_g)
+                and abs(actual_g - target_g) <= tolerance_g and actual_g >= auto_ack_minimum(target_g))
         if not good:
             self.reset_ack()
             return False
@@ -194,6 +196,12 @@ class StationWeigh:
         elapsed = now - self.ack_since
         self.progress = 100 if seconds <= 0 else min(100, int(elapsed * 100 / seconds))
         return elapsed >= seconds
+
+
+def auto_ack_minimum(target_g: int) -> int:
+    """Kleinstes Ist für die Auto-Quittung: halbes Soll (aufgerundet), mindestens 1 g (Befund B1).
+    Von Hand quittieren gilt weiter die volle Toleranz."""
+    return max(1, (target_g + 1) // 2)
 
 
 def zone(actual_g: int | None, target_g: int, tolerance_g: int) -> str | None:

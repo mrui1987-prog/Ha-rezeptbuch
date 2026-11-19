@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.2 – Modul 09: Korrektur aus der Praxisprüfung (in Entwicklung)
+
+- **Befund B1:** Die automatische Quittung verlangt jetzt mindestens das halbe Soll (aufgerundet, mindestens 1 g). Vorher wurde z. B. Boerol mit 4 g Soll und ±20 g Toleranz schon bei 0 g quittiert. Von Hand quittieren gilt weiter die volle Toleranz
+
 ## 0.9.1 – Modul 09 Teil C2: Waage im Wiegeablauf (in Entwicklung)
 
 - **Tara an der Waage** (M09-5, K09-3): Beim Start, nach jeder Quittung, beim „Weiter“ und auf Tastendruck tariert die Software und sendet `tare` an die Waage; die nächste Zutat wird erst gewogen, wenn die Waage stabil bei etwa 0 steht (höchstens 3 s, sonst rechnet die Software allein weiter und zeigt einen Hinweis). Eine verspätet ausgeführte Tara wird erkannt
