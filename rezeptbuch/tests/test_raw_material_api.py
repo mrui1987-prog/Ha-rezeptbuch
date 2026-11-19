@@ -183,5 +183,5 @@ def test_export_contains_price(client, auth):
     client.post("/api/v1/admin/raw-materials", json=new(price_per_kg="1,5"), headers=auth)
     text = client.get("/api/v1/admin/raw-materials/export.csv", headers=auth).content.decode("utf-8-sig")
     header, first = text.split("\r\n")[:2]
-    assert header.endswith(";Preis je kg €;Preis geändert am")
+    assert header.endswith(";Preis je kg €;Preis geändert am;Bestand kg;Meldewert kg")
     assert first.split(";")[11] == "1,50"
