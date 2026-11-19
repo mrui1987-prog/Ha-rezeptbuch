@@ -44,7 +44,7 @@ def test_every_field_has_german_name_with_default():
 
 def test_version_070():
     from app import __version__
-    assert addon_defaults()["version"] == "0.7.3" == __version__
+    assert addon_defaults()["version"] == "0.7.4" == __version__
 
 
 def test_parse_defaults_station1_needs_host():

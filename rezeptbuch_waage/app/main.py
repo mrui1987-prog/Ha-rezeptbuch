@@ -2,7 +2,8 @@
 
 Liest die Konfiguration, verbindet sich mit dem MQTT-Broker (Letzter Wille),
 startet je aktiver Waage den Anschluss (TCP, MQTT-Roh-Topic oder Simulator) und
-meldet den Zustand nach Schema 2. Ein Fehler an einer Waage berührt die andere
+meldet den Zustand nach Schema 2. Befehle `tare`/`zero` kommen über
+`…/scale/cmd` und gehen mit Mindestabstand 1 s an die Waage. Ein Fehler an einer Waage berührt die andere
 nicht; ein unerwarteter Fehler im Anschluss startet nur diesen neu.
 """
 
@@ -12,13 +13,15 @@ import asyncio
 import logging
 import signal
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable
 
 from . import __version__
 from .config import OPTIONS_FILE, AddonConfig, StationConfig, describe, load_options
-from .messages import state_topic
+from .commands import NAMES
+from .messages import CommandError, cmd_topic, parse_command, state_topic
 from .mqtt_client import CredentialsError, MqttBridge, fetch_credentials
 from .simulator import SimulatorTransport
 from .station import StationMonitor
@@ -80,32 +83,101 @@ async def wait_for_credentials(stop: asyncio.Event) -> dict | None:
     return None
 
 
+Sender = Callable[[str], bool]
+
+
+@dataclass
+class StationRun:
+    """Laufende Station: Aufgaben des Anschlusses und Weg für Befehle."""
+
+    monitor: StationMonitor
+    tasks: list[asyncio.Task] = field(default_factory=list)
+    send: Sender | None = None
+
+
 def start_station(
     st: StationConfig,
     monitor: StationMonitor,
     bridge: MqttBridge,
     loop: asyncio.AbstractEventLoop,
-) -> list[asyncio.Task]:
+) -> StationRun:
+    run = StationRun(monitor)
     if not st.ok:
-        return []
+        return run
     if st.driver == "simulator":
-        transport = SimulatorTransport(monitor)
-        return [loop.create_task(supervise(st.label, transport.run))]
-    if st.connection == "tcp":
-        transport_tcp = TcpTransport(monitor)
-        return [loop.create_task(supervise(st.label, transport_tcp.run))]
-    MqttRawTransport(monitor, bridge, loop).start()
-    return []
+        sim = SimulatorTransport(monitor)
+        run.tasks.append(loop.create_task(supervise(st.label, sim.run)))
+        run.send = sim.send_command
+    elif st.connection == "tcp":
+        tcp = TcpTransport(monitor)
+        run.tasks.append(loop.create_task(supervise(st.label, tcp.run)))
+        run.send = tcp.send_command
+    else:
+        raw = MqttRawTransport(monitor, bridge, loop)
+        raw.start()
+        run.send = raw.send_command
+    return run
+
+
+def handle_command(
+    monitor: StationMonitor,
+    payload: bytes,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Befehl aus `…/scale/cmd` prüfen und in die Warteschlange stellen."""
+    try:
+        cmd = parse_command(payload)
+    except CommandError as exc:
+        log.warning("%s: Befehl verworfen – %s: %r", monitor.cfg.label, exc,
+                    bytes(payload)[:80])
+        return False
+    return monitor.submit_command(cmd, clock())
+
+
+def listen_commands(
+    run: StationRun,
+    bridge: MqttBridge,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Befehls-Topic abonnieren; Aufruf aus dem paho-Thread an die Schleife geben."""
+    monitor = run.monitor
+    topic = cmd_topic(monitor.cfg.station)
+
+    def on_message(payload: bytes) -> None:
+        loop.call_soon_threadsafe(handle_command, monitor, bytes(payload))
+
+    bridge.subscribe(topic, on_message)
+    log.info("%s: Befehle auf %s", monitor.cfg.label, topic)
+
+
+def dispatch_commands(runs: list[StationRun], now: float) -> None:
+    """Sendet je Waage höchstens den nächsten fälligen Befehl."""
+    for run in runs:
+        try:
+            cmd = run.monitor.next_command(now)
+            if cmd is None:
+                continue
+            label = run.monitor.cfg.label
+            if run.send is not None and run.send(cmd):
+                log.info("%s: Befehl %s an die Waage gesendet", label, NAMES[cmd])
+            else:
+                log.warning("%s: Befehl %s nicht gesendet – keine Verbindung", label,
+                            NAMES[cmd])
+        except Exception:  # noqa: BLE001 – eine Waage darf die andere nicht stören
+            log.exception("%s: Fehler beim Senden eines Befehls", run.monitor.cfg.label)
 
 
 async def publish_loop(
     monitors: list[StationMonitor],
     bridge: MqttBridge,
     clock: Callable[[], float] = time.monotonic,
+    runs: list[StationRun] | None = None,
 ) -> None:
     while True:
         now = clock()
         wall = datetime.now(timezone.utc)
+        if runs:
+            dispatch_commands(runs, now)
         for monitor in monitors:
             try:
                 payload = monitor.poll(now, wall)
@@ -143,9 +215,14 @@ async def amain(options_path: Path = OPTIONS_FILE) -> None:
 
     monitors = [StationMonitor(st) for st in cfg.active]
     tasks: list[asyncio.Task] = []
+    runs: list[StationRun] = []
     for st, monitor in zip(cfg.active, monitors):
-        tasks += start_station(st, monitor, bridge, loop)
-    tasks.append(loop.create_task(publish_loop(monitors, bridge)))
+        run = start_station(st, monitor, bridge, loop)
+        runs.append(run)
+        tasks += run.tasks
+        if st.ok:
+            listen_commands(run, bridge, loop)
+    tasks.append(loop.create_task(publish_loop(monitors, bridge, runs=runs)))
 
     await stop.wait()
     log.info("HA-Rezeptbuch Waage wird beendet")

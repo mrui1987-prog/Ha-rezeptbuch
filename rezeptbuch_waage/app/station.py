@@ -1,4 +1,4 @@
-"""Zustand einer Waagestation: Status, Wächter, Melderegel (docs/waage.md 4–6).
+"""Zustand einer Waagestation: Status, Wächter, Melderegel, Befehle (docs/waage.md 4–6).
 
 Die Station bekommt Bytes vom Anschluss (TCP, MQTT-Roh-Topic oder Simulator)
 und liefert bei `poll()` die nächste Zustandsmeldung, wenn eine fällig ist:
@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 
 from . import kern
+from .commands import MERGED, NAMES, CommandQueue
 from .config import StationConfig
 from .messages import (
     STATUS_ERROR,
@@ -42,6 +43,7 @@ class StationMonitor:
         self._last_key: tuple | None = None
         self._last_pub_at: float | None = None
         self._last_status: str | None = None
+        self.commands = CommandQueue()
 
     # --- Eingang ------------------------------------------------------------
 
@@ -133,6 +135,39 @@ class StationMonitor:
             ts=ts,
             **st,
         )
+
+    # --- Befehle (docs/waage.md 6.3) -----------------------------------------
+
+    def submit_command(self, cmd: str, now: float) -> bool:
+        """Nimmt `tare`/`zero` an, wenn die Waage Zeilen liefert (nicht bei offline)."""
+        name = self.cfg.label
+        status = self.status(now)
+        if status == STATUS_OFFLINE:
+            log.warning("%s: Befehl %s verworfen – Waage liefert keine Zeilen (offline)",
+                        name, NAMES[cmd])
+            return False
+        if not self.cfg.ok:
+            log.warning("%s: Befehl %s verworfen – Konfiguration fehlerhaft", name, NAMES[cmd])
+            return False
+        if self.commands.add(cmd) == MERGED:
+            log.info("%s: Befehl %s wartet bereits, zusammengefasst", name, NAMES[cmd])
+        else:
+            log.info("%s: Befehl %s angenommen", name, NAMES[cmd])
+        return True
+
+    def next_command(self, now: float) -> str | None:
+        """Nächster Befehl zum Senden (Mindestabstand 1 s), sonst None.
+
+        Ist die Waage inzwischen offline, werden wartende Befehle verworfen.
+        """
+        if not self.commands.ready(now):
+            return None
+        if self.status(now) == STATUS_OFFLINE:
+            for cmd in self.commands.clear():
+                log.warning("%s: wartender Befehl %s verworfen – Waage offline",
+                            self.cfg.label, NAMES[cmd])
+            return None
+        return self.commands.pop(now)
 
     # --- Protokoll ----------------------------------------------------------
 

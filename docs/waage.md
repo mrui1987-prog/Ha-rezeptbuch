@@ -195,7 +195,8 @@ rezeptbuch_waage/
 │   ├── messages.py        Schema 2: Zustand, Befehl, Verfügbarkeit, Topics
 │   ├── kern.py            Zeilenzerlegung und KERN-Telegramm → Reading
 │   ├── stability.py       Fenster/Spanne
-│   ├── station.py         Status, Wächter, Melderegel, Befehlswarteschlange
+│   ├── station.py         Status, Wächter, Melderegel, Annahme der Befehle
+│   ├── commands.py        Befehlswarteschlange (1 s Abstand, zusammenfassen) – seit 0.7.4
 │   ├── transport_tcp.py   TCP-Anschluss mit Neuaufbau
 │   ├── transport_mqtt.py  Roh-Topic-Anschluss
 │   ├── mqtt_client.py     Broker-Verbindung (Supervisor), Letzter Wille
@@ -203,7 +204,7 @@ rezeptbuch_waage/
 └── tests/                 test_kern, test_stability, test_station, test_config,
                            test_messages, test_transport_tcp, test_transport_mqtt,
                            test_simulator
-tools/waagen_simulator/    simulator.py, README.md
+tools/waagen_simulator/    simulator.py, README.md, test_simulator_tool.py
 docs/waage.md              dieses Konzept
 ```
 
@@ -236,7 +237,7 @@ Add-on 1 (`rezeptbuch/`) wird nicht angefasst.
 | Teil | Inhalt | Version |
 |---|---|---|
 | C1 | Konfiguration, KERN-Telegramm, Stabilität, Status/Wächter, Schema 2, MQTT-Verbindung mit Letztem Willen, TCP- und MQTT-Weg, Simulator-Treiber, DOCS.md | 0.7.0 |
-| C2 | Befehle `tare`/`zero` mit Warteschlange, Werkzeug `tools/waagen_simulator`, Korrekturen aus der Praxisprüfung | 0.7.1 |
+| C2 | Befehle `tare`/`zero` mit Warteschlange, Werkzeug `tools/waagen_simulator`, Korrekturen aus der Praxisprüfung | 0.7.1 → **0.7.4** (0.7.1–0.7.3 für Korrekturen aus der Praxisprüfung C1 verbraucht) |
 
 Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (nach Freigabe Michael). Erst wenn auch Modul 08 die Gegenstelle hat, wird der Zustand im Rezeptbuch sichtbar.
 
@@ -270,3 +271,4 @@ Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (n
 |---|---|
 | 18.11.2026, 21:00 | Konzept erstellt (Schritt B), Konzeptfragen K07-1 bis K07-9 offen. |
 | 18.11.2026, 21:12 | **Konzept von Michael freigegeben**, K07-1 bis K07-9 wie vorgeschlagen entschieden. Damit gilt Schema 2 auch als Abstimmung mit Modul 08 (K07-1 bis K07-3). |
+| 19.11.2026 | **Teil C2 umgesetzt als 0.7.4** (Auftrag Michael): Befehle nach 6.3, Warteschlange in eigener Datei `app/commands.py` (statt in `station.py`), Werkzeug `tools/waagen_simulator` mit Option `--fest`; eigener GitHub-Testlauf für das Werkzeug. Keine Entscheidung geändert. |

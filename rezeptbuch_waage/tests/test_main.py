@@ -50,13 +50,16 @@ def test_start_station_variants():
         loop = asyncio.get_running_loop()
         bridge = FakeBridge()
         bad = StationConfig(station=1, enabled=True, errors=("x",))
-        assert start_station(bad, StationMonitor(bad), bridge, loop) == []
+        r = start_station(bad, StationMonitor(bad), bridge, loop)
+        assert r.tasks == [] and r.send is None
         mq = StationConfig(station=1, enabled=True, connection="mqtt", raw_topic="r", cmd_topic="c")
-        assert start_station(mq, StationMonitor(mq), bridge, loop) == []
+        r = start_station(mq, StationMonitor(mq), bridge, loop)
+        assert r.tasks == [] and r.send is not None
         assert "r" in bridge.subs
         sim = StationConfig(station=2, enabled=True, driver="simulator")
-        tasks = start_station(sim, StationMonitor(sim), bridge, loop)
-        assert len(tasks) == 1
+        r = start_station(sim, StationMonitor(sim), bridge, loop)
+        tasks = r.tasks
+        assert len(tasks) == 1 and r.send is not None
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

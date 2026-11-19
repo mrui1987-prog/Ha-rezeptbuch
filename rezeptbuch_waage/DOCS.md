@@ -2,7 +2,7 @@
 
 Liest bis zu zwei KERN-Waagen (IFB 30K-3 mit Anzeigegerät KFB-TM) über je einen Waveshare-Konverter und meldet **Gewicht in ganzen Gramm, Stabilität und Status** per MQTT an das HA-Rezeptbuch. Das Add-on kennt keine Rezepte; es läuft auch allein (Simulator).
 
-**Stand 0.7.0 (Modul 07, Teil C1):** Lesen, Stabilität, Status und Meldungen. Befehle Tara/Null folgen in 0.7.1. Im Rezeptbuch sichtbar wird der Zustand erst mit Modul 08.
+**Stand 0.7.4 (Modul 07, Teil C2):** Lesen, Stabilität, Status, Meldungen und Befehle Tara/Nullstellen. Im Rezeptbuch sichtbar wird der Zustand erst mit Modul 08.
 
 ## Aufbau
 
@@ -26,7 +26,9 @@ Voraussetzung: Add-on „Mosquitto broker“. Die Zugangsdaten holt sich das Add
 1. Waveshare bleibt wie im Feldtest (MQTT, Pub Topic `rezeptbuch/test/waage1/raw`, Sub Topic `rezeptbuch/test/waage1/cmd`).
 2. Add-on: „Anbindung“ = `mqtt`. Die Topics sind vorausgefüllt.
 
-**Ohne Waage:** „Treiber“ = `simulator`. Ablauf in Schleife (60 s): leer → Behälter 1 200 g → Befüllen bis 5 000 g → ruhig → kurz „kein gültiger Wert“ → Abnehmen → 8 s Ausfall.
+**Ohne Waage:** „Treiber“ = `simulator`. Ablauf in Schleife (60 s): leer → Behälter 1 200 g → Befüllen bis 5 000 g → ruhig → kurz „kein gültiger Wert“ → Abnehmen → 8 s Ausfall. Tara/Nullstellen wirken auch hier.
+
+**TCP-Weg ohne Hardware prüfen:** Werkzeug `tools/waagen_simulator/simulator.py` aus dem Repo auf einem Rechner im Netz starten (`python simulator.py`, Port 8899; `--fest 2500` für ein festes Gewicht), dann „Anbindung“ = `tcp` und als Adresse die des Rechners eintragen. Siehe `tools/waagen_simulator/README.md`.
 
 Jedes Feld zeigt in HA einen deutschen Namen mit Standardwert und eine Erklärung. Baudrate, Datenformat und Sendemodus sind **Info-Felder**: Sie werden an Waage und Waveshare eingestellt; das Add-on zeigt sie im Protokoll und nennt sie in Fehlermeldungen.
 
@@ -65,7 +67,15 @@ Fehlt bei TCP die Adresse (oder bei MQTT ein Topic), startet nur diese Waage nic
 
 **Verfügbarkeit** – `rezeptbuch/v1/scale_bridge/availability`: `online`/`offline`, retained (Letzter Wille).
 
-**Befehle** (ab 0.7.1) – `rezeptbuch/v1/station/<nr>/scale/cmd`: `{"v": 2, "cmd": "tare"}` oder `"zero"`.
+**Befehle** – `rezeptbuch/v1/station/<nr>/scale/cmd`: `{"v": 2, "cmd": "tare"}` (Tara, `T` an die Waage) oder `{"v": 2, "cmd": "zero"}` (Nullstellen, `Z`).
+
+- Angenommen nur, wenn die Waage Zeilen liefert (`ok`, `invalid`, `error`); bei `offline` verworfen.
+- Zwischen zwei Befehlen an dieselbe Waage liegt mindestens **1 s**; weitere warten (höchstens einer je Art, doppelte werden zusammengefasst). Wird die Waage vorher offline, werden wartende Befehle verworfen.
+- Keine Bestätigung: die Wirkung zeigt der nächste Zustand (`net: true` bzw. Gewicht 0).
+- TCP: über die offene Verbindung; MQTT-Weg: auf das Befehls-Topic des Waveshare (`T\r\n`); Simulator: im Simulator.
+- Hinweis: Im Wiegeablauf tariert das Rezeptbuch in der Software (Modul 09). Tara an der Waage führt nach dem Abnehmen des Behälters zu `-----`.
+
+**Befehl von Hand senden (Test):** Einstellungen → Geräte & Dienste → MQTT → Konfigurieren → „Ein Paket veröffentlichen“, Topic `rezeptbuch/v1/station/1/scale/cmd`, Inhalt `{"v":2,"cmd":"tare"}`.
 
 ## Zustand ansehen
 
@@ -82,3 +92,6 @@ Protokollstufe `debug` zeigt jede Zeile der Waage mit Gewicht und Schwankung im 
 | „liefert unlesbare Daten – Baudrate 9600 und Format 8n1 … prüfen“ | Einstellungen von Waage und Waveshare passen nicht zusammen. |
 | „MQTT-Dienst nicht gefunden – Mosquitto installiert?“ | Mosquitto-Add-on fehlt; neuer Versuch alle 30 s. |
 | „Keine Waage aktiv“ | „Waage 1 – aktiv“ einschalten. |
+| „Befehl … verworfen – Waage liefert keine Zeilen (offline)“ | Befehl kam, während die Waage getrennt war; nach der Verbindung erneut senden. |
+| „Befehl verworfen – kein gültiges JSON / falsche Version / unbekannter Befehl“ | Inhalt muss `{"v":2,"cmd":"tare"}` oder `…"zero"}` sein. |
+| „Befehl … nicht gesendet – keine Verbindung“ | TCP-Verbindung oder MQTT gerade weg; Befehl erneut senden. |

@@ -1,7 +1,7 @@
 """TCP-Anschluss zum Waveshare-Konverter (M07-1, Standard).
 
 Verbindet sich mit dem TCP-Server des Waveshare (Port 8899) und gibt die Bytes an
-die Station weiter. Bricht die Verbindung ab, wird sofort neu verbunden, danach
+die Station weiter; Befehle gehen über dieselbe Verbindung zurück. Bricht die Verbindung ab, wird sofort neu verbunden, danach
 mit Wartezeit 1, 2, 5, dann alle 10 s. Kommen sehr lange keine Daten (z. B.
 Waveshare ohne Strom, Verbindung hängt), wird die Verbindung neu aufgebaut.
 """
@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 from typing import Callable
 
+from .commands import WIRE
 from .station import StationMonitor
 
 BACKOFF_S = (1, 2, 5, 10)
@@ -46,6 +47,14 @@ class TcpTransport:
         self.idle_timeout_s = idle_timeout_s or 2 * self.cfg.offline_after_s
         self._writer: asyncio.StreamWriter | None = None
         self.connects = 0  # für Tests und Protokoll
+
+    def send_command(self, cmd: str) -> bool:
+        """Schreibt `T`/`Z` + CR LF über die offene Verbindung."""
+        writer = self._writer
+        if writer is None or writer.is_closing():
+            return False
+        writer.write(WIRE[cmd])
+        return True
 
     async def run(self) -> None:
         failures = 0

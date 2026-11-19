@@ -1,5 +1,11 @@
 # Änderungen – HA-Rezeptbuch Waage
 
+## 0.7.4 – Modul 07, Teil C2 (in Entwicklung)
+
+- **Befehle Tara und Nullstellen:** `{"v":2,"cmd":"tare"|"zero"}` auf `rezeptbuch/v1/station/<nr>/scale/cmd` geht als `T`/`Z` + CR LF an die Waage – per TCP über die offene Verbindung, beim MQTT-Weg auf das Befehls-Topic des Waveshare, beim Simulator im Simulator
+- **Warteschlange je Waage:** mindestens 1 s zwischen zwei Befehlen, höchstens einer je Art wartet, doppelte werden zusammengefasst; bei `offline` verworfen; ungültige Befehle mit Protokolleintrag verworfen
+- **Werkzeug `tools/waagen_simulator`:** Waveshare-Ersatz per TCP (Port 8899) mit simulierter KERN-Waage, nimmt `T`/`Z` an; zum Prüfen des TCP-Wegs ohne Hardware
+
 ## 0.7.3 – Korrektur aus der Praxisprüfung C1
 
 - **Protokoll:** Zeitstempel in Ortszeit (Europe/Berlin) statt UTC

@@ -4,8 +4,8 @@ Erzeugt echte KERN-Zeilen (10 je Sekunde), damit dieselbe Auswertung wie bei der
 echten Waage durchlaufen wird. Ablauf in Schleife (60 s): leer → Behälter
 1 200 g → langsames Befüllen bis 5 000 g mit Schwanken → ruhig → kurz `-----`
 → Abnehmen → leer → 8 s keine Zeilen (damit „offline“ sichtbar wird).
-Der Kern (`SimulatedScale`) ist ohne Ein-/Ausgabe und wird in Teil C2 auch vom
-Werkzeug `tools/waagen_simulator` (Waveshare-Ersatz per TCP) genutzt.
+Der Kern (`SimulatedScale`) ist ohne Ein-/Ausgabe und wird auch vom Werkzeug
+`tools/waagen_simulator` (Waveshare-Ersatz per TCP) genutzt.
 """
 
 from __future__ import annotations
@@ -131,13 +131,27 @@ class SimulatorTransport:
         self.clock = clock
         self.wall = wall
         self.interval_s = interval_s
+        self._start: float | None = None
+
+    def send_command(self, cmd: str) -> bool:
+        """Führt `tare`/`zero` im Simulator aus (wie `T`/`Z` an der Waage)."""
+        if self._start is None:
+            return False
+        t = self.clock() - self._start
+        if cmd == "tare":
+            self.scale.tare(t)
+        elif cmd == "zero":
+            self.scale.zero(t)
+        else:
+            return False
+        return True
 
     async def run(self) -> None:
-        start = self.clock()
+        self._start = self.clock()
         self.monitor.connected = None
         while True:
             now = self.clock()
-            line = self.scale.line(now - start)
+            line = self.scale.line(now - self._start)
             if line is not None:
                 self.monitor.feed((line + "\r\n").encode("ascii"), now, self.wall())
             await asyncio.sleep(self.interval_s)

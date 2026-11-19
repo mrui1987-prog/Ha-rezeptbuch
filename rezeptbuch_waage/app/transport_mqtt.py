@@ -2,7 +2,8 @@
 
 Der Waveshare veröffentlicht die Rohzeilen der Waage als Pakete (nach 10 ms
 Pause, Feldtest 7). Ein Paket kann eine halbe oder mehrere Zeilen enthalten –
-die Station zerlegt sie wie den TCP-Strom. Die MQTT-Nachrichten kommen aus dem
+die Station zerlegt sie wie den TCP-Strom. Befehle gehen auf das Befehls-Topic
+des Waveshare (wie im Feldtest `T\r\n`). Die MQTT-Nachrichten kommen aus dem
 Netzwerk-Thread von paho und werden an die asyncio-Schleife übergeben.
 """
 
@@ -14,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Protocol
 
+from .commands import WIRE
 from .station import StationMonitor
 
 log = logging.getLogger("rezeptbuch_waage")
@@ -21,6 +23,8 @@ log = logging.getLogger("rezeptbuch_waage")
 
 class Subscriber(Protocol):
     def subscribe(self, topic: str, callback: Callable[[bytes], None]) -> None: ...
+
+    def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False) -> bool: ...
 
 
 def _utcnow() -> datetime:
@@ -49,6 +53,10 @@ class MqttRawTransport:
         self.monitor.connected = None
         self.bridge.subscribe(self.cfg.raw_topic, self._on_message)
         log.info("%s: lese Roh-Topic %s", self.cfg.label, self.cfg.raw_topic)
+
+    def send_command(self, cmd: str) -> bool:
+        """Veröffentlicht `T`/`Z` + CR LF auf dem Befehls-Topic (Sub Topic) des Waveshare."""
+        return self.bridge.publish(self.cfg.cmd_topic, WIRE[cmd].decode("ascii"))
 
     def _on_message(self, payload: bytes) -> None:
         """Aufruf aus dem paho-Thread."""
