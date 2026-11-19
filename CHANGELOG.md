@@ -1,10 +1,10 @@
 # Änderungen
 
-## 0.8.1 – Korrektur aus der Praxisprüfung Modul 08 (in Entwicklung)
+## 0.8.1 – Korrektur aus der Praxisprüfung Modul 08 (Modul 08 freigegeben am 19.11.2026)
 
 - **Protokoll (Befund B1):** Die Add-on-Option „Protokollstufe“ (`log_level`) wird jetzt angewendet. Bisher zeigte das Protokoll des Rezeptbuchs nur Warnungen und Fehler; jetzt erscheinen auch Infomeldungen wie „MQTT verbunden“, „Waage 1 wieder verbunden“ oder „Befehl tare an Waage 1 gesendet“, jeweils mit Datum und Uhrzeit in Ortszeit (Startzeile „HA-Rezeptbuch 0.8.1 startet (Protokollstufe info, Ortszeit Europe/Berlin)“). Dafür ist `tzdata` im Abbild
 
-## 0.8.0 – Modul 08: Waagen-Anbindung im Rezeptbuch (in Entwicklung)
+## 0.8.0 – Modul 08: Waagen-Anbindung im Rezeptbuch (freigegeben am 19.11.2026)
 
 - **Waagen-Anbindung per MQTT** (Modul 08, docs/schnittstellen.md): Das Rezeptbuch empfängt den Zustand der Waagen von „HA-Rezeptbuch Waage“ (Schema 2) und sendet Tara/Null. Zugangsdaten vom Supervisor (`services: mqtt:need`), neue Abhängigkeiten `paho-mqtt` 2.1 und `websockets` (Live-Kanal unter uvicorn)
 - **Mittelsmann** `app/scales/hub.py`: einzige Stelle für den Waagenzustand (später auch für den Wiegeablauf, Modul 09). Eine Station gilt als **offline**, wenn die Waage keine Werte liefert, das Waagen-Add-on weg ist, MQTT getrennt ist oder seit 3 s keine Meldung kam; Grund (`offline_reason`) und Beginn (`offline_since`) werden mitgegeben

@@ -1,6 +1,6 @@
 # Modul 08 – MQTT- & Kommunikationsschnittstellen (Konzept und Schnittstellen-Doku)
 
-Status: **Konzept erstellt am 19.11.2026, 09:40, von Michael am 19.11.2026, 09:41 freigegeben** („Konzept frei, K08 wie vorgeschlagen“). Konzeptfragen K08-1 bis K08-8 (Abschnitt 14) wie vorgeschlagen entschieden. **Umgesetzt in Teil C1 (Add-on 1 0.8.0, Zweig `modul08`), Praxisprüfung offen.**
+Status: **Konzept erstellt am 19.11.2026, 09:40, von Michael am 19.11.2026, 09:41 freigegeben** („Konzept frei, K08 wie vorgeschlagen“). Konzeptfragen K08-1 bis K08-8 (Abschnitt 14) wie vorgeschlagen entschieden. **Umgesetzt in 0.8.0 (Teil C1) und 0.8.1 (Korrektur B1); Praxisprüfung bestanden; Modul 08 am 19.11.2026, 11:00 von Michael freigegeben.**
 Grundlage: Entscheidungen M08-1 bis M08-13 (docs/modulstatus-08.md, 19.11.2026, 08:42/09:28), docs/waage.md (Schema 2, Abschnitte 5, 6), docs/architektur.md (Abschnitte 2, 4, 6), docs/bedienkonzept.md (Abschnitt 6 „Waagen“), docs/datenmodell.md (Tabelle `station`).
 Zielversion: Add-on 1 `rezeptbuch` **0.8.0** (Zweig `modul08`). Add-on 2 bleibt unverändert (0.7.6).
 
@@ -200,4 +200,6 @@ docs/schnittstellen.md       dieses Dokument
 |---|---|
 | 19.11.2026, 09:40 | Konzept erstellt (Schritt B), Konzeptfragen K08-1 bis K08-8 offen. |
 | 19.11.2026, 09:41 | **Konzept von Michael freigegeben**, K08-1 bis K08-8 wie vorgeschlagen entschieden. |
-| 19.11.2026 | **Teil C1 umgesetzt (0.8.0):** Präzisierungen beim Umsetzen (Hinweise Claude): WebSocket in `router.py` statt eigener `live.py`, neue Datei `service.py` (Start/Stopp, Wächter); Vorrang der Offline-Gründe festgelegt (Abschnitt 4); Feld `name`; Ergebnis `unknown_station` (404); Puffer 200 Meldungen je Live-Verbindung; Bibliothek `websockets`; `services: mqtt:need` war schon in `config.yaml`. |
+| 19.11.2026, 09:55 | **Teil C1 umgesetzt (0.8.0):** Präzisierungen beim Umsetzen (Hinweise Claude): WebSocket in `router.py` statt eigener `live.py`, neue Datei `service.py` (Start/Stopp, Wächter); Vorrang der Offline-Gründe festgelegt (Abschnitt 4); Feld `name`; Ergebnis `unknown_station` (404); Puffer 200 Meldungen je Live-Verbindung; Bibliothek `websockets`; `services: mqtt:need` war schon in `config.yaml`. |
+| 19.11.2026, 10:48 | Praxisprüfung (a)–(h) bestanden; Befund B1 (Protokollstufe) → 0.8.1, Nachprüfung bestanden. |
+| 19.11.2026, 11:00 | **Modul 08 von Michael freigegeben (0.8.1).** |
