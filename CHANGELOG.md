@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.9 – Modul 10: Balken der Wiegeansicht (in Entwicklung)
+
+- **Soll-Strich wird grün**, sobald der Balken über der Toleranz rot ist – er bleibt so sichtbar (normale und Kompaktansicht)
+- **Grobbalken:** das Soll liegt bei 2/3 der Skala (vorher am rechten Rand); bei sehr kleinem Soll mit großer Toleranz reicht die Skala bis Soll + 2 × Toleranz
+
 ## 0.10.8 – Rückfragefenster auf Höhe der Taste (in Entwicklung)
 
 - **Bestätigungs- und Hinweisfenster öffnen sich auf Höhe der gedrückten Taste** statt in der Bildschirmmitte (Wunsch Michael 19.11.2026, 20:52): In der HA-App auf dem iPhone ist die Seite so hoch wie ihr Inhalt, „Mitte“ lag deshalb mitten auf der Seite und man musste dorthin scrollen. Liegt die Taste am Rand, rückt das Fenster so weit, dass es ganz sichtbar bleibt. Gilt für Rohstoffe (auch Fenster „Bestand“), Rezepte, Import/Export, Berechnung (Erklärung „ⓘ“) und die Prüfseite Ablauf (Rückfragen schweben über der Taste). Die Station bleibt unverändert

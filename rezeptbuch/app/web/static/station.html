@@ -95,6 +95,7 @@
   .bar .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--low); transition: width .1s linear; }
   .bar .fill.ok { background: var(--ok); } .bar .fill.high { background: var(--high); }
   .bar .soll { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--high); }
+  .bar .soll.over, #compact .bar .soll.over { background: #3ddc5a; }
   .bar-lbl { font-size: 2vh; color: var(--muted); margin-top: .3vh; }
 
   .hint { margin-top: 1vh; padding: .8vh 1vw; border-radius: 10px; background: #e8f0fb; color: #163e74; font-size: 2.8vh; font-weight: 600; }
@@ -507,13 +508,16 @@
       node: bar,
       set(actual, target, tol, zoneName) {
         const min = fine ? target - 4 * tol : 0;
-        const max = fine ? target + 4 * tol : target + 2 * tol;
+        // Grobbalken: Soll bei 2/3 der Skala (Michael 21:08), mindestens aber Platz für die Toleranz
+        const max = fine ? target + 4 * tol : Math.max(target * 1.5, target + 2 * tol);
         const pos = (x) => Math.max(0, Math.min(1, (x - min) / (max - min || 1))) * 100;
         zone.style.left = pos(target - tol) + "%";
         zone.style.width = (pos(target + tol) - pos(target - tol)) + "%";
         soll.style.left = pos(target) + "%";
         fill.style.width = (actual === null || actual === undefined ? 0 : pos(actual)) + "%";
         fill.className = "fill" + (zoneName === "ok" ? " ok" : zoneName === "high" ? " high" : "");
+        // Soll-Strich auf rotem Balken grün, damit er sichtbar bleibt (Michael 21:08)
+        soll.classList.toggle("over", zoneName === "high" && actual !== null && actual !== undefined && actual >= target);
       },
     };
   }
