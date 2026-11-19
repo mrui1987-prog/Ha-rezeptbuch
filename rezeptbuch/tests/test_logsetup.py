@@ -23,6 +23,7 @@ def test_log_level_from_options():
 
 
 def test_info_lines_appear_with_time():
+    _cleanup()          # ein früherer Start des Servers (andere Tests) hat schon einen Kanal angelegt
     out = io.StringIO()
     try:
         assert setup_logging({"log_level": "info"}, stream=out) == "info"
@@ -37,6 +38,7 @@ def test_info_lines_appear_with_time():
 
 
 def test_warning_level_hides_info_and_no_double_handler():
+    _cleanup()
     out = io.StringIO()
     try:
         setup_logging({"log_level": "warning"}, stream=out)
