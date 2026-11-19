@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.4 – Modul 10: Wiegeansicht passt auf iPad, Galaxy Tab A und iPhone (in Entwicklung)
+
+- **Name der Zutat wurde abgeschnitten** (Praxisprüfung, iPad quer, Galaxy Tab A, iPhone 16 Pro quer): Abstände und Soll/Ist-Ziffern etwas kleiner, nichts in der Wiegeansicht wird mehr gestaucht; passt etwas nicht, lässt sich die Fläche verschieben statt abzuschneiden
+- **Rohstoffnummer** steht nicht mehr vor dem Namen der Zutat (Michael: eher verwirrend)
+
 ## 0.10.3 – Modul 09: „Behälter wiegen“ beginnt bei 0 (in Entwicklung)
 
 - **„Behälter wiegen“ mitten in einer Zutat** speichert das bisher Gewogene nicht mehr als Teilmenge: Im neuen Behälter beginnt die Zutat wieder bei 0 (Michael, Praxisprüfung). Teilmengen gibt es nur bei „Behälter wechseln“

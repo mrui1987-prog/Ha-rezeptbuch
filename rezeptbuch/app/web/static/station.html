@@ -32,7 +32,8 @@
   #side button { flex: 1; font-size: 2.8vh; font-weight: 600; }
   #side button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-  #main { grid-area: main; overflow: auto; padding: 1.2vh 1.6vw; display: flex; flex-direction: column; }
+  #main { grid-area: main; overflow: auto; padding: .8vh 1.6vw; display: flex; flex-direction: column; min-height: 0; }
+  #main > * { flex-shrink: 0; }              /* nichts wird gestaucht oder abgeschnitten (Praxisprüfung 16:58) */
   #notice { grid-area: notice; }
   #bottom { grid-area: bottom; display: grid; grid-template-columns: repeat(7, 1fr); gap: .6vw; padding: 1vh .8vw;
     background: #d5d9dd; }
@@ -40,39 +41,39 @@
   #b-pause.on { background: var(--high); border-color: var(--high); color: #fff; }
 
   /* Wiegeansicht */
-  .item-title { font-size: 8.5vh; font-weight: 800; line-height: 1.05; margin-bottom: .3vh;
+  .item-title { font-size: 8vh; font-weight: 800; line-height: 1.2; margin-bottom: 0; padding-bottom: .2vh;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .item-sub { font-size: 2.4vh; color: var(--muted); margin-bottom: 1vh; }
+  .item-sub { font-size: 2.2vh; color: var(--muted); margin-bottom: .6vh; }
   .weigh-area { margin-top: auto; }          /* Wiegebereich sitzt unten, über den Tasten */
   .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
-  .box { background: var(--panel); border-radius: 14px; padding: 1.4vh 1.4vw; border: 2px solid var(--line); }
-  .box .lbl { font-size: 2.6vh; color: var(--muted); font-weight: 600; }
-  .box .big { font-size: 13vh; font-weight: 800; line-height: 1.05; text-align: right; font-variant-numeric: tabular-nums; }
-  .box .tol { font-size: 2.4vh; color: var(--muted); text-align: right; }
-  .ring { border-radius: 18px; padding: .9vh; background: var(--track); }
+  .box { background: var(--panel); border-radius: 14px; padding: .8vh 1.4vw; border: 2px solid var(--line); }
+  .box .lbl { font-size: 2.4vh; color: var(--muted); font-weight: 600; }
+  .box .big { font-size: 11.5vh; font-weight: 800; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
+  .box .tol { font-size: 2.2vh; color: var(--muted); text-align: right; }
+  .ring { border-radius: 18px; padding: .6vh; background: var(--track); }
   .ring > .box { border: 0; }
   .big.low { color: #a07c00; } .big.ok { color: var(--ok); } .big.high { color: var(--high); } .big.none { color: var(--grey); }
 
-  .bar { position: relative; height: 4.2vh; background: var(--track); border-radius: 8px; margin-top: 1.6vh; overflow: hidden; }
-  .bar.fine { height: 3vh; margin-top: .8vh; }
+  .bar { position: relative; height: 3.6vh; background: var(--track); border-radius: 8px; margin-top: 1vh; overflow: hidden; }
+  .bar.fine { height: 2.6vh; margin-top: .6vh; }
   .bar .zone { position: absolute; top: 0; bottom: 0; background: rgba(46, 157, 58, .25); }
   .bar .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--low); transition: width .1s linear; }
   .bar .fill.ok { background: var(--ok); } .bar .fill.high { background: var(--high); }
   .bar .soll { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--high); }
   .bar-lbl { font-size: 2vh; color: var(--muted); margin-top: .3vh; }
 
-  .hint { margin-top: 1.4vh; padding: 1vh 1vw; border-radius: 10px; background: #e8f0fb; color: #163e74; font-size: 2.8vh; font-weight: 600; }
+  .hint { margin-top: 1vh; padding: .8vh 1vw; border-radius: 10px; background: #e8f0fb; color: #163e74; font-size: 2.8vh; font-weight: 600; }
   .hint.yellow { background: #fff4c2; color: #6b5200; }
   .actions { display: flex; flex-wrap: wrap; gap: 1vw; margin-top: 1.8vh; }
   .actions button { font-size: 2.8vh; min-height: 8vh; padding: 0 1.6vw; font-weight: 600; }
   .actions button.wide { min-width: 18vw; }
   /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Übergehen gleich groß) */
-  .main-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; margin-top: 1.4vh; }
-  .main-actions button { font-size: 3.6vh; font-weight: 700; min-height: 9vh; }
+  .main-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; margin-top: 1vh; }
+  .main-actions button { font-size: 3.6vh; font-weight: 700; min-height: 8.5vh; }
   .main-actions button.skip { background: var(--accent); border-color: var(--accent); color: #fff; }
   /* übrige Tasten klein in einer Leiste ganz unten */
-  .more-actions { display: flex; gap: .8vw; margin-top: 1.2vh; }
-  .more-actions button { flex: 1; font-size: 2.3vh; min-height: 5.5vh; padding: 0 .8vw; font-weight: 600; }
+  .more-actions { display: flex; gap: .8vw; margin-top: .8vh; }
+  .more-actions button { flex: 1; font-size: 2.3vh; min-height: 5vh; padding: 0 .8vw; font-weight: 600; }
 
   /* Startbild, Karten, Tabellen */
   .scale-big { font-size: 15vh; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -402,7 +403,7 @@
     if (b.note && b.note.display === "start" && b.progress.done === 0) main.appendChild(el("div", "Hinweis: " + b.note.text, "hint"));
     if (!cur) { main.appendChild(el("div", "Keine offene Zutat gewählt – in der Übersicht wählen.", "big-msg")); return null; }
     // Name der Zutat groß oben; Wiegebereich und Tasten sitzen unten (Wunsch Michael 15:31)
-    main.appendChild(el("div", (cur.raw_material_number ? cur.raw_material_number + " " : "") + cur.name, "item-title"));
+    main.appendChild(el("div", cur.name, "item-title"));        // ohne Rohstoffnummer (Michael 16:58)
     const sub = el("div", "Zutat " + (b.progress.done + 1) + " von " + b.progress.total, "item-sub");
     main.appendChild(sub);
     const area = el("div", null, "weigh-area");
