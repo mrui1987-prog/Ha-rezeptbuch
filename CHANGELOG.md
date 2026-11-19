@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.4 – Modul 10: Zutatenname in der Wiegeansicht (in Entwicklung)
+
+- **Zutatenname wird nicht mehr abgeschnitten**, wenn die Wiegeansicht auf iPad oder Galaxy Tab etwas zu hoch ist (Befund Praxisprüfung)
+- **Ohne Rohstoffnummer:** In der Wiegeansicht steht nur noch der Name der Zutat (Michael)
+
 ## 0.10.3 – Modul 09: „Behälter wiegen“ beginnt bei 0 (in Entwicklung)
 
 - **„Behälter wiegen“ mitten in einer Zutat** speichert das bisher Gewogene nicht mehr als Teilmenge: Im neuen Behälter beginnt die Zutat wieder bei 0 (Michael, Praxisprüfung). Teilmengen gibt es nur bei „Behälter wechseln“

@@ -40,9 +40,10 @@
   #b-pause.on { background: var(--high); border-color: var(--high); color: #fff; }
 
   /* Wiegeansicht */
-  .item-title { font-size: 8.5vh; font-weight: 800; line-height: 1.05; margin-bottom: .3vh;
+  /* flex-shrink: 0 – bei wenig Höhe nicht zusammendrücken (sonst wird der Name oben/unten abgeschnitten) */
+  .item-title { font-size: 8.5vh; font-weight: 800; line-height: 1.05; margin-bottom: .3vh; flex-shrink: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .item-sub { font-size: 2.4vh; color: var(--muted); margin-bottom: 1vh; }
+  .item-sub { font-size: 2.4vh; color: var(--muted); margin-bottom: 1vh; flex-shrink: 0; }
   .weigh-area { margin-top: auto; }          /* Wiegebereich sitzt unten, über den Tasten */
   .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
   .box { background: var(--panel); border-radius: 14px; padding: 1.4vh 1.4vw; border: 2px solid var(--line); }
@@ -402,7 +403,7 @@
     if (b.note && b.note.display === "start" && b.progress.done === 0) main.appendChild(el("div", "Hinweis: " + b.note.text, "hint"));
     if (!cur) { main.appendChild(el("div", "Keine offene Zutat gewählt – in der Übersicht wählen.", "big-msg")); return null; }
     // Name der Zutat groß oben; Wiegebereich und Tasten sitzen unten (Wunsch Michael 15:31)
-    main.appendChild(el("div", (cur.raw_material_number ? cur.raw_material_number + " " : "") + cur.name, "item-title"));
+    main.appendChild(el("div", cur.name, "item-title"));          // ohne Rohstoffnummer (Michael 16:57)
     const sub = el("div", "Zutat " + (b.progress.done + 1) + " von " + b.progress.total, "item-sub");
     main.appendChild(sub);
     const area = el("div", null, "weigh-area");
