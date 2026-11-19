@@ -75,3 +75,10 @@ def test_layout_0_10_6():
     text = (STATIC / "station.html").read_text(encoding="utf-8")
     for needle in ('id="n-title"', 'id="head"', 'id="s-more"', 'id="b-compact"', 'id="compact"', "bar-hidden"):
         assert needle in text, needle
+
+
+def test_compact_buttons_0_10_10():
+    # Kompaktansicht: Tara, Behälter, Behälter wechseln, Zutat überspringen oben (Michael 21:43)
+    text = (STATIC / "station.html").read_text(encoding="utf-8")
+    for needle in ('id="c-tara"', 'id="c-cont"', 'id="c-change"', 'id="c-skip"', 'id="c-ack"', 'id="c-exit"', "function skipCurrent"):
+        assert needle in text, needle

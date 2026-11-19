@@ -334,7 +334,7 @@ function renderBatch(b) {
       if (it.kind === "units") cell.appendChild(btn(it.units_target + " × " + it.unit_label + " quittieren", () => act("batches/" + b.id + "/units", body0), true));
       if (it.kind === "hand_need" || it.kind === "hand_target") cell.appendChild(btn("Zugegeben", () => act("batches/" + b.id + "/hand", body0), true));
       if (it.kind === "sub_recipe") cell.appendChild(btn(it.blocked ? "Abhaken" : "Übernehmen", () => act("batches/" + b.id + "/sub-check", body0), true));
-      cell.appendChild(btn("Übergehen", () => act("batches/" + b.id + "/skip", body0), true));
+      cell.appendChild(btn("Weglassen", () => act("batches/" + b.id + "/skip", body0), true));
     }
     tr.appendChild(cell);
     body.appendChild(tr);

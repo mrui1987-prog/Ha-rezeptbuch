@@ -51,14 +51,16 @@
   /* Kompaktansicht (Michael 17:57): Vollbild, Zutat und Zielgewicht im Grobbalken, Feinbalken immer darunter */
   #compact { position: fixed; inset: 0; z-index: 30; background: #20262d; color: #fff; display: flex; flex-direction: column;
     padding: 2vh 1.6vw; gap: 2vh; }
-  #compact .c-top { display: flex; align-items: center; gap: 2vw; font-size: 3vh; color: #cfd6dd; }
-  #compact .c-top .grow { flex: 1; }
-  #compact .c-top button { font-size: 3vh; min-height: 8vh; padding: 0 2vw; font-weight: 700; }
-  #compact #c-exit { background: #3a434d; border-color: #5b6672; color: #fff; }
+  /* 0.10.10 (Michael 21:43): Tasten oben wie in der normalen Ansicht, dafür Grobbalken etwas niedriger */
+  #compact .c-top { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1vw; }
+  #compact .c-top button { font-size: 3.2vh; min-height: 13vh; padding: 0 1vw; font-weight: 700; line-height: 1.15; }
+  #compact .c-top button:not(.go):not(.skip) { background: #3a434d; border-color: #5b6672; color: #fff; }
+  #compact .c-info { position: absolute; left: 2.4vw; right: 2.4vw; top: 1.6vh; display: flex; justify-content: space-between;
+    font-size: 3vh; color: #cfd6dd; pointer-events: none; text-shadow: 0 2px 6px rgba(0, 0, 0, .55); }
   #compact .bar { margin: 0; border-radius: 14px; background: #3a434d; }
   #compact .bar .zone { background: rgba(46, 157, 58, .45); }
   #compact .bar .soll { width: 6px; margin-left: -3px; background: #ff4d4d; }
-  #compact .c-coarse { flex: 3; height: auto; }
+  #compact .c-coarse { flex: 2.6; height: auto; }
   #compact .c-fine { flex: 2; height: auto; }
   #compact .c-label { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: space-between;
     padding: 0 2.4vw 2.2vh; pointer-events: none; text-shadow: 0 2px 6px rgba(0, 0, 0, .55); }
@@ -95,6 +97,7 @@
   .bar .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--low); transition: width .1s linear; }
   .bar .fill.ok { background: var(--ok); } .bar .fill.high { background: var(--high); }
   .bar .soll { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--high); }
+  .bar .soll.over, #compact .bar .soll.over { background: #3ddc5a; }
   .bar-lbl { font-size: 2vh; color: var(--muted); margin-top: .3vh; }
 
   .hint { margin-top: 1vh; padding: .8vh 1vw; border-radius: 10px; background: #e8f0fb; color: #163e74; font-size: 2.8vh; font-weight: 600; }
@@ -102,10 +105,10 @@
   .actions { display: flex; flex-wrap: wrap; gap: 1vw; margin-top: 1.8vh; }
   .actions button { font-size: 2.8vh; min-height: 8vh; padding: 0 1.6vw; font-weight: 600; }
   .actions button.wide { min-width: 18vw; }
-  /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Übergehen gleich groß) */
+  /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Zutat überspringen gleich groß) */
   .main-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; margin-top: 1vh; }
   .main-actions button { font-size: 4vh; font-weight: 700; min-height: 10.5vh; }
-  .main-actions button.skip { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .main-actions button.skip, #compact .c-top button.skip { background: var(--accent); border-color: var(--accent); color: #fff; }
   /* übrige Tasten klein in einer Leiste ganz unten */
   .more-actions { display: flex; gap: .8vw; margin-top: .8vh; }
   .more-actions button { flex: 1; font-size: 3.2vh; min-height: 10.5vh; padding: 0 .8vw; font-weight: 600; }
@@ -168,7 +171,11 @@
 </footer>
 
 <div id="compact" class="hidden">
-  <div class="c-top"><span id="c-step"></span><span class="grow"></span><span id="c-auto"></span>
+  <div class="c-top">
+    <button type="button" id="c-tara">Tara</button>
+    <button type="button" id="c-cont">Behälter</button>
+    <button type="button" id="c-change">Behälter wechseln</button>
+    <button type="button" id="c-skip" class="skip">Zutat überspringen</button>
     <button type="button" id="c-ack" class="go">Quittieren</button>
     <button type="button" id="c-exit" class="keep">✕ Normale Ansicht</button></div>
 </div>
@@ -368,6 +375,10 @@
   cLeft.appendChild(cName); cLeft.appendChild(cTarget);
   cLabel.appendChild(cLeft); cLabel.appendChild(cIst);
   cCoarse.node.appendChild(cLabel);
+  const cInfo = el("div", null, "c-info");
+  const cStep = el("span", ""), cAuto = el("span", "");
+  cInfo.appendChild(cStep); cInfo.appendChild(cAuto);
+  cCoarse.node.appendChild(cInfo);
   const cFineLbl = el("div", "", "c-fine-lbl");
   cFine.node.appendChild(cFineLbl);
   cBox.appendChild(cCoarse.node); cBox.appendChild(cFine.node);
@@ -392,11 +403,18 @@
     cFine.set(actual, target, tol, zone);
     const diff = actual === null || actual === undefined ? null : actual - target;
     cFineLbl.textContent = diff === null ? "fein ± " + g(4 * tol) : "fein · " + (diff > 0 ? "+" : "") + g(diff);
-    $("c-step").textContent = "Zutat " + (b.progress.done + 1) + " von " + b.progress.total + " · " + (b.recipe ? b.recipe.name : "");
+    cStep.textContent = "Zutat " + (b.progress.done + 1) + " von " + b.progress.total + " · " + (b.recipe ? b.recipe.name : "");
     const p = w ? w.auto_ack_progress || 0 : 0;
-    $("c-auto").textContent = p ? "Auto-Quittung " + p + " %" : "";
+    cAuto.textContent = p ? "Auto-Quittung " + p + " %" : "";
     $("c-ack").disabled = zone !== "ok";
+    $("c-cont").textContent = "Behälter" + (b.container_g === null || b.container_g === undefined ? "" : " (" + g(b.container_g).replace(/ /g, "\u00a0") + ")");
   }
+  $("c-tara").addEventListener("click", (ev) => { if (S.mine) act(ev.currentTarget, "batches/" + S.mine.id + "/tare", { station: ST }); });
+  $("c-cont").addEventListener("click", (ev) => { if (S.mine) containerMenu(ev.currentTarget); });
+  $("c-change").addEventListener("click", (ev) => {
+    if (S.mine) act(ev.currentTarget, "batches/" + S.mine.id + "/container", { station: ST, action: "change" });
+  });
+  $("c-skip").addEventListener("click", (ev) => skipCurrent(ev.currentTarget));
   $("c-exit").addEventListener("click", () => { compact = false; render(); });
   $("c-ack").addEventListener("click", (ev) => {
     const cur = current();
@@ -507,13 +525,16 @@
       node: bar,
       set(actual, target, tol, zoneName) {
         const min = fine ? target - 4 * tol : 0;
-        const max = fine ? target + 4 * tol : target + 2 * tol;
+        // Grobbalken: Soll bei 2/3 der Skala (Michael 21:08), mindestens aber Platz für die Toleranz
+        const max = fine ? target + 4 * tol : Math.max(target * 1.5, target + 2 * tol);
         const pos = (x) => Math.max(0, Math.min(1, (x - min) / (max - min || 1))) * 100;
         zone.style.left = pos(target - tol) + "%";
         zone.style.width = (pos(target + tol) - pos(target - tol)) + "%";
         soll.style.left = pos(target) + "%";
         fill.style.width = (actual === null || actual === undefined ? 0 : pos(actual)) + "%";
         fill.className = "fill" + (zoneName === "ok" ? " ok" : zoneName === "high" ? " high" : "");
+        // Soll-Strich auf rotem Balken grün, damit er sichtbar bleibt (Michael 21:08)
+        soll.classList.toggle("over", zoneName === "high" && actual !== null && actual !== undefined && actual >= target);
       },
     };
   }
@@ -527,7 +548,9 @@
     const area = el("div", null, "weigh-area");
     main.appendChild(area);
     const bigRow = el("div", null, "main-actions");
-    const skipBtn = () => btn("Zutat übergehen", "skip", (bt) => act(bt, "batches/" + b.id + "/skip", { station: ST, position: cur.position }));
+    // „Zutat überspringen“: Zutat bleibt offen, weiter mit der nächsten offenen; sie kommt am Ende wieder (Michael 21:18).
+    // Endgültig weglassen nur noch in der Übersicht.
+    const skipBtn = () => btn("Zutat überspringen", "skip", skipCurrent);
 
     if (cur.kind === "units") {
       area.appendChild(el("div", cur.units_target + " × " + cur.unit_label + " zugeben (" + g(cur.units_target * cur.unit_size_g) + ")", "big-msg"));
@@ -585,7 +608,8 @@
         ring.style.background = p ? "conic-gradient(var(--ok) " + (p * 3.6) + "deg, var(--track) 0)" : "var(--track)";
         coarse.set(actual, target, tol, zone);
         fine.set(actual, target, tol, zone);
-        fine.node.classList.toggle("hidden", !(actual !== null && actual !== undefined && actual >= target - 4 * tol && tol > 0));
+        // Feinbalken immer sichtbar (Michael 21:12: Einblenden verzögert), ohne Toleranz ausgeblendet
+        fine.node.classList.toggle("hidden", !(tol > 0));
         const h = w && w.hint;
         hint.textContent = h || "";
         hint.classList.toggle("hidden", !h);
@@ -601,6 +625,15 @@
     more.appendChild(btn("Handwaage", "", (bt) => act(bt, "batches/" + b.id + "/hand-scale", { station: ST })));
     area.appendChild(more);
     return updateFn;
+  }
+
+  function skipCurrent(bt) {
+    const b = S.mine, cur = current();
+    if (!b || !cur) return;
+    const open = b.items.filter((i) => !i.done && i.position !== cur.position);
+    const next = open.find((i) => i.position > cur.position) || open[0];
+    if (!next) { info("Keine andere offene Zutat – zum Weglassen die Übersicht nutzen."); return; }
+    act(bt, "batches/" + b.id + "/select", { station: ST, position: next.position });
   }
 
   async function containerMenu(bt) {
@@ -639,14 +672,14 @@
 
   function viewOverview(main) {
     const b = S.mine;
-    main.appendChild(el("h2", "Übersicht – Antippen wählt eine offene Zutat", "view"));
+    main.appendChild(el("h2", "Übersicht – offene Zutat antippen: jetzt wiegen oder weglassen", "view"));
     const t = el("table", null, "list");
     const hr = el("tr");
     [["Pos."], ["Zutat"], ["Soll", "r"], ["Ist", "r"], ["Quittung"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
     t.appendChild(el("thead")).appendChild(hr);
     const body = el("tbody");
     b.items.forEach((it) => {
-      const tr = el("tr", null, it.done ? "done" : (it.position === b.current_position ? "current" : "pick"));
+      const tr = el("tr", null, it.done ? "done" : (it.position === b.current_position ? "current pick" : "pick"));
       tr.appendChild(el("td", it.position));
       let name = (it.item_type === "sub_recipe" ? "+ " : "") + it.name;
       if (it.unit_label && it.units_target) name += " (" + it.units_target + " × " + it.unit_label + " + " + g(it.rest_target_g) + ")";
@@ -654,10 +687,18 @@
       tr.appendChild(el("td", g(it.target_g), "r"));
       tr.appendChild(el("td", it.done ? g(it.actual_g) : "", "r"));
       tr.appendChild(el("td", it.done ? (it.ack_text || "") + (it.station_id ? " · W" + it.station_id : "") : (it.blocked ? "wartet" : "")));
-      if (!it.done && it.position !== b.current_position) {
+      if (!it.done) {
+        // Antippen: jetzt wiegen oder endgültig weglassen (Rückfrage kommt vom Server)
         tr.addEventListener("click", async () => {
-          const r = await act(null, "batches/" + b.id + "/select", { station: ST, position: it.position });
-          if (r) { S.view = "weigh"; render(); }
+          const choice = await RB.dialog({ title: it.name, buttons: [{ label: "Abbrechen", value: null },
+            { label: "Weglassen", value: "skip" },
+            ...(it.position !== b.current_position ? [{ label: "Jetzt wiegen", value: "select", kind: "primary" }] : [])] });
+          if (choice === "select") {
+            const r = await act(null, "batches/" + b.id + "/select", { station: ST, position: it.position });
+            if (r) { S.view = "weigh"; render(); }
+          } else if (choice === "skip") {
+            await act(null, "batches/" + b.id + "/skip", { station: ST, position: it.position });
+          }
         });
       }
       body.appendChild(tr);
