@@ -95,17 +95,20 @@ def test_whole_flow_over_rest(client, recipe):
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.status_code == 409 and r.json()["code"] == "taring"
     put(client, 0, net=True)
+    assert client.get("/api/v1/stations/1/weigh").json()["taring"] is False     # Tara bestätigt
     put(client, 1000, net=True)
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.status_code == 200, r.text
     assert r.json()["items"][0]["actual_g"] == 1000
     put(client, 0, net=True)
+    assert client.get("/api/v1/stations/1/weigh").json()["taring"] is False     # Tara bestätigt
     put(client, 800, net=True)
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.status_code == 409 and r.json()["code"] == "out_of_tolerance"
     put(client, 600, net=True)
     client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     put(client, 0, net=True)
+    assert client.get("/api/v1/stations/1/weigh").json()["taring"] is False     # Tara bestätigt
     put(client, 20, net=True)
     r = client.post(f"/api/v1/batches/{bid}/ack", json={"station": 1})
     assert r.json()["status"] == "done"
