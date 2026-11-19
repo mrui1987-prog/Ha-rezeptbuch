@@ -164,7 +164,8 @@ def test_settings_read_free_write_with_pin(client, auth):
     body = client.get("/api/v1/production-settings").json()
     values = {s["key"]: s["value"] for s in body["settings"]}
     assert values == {"auto_ack_seconds": 2, "auto_ack_span_g": 5, "offline_pause_seconds": 45,
-                      "capacity_warn_g": 1000, "tare_confirm_seconds": 3, "resume_check_g": 5}
+                      "capacity_warn_g": 1000, "tare_confirm_seconds": 3, "resume_check_g": 5,
+                      "auto_ack_min_g": 70}
     assert client.put("/api/v1/admin/production-settings", json={"auto_ack_seconds": 3}).status_code == 401
     r = client.put("/api/v1/admin/production-settings", headers=auth, json={"auto_ack_seconds": 3})
     assert r.status_code == 200

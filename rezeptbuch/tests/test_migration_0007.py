@@ -127,7 +127,8 @@ def test_existing_rows_survive_migration(tmp_path):
 
 def test_settings_defaults_and_save(conn):
     assert load_settings(conn) == {"auto_ack_seconds": 2, "auto_ack_span_g": 5, "offline_pause_seconds": 45,
-                                   "capacity_warn_g": 1000, "tare_confirm_seconds": 3, "resume_check_g": 5}
+                                   "capacity_warn_g": 1000, "tare_confirm_seconds": 3, "resume_check_g": 5,
+                      "auto_ack_min_g": 70}
     saved = save_settings(conn, {"auto_ack_seconds": "3", "resume_check_g": 10})
     assert saved["auto_ack_seconds"] == 3 and saved["resume_check_g"] == 10
     conn.execute("UPDATE setting SET value = 'kaputt' WHERE key = 'auto_ack_seconds'")

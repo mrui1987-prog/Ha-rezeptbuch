@@ -74,7 +74,7 @@ def _station_tick(conn: sqlite3.Connection, runner: ProductionRunner, station: i
                 part = sw.actual(sample)
                 actual = None if part is None else item["partial_g"] + part
                 if sw.auto_ack(runner.clock(), actual, item["rest_target_g"], item["tolerance_g"],
-                               s["auto_ack_seconds"], s["auto_ack_span_g"]):
+                               s["auto_ack_seconds"], s["auto_ack_span_g"], s["auto_ack_min_g"]):
                     data = batches.ack_auto(conn, row["id"], station, runner)
                     _event(runner, data, "finished_dough" if data["status"] == "done" else "acked")
                     row = _active_batch(conn, station)

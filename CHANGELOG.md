@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.10.1 – Modul 09: Korrekturen aus der Praxisprüfung (in Entwicklung)
+
+- **Befund B1:** Die automatische Quittung verlangt mindestens das halbe Soll (aufgerundet, mindestens 1 g). Vorher wurde z. B. Boerol mit 4 g Soll und ±20 g Toleranz schon bei 0 g quittiert
+- **Neue Einstellung „Mindestlast Autoquittierung“** (Standard 70 g, 0 = aus): Darunter wird nur von Hand quittiert – mit der vollen Toleranz
+- **Befund B2:** Liegt die nächste Zutat schon auf, bevor die Waage nach der Tara ruhig bei 0 stand, erkennt die Software die ausgeführte Tara trotzdem (Wechsel auf netto oder Anzeige fällt um das tarierte Gewicht); keine 3 s Sperre mehr. Auch eine verspätet ausgeführte Tara mit Last drauf wird jetzt richtig erkannt
+
 ## 0.10.0 – Modul 10 Teil C1: Stationsoberfläche für das Tablet (in Entwicklung)
 
 - **Stationsoberfläche** `/station/1` und `/station/2` (ohne PIN), Querformat für das Tablet an der Waage: Ecke oben links mit Uhrzeit (bleibt beim Bild-im-Bild sichtbar), Datum und Wetter; Kopfzeile mit Rezept, Teig, Menge, Fortschritt und nächstem Auftrag; rechts Wiegen/Übersicht/Hinweis, unten Start, Pause/Weiter, Abbruch, Vorwahl, Produktionsliste (beide folgen in 0.10.1), Chargen, Menü 🔒

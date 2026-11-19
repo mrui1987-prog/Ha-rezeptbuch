@@ -20,6 +20,8 @@ SETTINGS: dict[str, tuple[int, int, int, str, str]] = {
     "capacity_warn_g": (1000, 0, 10_000, "Vorwarnung vor der Höchstlast", "g"),
     "tare_confirm_seconds": (3, 1, 10, "Wartezeit auf die Tara-Bestätigung der Waage", "s"),
     "resume_check_g": (5, 0, 100, "Erlaubte Abweichung der Gesamtlast beim „Weiter“", "g"),
+    # Michael 19.11.2026, 15:21: Auto-Quittung erst ab dieser Menge (0 = aus), darunter von Hand
+    "auto_ack_min_g": (70, 0, 5000, "Mindestlast Autoquittierung", "g"),
 }
 
 

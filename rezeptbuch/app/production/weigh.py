@@ -10,7 +10,13 @@ Alles hier rechnet mit Werten und einer Uhr (Sekunden), damit es ohne Warten get
 * **Gesamtlast** (6.4) = Tara der Waage + angezeigter Wert. Die Tara der Waage ist bekannt, solange
   die Software jede Tara/Null mitverfolgt hat; zeigt die Waage brutto (``net`` falsch), ist sie 0.
 * **Auto-Quittung** (6.3, M09-4): durchgehend ``auto_ack_seconds`` lang Status ok, stabil, in der
-  Toleranz und Wanderung (Höchst- minus Mindestwert) ≤ ``auto_ack_span_g``.
+  Toleranz und Wanderung (Höchst- minus Mindestwert) ≤ ``auto_ack_span_g``; dazu Ist mindestens
+  das halbe Soll und mindestens 1 g (Befund B1, Michael 19.11.2026: sonst würde z. B. 4 g ± 20 g schon
+  bei 0 g quittiert) und mindestens die „Mindestlast Autoquittierung“ (Einstellung, Standard 70 g);
+  darunter wird von Hand quittiert.
+* **Tara ausgeführt** (Befund B2, Michael 19.11.2026, 15:21): auch wenn schon die nächste Zutat
+  aufliegt – die Waage springt von brutto auf netto, oder die Anzeige fällt um das tarierte Gewicht.
+  Der Nullpunkt ist dann 0 netto. Gilt ebenso für eine verspätet ausgeführte Tara.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ class StationWeigh:
     taring_before_g: int | None = None   # Anzeige beim Tara-Befehl
     late_tare_g: int | None = None       # nicht bestätigte Tara, die noch nachkommen kann
     late_until: float = 0.0
+    peak_g: int | None = None            # höchste Anzeige seit dem Tara-Befehl (B2)
     hint: str | None = None
     last: Sample | None = None
     # Auto-Quittung
@@ -94,6 +101,7 @@ class StationWeigh:
         self.reference_g = sample.weight_g
         self.taring_since = now
         self.taring_before_g = sample.weight_g
+        self.peak_g = sample.weight_g
         self.hint = None
         return sample.weight_g
 
@@ -120,6 +128,21 @@ class StationWeigh:
 
     # ------------------------------------------------------------------ Beobachten
 
+    def _tare_executed(self, previous: Sample | None, sample: Sample, before: int, span_g: int) -> bool:
+        """Hat die Waage die Tara ausgeführt, obwohl schon wieder Last aufliegt (B2)?
+        Ja, wenn sie von brutto auf netto springt oder die Anzeige gegenüber dem Höchstwert seit dem
+        Befehl um das tarierte Gewicht gefallen ist (auch wenn inzwischen Last dazukam)."""
+        if not sample.ok or abs(before) <= span_g:
+            return False
+        if previous is not None and previous.ok and previous.net is False and sample.net is True:
+            return True
+        peak = self.peak_g if self.peak_g is not None else before
+        return peak - sample.weight_g >= before - span_g
+
+    def _track_peak(self, sample: Sample) -> None:
+        if sample.ok:
+            self.peak_g = sample.weight_g if self.peak_g is None else max(self.peak_g, sample.weight_g)
+
     def observe(self, now: float, sample: Sample, tare_confirm_s: float, span_g: int) -> list[str]:
         """Neuer Zustand der Waage: Tara-Bestätigung, Zeitablauf, verspäteter Sprung, Tara der Waage.
 
@@ -130,7 +153,16 @@ class StationWeigh:
         self.last = sample
         if sample.ok and sample.net is False:
             self.scale_tare_g = 0
-        if self.taring:
+        if self.taring and self._tare_executed(previous, sample, self.taring_before_g or 0, span_g):
+            # Tara ausgeführt, die nächste Zutat liegt schon auf: Nullpunkt = 0 netto (B2)
+            before = self.taring_before_g or 0
+            if self.scale_tare_g is not None:
+                self.scale_tare_g += before
+            self.reference_g = 0
+            self.taring_since = None
+            self.hint = None
+            events.append("tare_confirmed")
+        elif self.taring:
             if sample.ok and sample.stable and abs(sample.weight_g) <= span_g:
                 before = self.taring_before_g or 0
                 # Tara der Waage wächst um die Anzeige beim Befehl (tara auf leerer Waage bleibt brutto)
@@ -141,6 +173,7 @@ class StationWeigh:
                 self.hint = None
                 events.append("tare_confirmed")
             elif now - self.taring_since >= tare_confirm_s:
+                self.peak_g = None
                 self.taring_since = None
                 self.hint = "Tara an der Waage nicht bestätigt – die Software rechnet weiter."
                 if self.taring_before_g and abs(self.taring_before_g) > span_g:
@@ -150,17 +183,19 @@ class StationWeigh:
         elif self.late_tare_g is not None:
             if now > self.late_until:
                 self.late_tare_g = None
-            elif (sample.ok and previous is not None and previous.ok
-                  and abs((previous.weight_g - sample.weight_g) - self.late_tare_g) <= span_g):
-                # Die Waage hat die Tara doch noch ausgeführt: Bezug nachführen
-                if self.reference_g is not None:
-                    self.reference_g -= self.late_tare_g
-                if self.scale_tare_g is not None and sample.net is not False:
+            elif self._tare_executed(previous, sample, self.late_tare_g, span_g):
+                # Die Waage hat die Tara doch noch ausgeführt (auch mit Last drauf, B2): Nullpunkt = 0 netto
+                self.reference_g = 0
+                if self.scale_tare_g is not None:
                     self.scale_tare_g += self.late_tare_g
                 self.late_tare_g = None
                 self.hint = None
                 self.reset_ack()
                 events.append("late_tare")
+        if self.taring or self.late_tare_g is not None:
+            self._track_peak(sample)
+        else:
+            self.peak_g = None
         if sample.ok and sample.net is True and self.scale_tare_g == 0 and previous is None:
             # Neustart: Waage zeigt netto, Tara unbekannt
             self.scale_tare_g = None
@@ -174,11 +209,11 @@ class StationWeigh:
         self.progress = 0
 
     def auto_ack(self, now: float, actual_g: int | None, target_g: int, tolerance_g: int,
-                 seconds: float, span_g: int) -> bool:
+                 seconds: float, span_g: int, min_load_g: int = 0) -> bool:
         """Fortschritt der Auto-Quittung; True, sobald quittiert werden darf (6.3)."""
         sample = self.last
         good = (sample is not None and sample.ok and sample.stable and not self.taring and actual_g is not None
-                and abs(actual_g - target_g) <= tolerance_g)
+                and abs(actual_g - target_g) <= tolerance_g and actual_g >= auto_ack_minimum(target_g, min_load_g))
         if not good:
             self.reset_ack()
             return False
@@ -194,6 +229,12 @@ class StationWeigh:
         elapsed = now - self.ack_since
         self.progress = 100 if seconds <= 0 else min(100, int(elapsed * 100 / seconds))
         return elapsed >= seconds
+
+
+def auto_ack_minimum(target_g: int, min_load_g: int = 0) -> int:
+    """Kleinstes Ist für die Auto-Quittung: halbes Soll (aufgerundet), mindestens 1 g (Befund B1) und
+    mindestens die Mindestlast (Einstellung). Von Hand quittieren gilt weiter die volle Toleranz."""
+    return max(1, (target_g + 1) // 2, min_load_g)
 
 
 def zone(actual_g: int | None, target_g: int, tolerance_g: int) -> str | None:

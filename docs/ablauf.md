@@ -90,6 +90,7 @@ Nach jeder Quittung (und beim Start, beim „Weiter“, auf Tastendruck):
 1. Software merkt den Bezug **sofort** (angezeigter Wert) – Ist ist damit 0.
 2. Befehl `tare` an die Waage (Mittelsmann).
 3. **Phase „Tara läuft“:** bis die Waage einen stabilen Wert bei ~0 meldet (|Wert| ≤ Wanderung), höchstens **3 s** (K09-3). Danach Bezug = dieser Wert. Erst jetzt wird die nächste Zutat freigegeben (sonst würde der Sprung der Anzeige als Ist erscheinen).
+3a. **Tara ausgeführt, obwohl schon Last aufliegt (Befund B2, Michael 15:21):** Springt die Waage nach dem Befehl von brutto auf netto oder fällt die Anzeige gegenüber dem Höchstwert seit dem Befehl um das tarierte Gewicht, gilt die Tara als ausgeführt; Nullpunkt = 0 netto. Gleiches für eine verspätet ausgeführte Tara (Punkt 4).
 4. Kommt die Bestätigung nicht (Befehl verworfen, Waage langsam): Software-Bezug bleibt, Hinweis „Tara an der Waage nicht bestätigt“, Ablauf geht weiter (Software maßgeblich). Springt die Anzeige später doch auf ~0, erkennt `weigh.py` den Sprung um genau den Bezug und führt den Bezug nach.
 5. Jede Tara → Ereignis `tare_set` mit Bezug; die **Tara-Summe** (Behältergewicht, falls bekannt, + alle bisherigen Zutaten) wird mitgeführt.
 
@@ -123,7 +124,7 @@ Ist das Behältergewicht schon bekannt und weicht der neue Wert um mehr als `res
 
 ### 6.3 Auto-Quittung (M09-4)
 
-Automatisch quittiert wird, wenn **durchgehend für die Einstellung „Zeit“ (2 s)**: Status `ok`, `stable` wahr, |Ist − Soll| ≤ Toleranz, **und** Höchst- minus Mindestwert im Zeitraum ≤ Einstellung „Wanderung“ (5 g). Ist-Wert = letzter Wert. Jeder Ausreißer (aus der Toleranz, nicht stabil, `invalid`) startet die Zeit neu. Fortschritt (0–100 %) geht über den Live-Kanal (Balken in Modul 10).
+Automatisch quittiert wird, wenn **durchgehend für die Einstellung „Zeit“ (2 s)**: Status `ok`, `stable` wahr, |Ist − Soll| ≤ Toleranz, **und** Höchst- minus Mindestwert im Zeitraum ≤ Einstellung „Wanderung“ (5 g). **Zusätzlich (Befund B1, Michael 19.11.2026, 14:58): Ist mindestens das halbe Soll (aufgerundet) und mindestens 1 g** – sonst würde eine Zutat mit Toleranz größer als das Soll schon bei 0 g quittiert; von Hand gilt die volle Toleranz. **Außerdem mindestens die „Mindestlast Autoquittierung“ (Einstellung `auto_ack_min_g`, Standard 70 g, 0 = aus; Michael 15:21)** – darunter nur von Hand. Ist-Wert = letzter Wert. Jeder Ausreißer (aus der Toleranz, nicht stabil, `invalid`) startet die Zeit neu. Fortschritt (0–100 %) geht über den Live-Kanal (Balken in Modul 10).
 
 ### 6.4 Höchstlast (M09-7)
 
@@ -169,6 +170,7 @@ Tabelle `setting` (Modul 02), Lesen ohne PIN, Ändern mit PIN (`/api/v1/admin/pr
 | `capacity_warn_g` | 1000 | 0–10 000 g | Vorwarnung vor der Höchstlast |
 | `tare_confirm_seconds` | 3 | 1–10 s | Wartezeit auf die Tara-Bestätigung der Waage |
 | `resume_check_g` | 5 | 0–100 g | erlaubte Abweichung der Gesamtlast beim „Weiter“ (K09-12) |
+| `auto_ack_min_g` | 70 | 0–5 000 g | Mindestlast Autoquittierung (Michael 15:21, 0 = aus) |
 
 ## 11. Schnittstelle (REST, ohne PIN außer Einstellungen)
 

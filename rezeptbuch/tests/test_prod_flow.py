@@ -157,9 +157,7 @@ def test_weigh_whole_dough_by_hand(conn, recipes, runner, hub):
     hub.put(1, 1810 + 620, stable=False)
     batch = batches.ack_weighed(conn, bid, st(), runner)
     assert batch["items"][1]["ack_type"] == "manual_unstable"
-    assert batch["scale"]["taring"]                         # Tara wartet auf einen ruhigen Wert (K09-3)
-    hub.put(1, 2430)
-    assert batches.get_batch(conn, bid, runner)["scale"]["taring"] is False
+    assert batch["scale"]["taring"] is False                # Tara ausgeführt, auch bei unruhiger Waage (B2)
     hub.put(1, 2430 + 21)
     batch = batches.ack_weighed(conn, bid, st(), runner)
     assert batch["status"] == "done" and batch["finish_ack_at"] is None

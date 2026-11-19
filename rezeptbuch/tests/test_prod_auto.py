@@ -35,7 +35,11 @@ def run(conn, runner, clock, seconds, step=0.2):
 
 @pytest.fixture
 def brot(conn, recipes, runner, hub):
-    """Weißbrot 1 620 g gestartet an Waage 1, Behälter 800 g steht schon drauf (Tara beim Start)."""
+    """Weißbrot 1 620 g gestartet an Waage 1, Behälter 800 g steht schon drauf (Tara beim Start).
+    Mindestlast für die Auto-Quittung hier 0 g, damit auch Salz (20 g) automatisch quittiert wird."""
+    from app.production.settings import save_settings
+    save_settings(conn, {"auto_ack_min_g": 0})
+    runner.refresh_settings(conn, force=True)
     order = orders.create_order(conn, total(recipes["brot"], 1620))
     hub.put(1, 800)
     return batches.start_dough(conn, order["id"], st(), runner, today=TODAY)
@@ -55,8 +59,8 @@ def test_tare_confirmed_by_scale():
     assert sw.start_tare(1, Sample("ok", 800, True, net=False)) == 800
     assert sw.taring and sw.actual() == 0
     assert sw.observe(1.5, Sample("ok", 1, True, net=True), 3, 5) == ["tare_confirmed"]
-    assert (sw.reference_g, sw.scale_tare_g, sw.taring) == (1, 800, False)
-    assert sw.gross(Sample("ok", 501, True, net=True)) == 1301 and sw.tare_total() == 801
+    assert (sw.reference_g, sw.scale_tare_g, sw.taring) == (0, 800, False)      # Nullpunkt 0 netto (B2)
+    assert sw.gross(Sample("ok", 501, True, net=True)) == 1301 and sw.tare_total() == 800
 
 
 def test_tare_timeout_and_late_jump():
@@ -89,6 +93,52 @@ def test_auto_ack_window():
     assert not sw.auto_ack(2.5, 1010, 1000, 20, 2, 5)
     assert sw.auto_ack(3.5, 1008, 1000, 20, 2, 5) and sw.progress == 100
     assert not sw.auto_ack(4, 1100, 1000, 20, 2, 5) and sw.progress == 0        # außerhalb der Toleranz
+
+
+def test_auto_ack_needs_half_target():
+    # Befund B1: Boerol 4 g ± 20 g darf nicht bei 0 g automatisch quittiert werden
+    from app.production.weigh import auto_ack_minimum
+    assert [auto_ack_minimum(t) for t in (0, 1, 2, 3, 4, 1000)] == [1, 1, 1, 2, 2, 500]
+    assert [auto_ack_minimum(t, 70) for t in (4, 30, 100, 1000)] == [70, 70, 70, 500]
+    sw = StationWeigh(reference_g=0)
+    sw.observe(0, Sample("ok", 0, True), 3, 5)
+    assert not sw.auto_ack(0, 0, 4, 20, 2, 5)
+    assert not sw.auto_ack(3, 0, 4, 20, 2, 5) and sw.progress == 0
+    sw.observe(3, Sample("ok", 2, True), 3, 5)
+    assert not sw.auto_ack(3, 2, 4, 20, 2, 5)
+    assert sw.auto_ack(5, 2, 4, 20, 2, 5)
+
+
+def test_tare_executed_with_next_ingredient_on_top():
+    # B2: Waage brutto 800 g, Tara-Befehl; noch bevor sie ruhig bei 0 steht, liegen 300 g Mehl drauf
+    sw = StationWeigh()
+    sw.observe(0, Sample("ok", 800, True, net=False), 3, 5)
+    sw.start_tare(0, Sample("ok", 800, True, net=False))
+    assert sw.observe(0.5, Sample("ok", 300, False, net=True), 3, 5) == ["tare_confirmed"]
+    assert (sw.reference_g, sw.scale_tare_g, sw.taring) == (0, 800, False)
+    assert sw.actual() == 300 and sw.gross() == 1100
+
+
+def test_tare_executed_already_net_by_drop():
+    # Waage war schon netto (1 000 g nach Tara); neue Tara, Anzeige fällt um das tarierte Gewicht
+    sw = StationWeigh(scale_tare_g=800)
+    sw.observe(0, Sample("ok", 1000, True, net=True), 3, 5)
+    sw.start_tare(0, Sample("ok", 1000, True, net=True))
+    assert sw.observe(0.2, Sample("ok", 1003, False, net=True), 3, 5) == []
+    # Tara ausgeführt (Anzeige fällt um 1 000 g auf 3 g, Waage unruhig), danach 40 g Mehl
+    assert sw.observe(0.4, Sample("ok", 3, False, net=True), 3, 5) == ["tare_confirmed"]
+    assert sw.observe(0.6, Sample("ok", 43, False, net=True), 3, 5) == []
+    assert sw.actual() == 43 and sw.scale_tare_g == 1800
+
+
+def test_late_tare_with_load_on_top():
+    sw = StationWeigh()
+    sw.observe(0, Sample("ok", 800, True, net=False), 3, 5)
+    sw.start_tare(0, Sample("ok", 800, True, net=False))
+    sw.observe(3.1, Sample("ok", 900, True, net=False), 3, 5)          # Zeit abgelaufen, Software-Tara
+    assert sw.actual() == 100
+    assert sw.observe(4, Sample("ok", 150, False, net=True), 3, 5) == ["late_tare"]
+    assert sw.actual() == 150 and sw.gross() == 950
 
 
 def test_zone_and_capacity():
@@ -148,6 +198,39 @@ def test_no_auto_ack_when_unstable_or_wandering(conn, brot, runner, hub, clock):
         hub.put(1, weight)
         run(conn, runner, clock, 0.6)
     assert batches.get_batch(conn, brot["id"])["items"][0]["done"] is False
+
+
+def test_min_load_default_70(conn, recipes, runner, hub, clock):
+    # Standard: Auto-Quittung erst ab 70 g; Salz 20 g von Hand (Michael 15:21)
+    order = orders.create_order(conn, total(recipes["brot"], 1620))
+    hub.put(1, 0)
+    batch = batches.start_dough(conn, order["id"], st(), runner, today=TODAY)
+    batch = batches.select_item(conn, batch["id"], st(position=3), runner)
+    hub.put(1, 20)
+    run(conn, runner, clock, 3)
+    assert batches.get_batch(conn, batch["id"])["items"][2]["done"] is False
+    batch = batches.ack_weighed(conn, batch["id"], st(), runner)
+    assert batch["items"][2]["ack_type"] == "manual_stable"
+    hub.put(1, 20 + 1000)
+    run(conn, runner, clock, 2.4)
+    assert batches.get_batch(conn, batch["id"])["items"][0]["ack_type"] == "auto_stable"
+
+
+def test_next_ingredient_during_tare_no_wait(conn, brot, runner, hub, clock):
+    # B2 mit Hintergrund: nach der Mehl-Quittung kommt sofort Wasser drauf, Waage tariert verzögert
+    hub.put(1, 800 + 1000)
+    hub.ignore_commands = True                                    # Waage führt die Tara erst später aus
+    run(conn, runner, clock, 2.4)
+    assert batches.get_batch(conn, brot["id"])["items"][0]["done"] is True
+    hub.put(1, 1800 + 600)                                        # Wasser drauf, Tara noch nicht ausgeführt
+    run(conn, runner, clock, 0.4)
+    assert runner.reading(1).taring is True
+    hub.ignore_commands = False
+    hub.offset[1] = 1800                                          # Waage führt die Tara jetzt aus: netto 600 g
+    run(conn, runner, clock, 0.2)
+    assert runner.reading(1).taring is False and runner.reading(1).actual_g == 600
+    run(conn, runner, clock, 2.2)                                 # keine 3 s Sperre, Auto-Quittung nach 2 s
+    assert batches.get_batch(conn, brot["id"])["items"][1]["actual_g"] == 600
 
 
 def test_auto_ack_settings(conn, brot, runner, hub, clock):
