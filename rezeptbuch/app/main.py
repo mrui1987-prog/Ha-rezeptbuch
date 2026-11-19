@@ -1,6 +1,6 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.8.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.8.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
 Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06),
 Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08). Beim Start wird die Datenbank geöffnet, geprüft und
@@ -21,6 +21,7 @@ from .auth.sessions import AdminSessions
 from .calculation.router import router as calculation_router
 from .db import DatabaseError, default_db_path, init_database
 from .errors import ServiceError
+from .logsetup import setup_logging, setup_timezone
 from .exports.router import router as exports_router
 from .imports.router import router as imports_router
 from .raw_materials.router import router as raw_materials_router
@@ -35,6 +36,10 @@ logger = logging.getLogger("rezeptbuch")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Protokoll: Ortszeit und Stufe aus der Add-on-Option log_level (Befund B1, 0.8.1)
+    tz = setup_timezone()
+    level = setup_logging(load_options())
+    logger.info("HA-Rezeptbuch %s startet (Protokollstufe %s, Ortszeit %s)", __version__, level, tz)
     app.state.db = None          # Verbindung nur für Start und Tests; Anfragen nutzen deps.get_db
     app.state.db_path = None
     app.state.db_error = None

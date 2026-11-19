@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.8.1 – Korrektur aus der Praxisprüfung Modul 08 (in Entwicklung)
+
+- **Protokoll (Befund B1):** Die Add-on-Option „Protokollstufe“ (`log_level`) wird jetzt angewendet. Bisher zeigte das Protokoll des Rezeptbuchs nur Warnungen und Fehler; jetzt erscheinen auch Infomeldungen wie „MQTT verbunden“, „Waage 1 wieder verbunden“ oder „Befehl tare an Waage 1 gesendet“, jeweils mit Datum und Uhrzeit in Ortszeit (Startzeile „HA-Rezeptbuch 0.8.1 startet (Protokollstufe info, Ortszeit Europe/Berlin)“). Dafür ist `tzdata` im Abbild
+
 ## 0.8.0 – Modul 08: Waagen-Anbindung im Rezeptbuch (in Entwicklung)
 
 - **Waagen-Anbindung per MQTT** (Modul 08, docs/schnittstellen.md): Das Rezeptbuch empfängt den Zustand der Waagen von „HA-Rezeptbuch Waage“ (Schema 2) und sendet Tara/Null. Zugangsdaten vom Supervisor (`services: mqtt:need`), neue Abhängigkeiten `paho-mqtt` 2.1 und `websockets` (Live-Kanal unter uvicorn)
