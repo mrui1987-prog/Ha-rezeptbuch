@@ -1,5 +1,5 @@
 name: HA-Rezeptbuch Waage
-version: "0.7.5"
+version: "0.7.6"
 slug: rezeptbuch_waage
 description: Liest bis zu zwei KERN-Waagen über Waveshare-Konverter und meldet Gewicht, Stabilität und Status per MQTT
 url: https://github.com/mrui1987-prog/ha-rezeptbuch

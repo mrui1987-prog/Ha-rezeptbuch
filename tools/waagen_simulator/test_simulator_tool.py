@@ -122,8 +122,8 @@ def test_addon_tcp_way_end_to_end():
         dispatch_commands(runs, loop.time())
         await wait_until(lambda: sim.commands == ["zero", "tare"])
         await wait_until(lambda: mon.state(loop.time())["net"] is True)
-        # mit Tara aktiv wird zero verworfen (Z07-1)
-        assert handle_command(mon, b'{"v":2,"cmd":"zero"}', clock=loop.time) is False
+        # mit Tara aktiv und netto 0 g ist zero erlaubt (Z07-2)
+        assert handle_command(mon, b'{"v":2,"cmd":"zero"}', clock=loop.time)
 
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

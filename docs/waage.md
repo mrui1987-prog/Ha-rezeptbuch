@@ -1,6 +1,6 @@
 # Modul 07 – Waagenkommunikation (Schritt B: Konzept)
 
-Status: **Konzept erstellt am 18.11.2026, 21:00, von Michael am 18.11.2026, 21:12 freigegeben.** Konzeptfragen K07-1 bis K07-9 (Abschnitt 13) wie vorgeschlagen entschieden.
+Status: **Konzept erstellt am 18.11.2026, 21:00, von Michael am 18.11.2026, 21:12 freigegeben.** Umgesetzt in 0.7.0–0.7.6 (Stand 19.11.2026: Freigabebericht erstellt, Freigabe Modul 07 offen). Konzeptfragen K07-1 bis K07-9 (Abschnitt 13) wie vorgeschlagen entschieden.
 Grundlage: Entscheidungen M07-1 bis M07-14 und Test CONT (18.11.2026, docs/modulstatus-07.md Abschnitt 6), docs/feldtest.md (12./13.11.2026), docs/architektur.md (Abschnitte 2, 5, 6), docs/bedienkonzept.md (R4–R6, Handbetrieb), Code-Stand `main` 29aa529 (Add-on `rezeptbuch_waage` 0.1.0, Gerüst aus Modul 01).
 Zielversion: Add-on `rezeptbuch_waage` **0.7.0** (Zweig `modul07`). Add-on 1 `rezeptbuch` bleibt unverändert.
 
@@ -137,8 +137,8 @@ QoS 0, nicht „retained“ (M07-7). **Schema 2** (K07-1):
 | `tare` | `T` + CR LF | Waage tariert, meldet danach netto (`net: true`) |
 | `zero` | `Z` + CR LF | Waage stellt auf 0, brutto |
 
-- Angenommen nur, wenn die Station Zeilen liefert (`ok`, `invalid` oder `error`); bei `offline` verworfen mit Protokolleintrag. ~~`zero` bei `invalid` ist gewollt (Feldtest: `Z` bei −77 g).~~
-- **Seit 0.7.5 (Z07-1, 19.11.2026):** `zero` nur bei leerer Waage – Status `ok`, brutto (`net` falsch) und |Gewicht| ≤ `zero_limit_g` (Standard 50 g, je Waage 0–1000). Sonst verworfen, auch bei `invalid`; erneute Prüfung beim Senden. Grund: Praxisprüfung C2 – die KFB-TM nimmt Nullstellen bis knapp 10 kg an (kein `0rAGE`) und meldet danach brutto 0 g trotz Last. Negativwert der leeren Waage (`-----`) → an der Waage nullstellen.
+- Angenommen nur, wenn die Station Zeilen liefert (`ok`, `invalid` oder `error`); bei `offline` verworfen mit Protokolleintrag. `zero` bei `invalid` ist gewollt (Feldtest: `Z` bei −77 g; 0.7.5 hatte das verworfen, seit 0.7.6 wieder erlaubt, Z07-2).
+- **Seit 0.7.5 (Z07-1), geändert in 0.7.6 (Z07-2, 19.11.2026, 07:10):** `zero` bei Status `ok` nur, wenn |Gewicht| ≤ `zero_limit_g` (Standard 50 g, je Waage 0–1000) – **brutto oder netto** (Tara an der Waage aktiv); bei `invalid` **ohne Grenze** (wie ursprünglich im Konzept); bei `error` verworfen. Erneute Prüfung beim Senden. Grund: Praxisprüfung C2 – die KFB-TM nimmt Nullstellen bis knapp 10 kg an (kein `0rAGE`) und meldet danach brutto 0 g trotz Last. Negativwert der leeren Waage (`-----`) → `zero` geht (Z07-2).
 - **Mindestabstand 1 s** zwischen zwei Befehlen an dieselbe Waage (Feldtest 11.4: schnelle Befehle gingen teils verloren). Weitere Befehle warten, höchstens einer je Art; doppelte werden zusammengefasst.
 - **Keine eigene Bestätigung** (K07-3): Die Waage bestätigt nicht; die Wirkung zeigt der nächste Zustand (`net`, Gewicht 0).
 - Unbekannte Befehle, falsches JSON oder falsche Version → verworfen mit Protokolleintrag.
@@ -167,7 +167,7 @@ QoS 0, nicht „retained“ (M07-7). **Schema 2** (K07-1):
 | `scale1_offline_after_s` | – Offline nach | 5 | 5 | 2–30 s ohne Zeile |
 | `scale1_capacity_g` | – Höchstlast | 30000 | 30000 | Gramm, für die Warnung in Modul 09/10 |
 | `scale1_resolution_g` | – Auflösung | 1 | 1 | Gramm |
-| `scale1_zero_limit_g` | – Nullstellen nur bis ±g | 50 | 50 | Gramm, 0–1000, optional (seit 0.7.5, Z07-1) |
+| `scale1_zero_limit_g` | – Nullstellen nur bis ±g | 50 | 50 | Gramm, 0–1000, brutto oder netto, nicht bei `-----`; optional (seit 0.7.5, Z07-1/Z07-2) |
 | `log_level` | Protokollstufe | `info` | | `debug` zeigt jede Zeile und die Stabilitätsspanne |
 
 Waage 2 hat dieselben Felder mit `scale2_…`. **Keine IP-Adressen und Passwörter im Repo** (feldtest.md, Datenschutz); Adresse trägt Michael in HA ein.
@@ -274,3 +274,5 @@ Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (n
 | 18.11.2026, 21:00 | Konzept erstellt (Schritt B), Konzeptfragen K07-1 bis K07-9 offen. |
 | 18.11.2026, 21:12 | **Konzept von Michael freigegeben**, K07-1 bis K07-9 wie vorgeschlagen entschieden. Damit gilt Schema 2 auch als Abstimmung mit Modul 08 (K07-1 bis K07-3). |
 | 19.11.2026 | **Teil C2 umgesetzt als 0.7.4** (Auftrag Michael): Befehle nach 6.3, Warteschlange in eigener Datei `app/commands.py` (statt in `station.py`), Werkzeug `tools/waagen_simulator` mit Option `--fest`; eigener GitHub-Testlauf für das Werkzeug. Keine Entscheidung geändert. |
+| 19.11.2026, 06:50 | **0.7.5:** `zero` nur bei leerer Waage (Z07-1), Protokoll in Ortszeit (Befund O1). |
+| 19.11.2026, 07:10 | **Z07-2 (Michael), 0.7.6:** `zero` auch bei `invalid` (ohne Grenze) und bei Tara an der Waage (netto ≤ ±50 g); Hinweise Claude zu nicht sendbaren Befehlen und TCP-Neuaufbau bestätigt. |

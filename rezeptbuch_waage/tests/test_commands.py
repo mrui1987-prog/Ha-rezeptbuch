@@ -89,7 +89,7 @@ def test_accepted_when_ok_invalid_or_error():
     mon.feed(b"-----\r\n", 0.0, WALL)                     # invalid
     assert mon.status(0.1) == "invalid"
     assert mon.submit_command("tare", 0.1)
-    assert mon.submit_command("zero", 0.1) is False        # Z07-1: kein gültiges Gewicht
+    assert mon.submit_command("zero", 0.1)                 # Z07-2: bei invalid erlaubt
     mon = StationMonitor(StationConfig(station=1, enabled=True, host="h"))
     mon.feed(b"xx\r\n", 0.0, WALL)
     mon.feed(b"xx\r\n", 3.5, WALL)                         # 3 s nur unlesbar → error
@@ -289,7 +289,7 @@ def test_tcp_way_writes_to_connection():
     asyncio.run(asyncio.wait_for(body(), 10))
 
 
-# --- Z07-1: Nullstellen nur bei leerer Waage (0.7.5) ------------------------
+# --- Z07-1/Z07-2: Nullstellen nur bei leerer Waage (0.7.5/0.7.6) ------------
 
 @pytest.mark.parametrize("grams", [0, 50, -50, 13])
 def test_zero_accepted_on_empty_scale(grams):
@@ -308,10 +308,36 @@ def test_zero_rejected_with_load(grams, caplog):
     assert mon.commands.pending == []
 
 
-def test_zero_rejected_when_net():
-    mon = live_monitor(grams=0, net=True)                 # Tara an der Waage aktiv
-    assert mon.submit_command("zero", 0.1) is False
+@pytest.mark.parametrize("grams", [0, 50, -50])
+def test_zero_accepted_when_net_and_small(grams):
+    mon = live_monitor(grams=grams, net=True)             # Tara an der Waage aktiv (Z07-2)
+    assert mon.submit_command("zero", 0.1)
     assert mon.submit_command("tare", 0.1)                # Tara bleibt erlaubt
+
+
+def test_zero_rejected_when_net_with_load(caplog):
+    mon = live_monitor(grams=400, net=True)
+    with caplog.at_level(logging.WARNING, logger="rezeptbuch_waage"):
+        assert mon.submit_command("zero", 0.1) is False
+    assert "Waage zeigt 400 g netto" in caplog.text
+
+
+def test_zero_accepted_when_invalid_without_limit():
+    mon = live_monitor(grams=9800)                        # Last, dann `-----`
+    mon.feed(b"-----\r\n", 0.05, WALL)
+    assert mon.status(0.1) == "invalid"
+    assert mon.submit_command("zero", 0.1)                # Z07-2: ohne Grenze
+    assert mon.next_command(0.1) == "zero"
+
+
+def test_zero_rejected_when_error(caplog):
+    mon = live_monitor(grams=0)
+    for i in range(40):                                   # 4 s nur unlesbar
+        mon.feed(b"xx\r\n", 0.1 + i * 0.1, WALL)
+    assert mon.status(4.1) == "error"
+    with caplog.at_level(logging.WARNING, logger="rezeptbuch_waage"):
+        assert mon.submit_command("zero", 4.1) is False
+    assert "kein gültiges Gewicht" in caplog.text
 
 
 def test_zero_limit_configurable():
@@ -328,7 +354,7 @@ def test_waiting_zero_dropped_when_load_arrives(caplog):
     mon.feed((format_line(1200) + "\r\n").encode(), 0.5, WALL)   # Behälter aufgelegt
     with caplog.at_level(logging.WARNING, logger="rezeptbuch_waage"):
         assert mon.next_command(1.0) is None
-    assert "wartender Befehl Nullstellen verworfen – Waage zeigt 1200 g" in caplog.text
+    assert "wartender Befehl Nullstellen verworfen – Waage zeigt 1200 g brutto" in caplog.text
     assert mon.commands.pending == []
 
 

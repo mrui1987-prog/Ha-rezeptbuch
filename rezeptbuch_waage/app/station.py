@@ -182,21 +182,27 @@ class StationMonitor:
         return self.commands.pop(now)
 
     def zero_refusal(self, now: float) -> str | None:
-        """Grund, warum `zero` jetzt nicht erlaubt ist (Z07-1), sonst None.
+        """Grund, warum `zero` jetzt nicht erlaubt ist (Z07-1, Z07-2), sonst None.
 
-        Nullstellen nur bei leerer Waage: gültiges Gewicht, brutto (kein Tara
-        an der Waage) und höchstens ±`zero_limit_g`. Sonst würde die Waage
-        aufliegende Last als 0 melden (Null-Taste wirkt bis knapp 10 kg).
+        - `invalid` (`-----`): erlaubt, ohne Gewichtsgrenze (Z07-2, wie Konzept
+          6.3: leere Waage im Minus lässt sich nullstellen).
+        - `ok`: erlaubt, wenn der angezeigte Wert – brutto oder netto (Tara an
+          der Waage aktiv, Z07-2) – höchstens ±`zero_limit_g` beträgt. Sonst
+          würde die Waage aufliegende Last als 0 melden (Null-Taste wirkt bis
+          knapp 10 kg, Z07-1).
+        - sonst (`error`, kein Wert): verworfen.
         """
+        status = self.status(now)
+        if status == STATUS_INVALID:
+            return None
         limit = self.cfg.zero_limit_g
-        if self.status(now) != STATUS_OK or self._last_reading is None:
+        if status != STATUS_OK or self._last_reading is None:
             return "kein gültiges Gewicht, Nullstellen nur bei leerer Waage"
         reading = self._last_reading
-        if reading.net:
-            return "Waage zeigt netto (Tara aktiv), Nullstellen nur bei leerer Waage"
         if abs(reading.weight_g) > limit:
-            return (f"Waage zeigt {reading.weight_g} g, Nullstellen nur bei leerer "
-                    f"Waage (bis ±{limit} g)")
+            art = "netto" if reading.net else "brutto"
+            return (f"Waage zeigt {reading.weight_g} g {art}, Nullstellen nur bei "
+                    f"leerer Waage (bis ±{limit} g)")
         return None
 
     # --- Protokoll ----------------------------------------------------------

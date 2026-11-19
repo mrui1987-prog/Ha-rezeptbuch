@@ -1,5 +1,11 @@
 # Änderungen – HA-Rezeptbuch Waage
 
+## 0.7.6 – Korrektur Nullstellen (Z07-2)
+
+- **`zero` auch bei `-----`:** wird ohne Gewichtsgrenze angenommen (wie im Konzept; leere Waage im Minus lässt sich wieder per Befehl nullstellen)
+- **`zero` auch bei Tara an der Waage:** erlaubt, wenn der Nettowert höchstens ±`zero_limit_g` (Standard 50 g) zeigt
+- Meldung nennt jetzt „brutto“ bzw. „netto“; bei `error` bleibt `zero` verworfen
+
 ## 0.7.5 – Korrektur aus der Praxisprüfung C2
 
 - **Nullstellen nur bei leerer Waage (Z07-1):** `zero` wird nur angenommen, wenn die Waage ein gültiges Gewicht **brutto** zeigt und höchstens **±50 g** (neues Feld „Nullstellen nur bis ±g“ je Waage, 0–1000). Sonst „Befehl Nullstellen verworfen – …“. Grund: Die KFB-TM stellt bis knapp 10 kg auf 0 und meldet danach brutto 0 g, obwohl Last aufliegt. Die Bedingung wird beim Senden noch einmal geprüft. Die Null-Taste an der Waage selbst ist davon nicht betroffen.
