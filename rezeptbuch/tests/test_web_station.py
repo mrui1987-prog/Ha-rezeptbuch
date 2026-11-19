@@ -68,3 +68,10 @@ def test_corner_keeps_clock_below():
     text = (STATIC / "station.html").read_text(encoding="utf-8")
     corner = text[text.index('<div id="corner">'):text.index("</div>\n<header")]
     assert corner.index('id="date"') < corner.index('id="weather"') < corner.index('id="clock"')
+
+
+def test_layout_0_10_6():
+    # Zutat oben groß, Infotafel rechts, ausblendbare untere Leiste, Kompaktansicht (Michael 17:27–18:01)
+    text = (STATIC / "station.html").read_text(encoding="utf-8")
+    for needle in ('id="n-title"', 'id="head"', 'id="s-more"', 'id="b-compact"', 'id="compact"', "bar-hidden"):
+        assert needle in text, needle

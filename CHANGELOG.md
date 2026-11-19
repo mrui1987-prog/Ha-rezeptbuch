@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.6 – Modul 10: neue Aufteilung der Wiegeansicht, ausblendbare Leiste, Kompaktansicht (in Entwicklung)
+
+- **Oben:** Mitte die aktuelle Zutat sehr groß (lange Namen werden kleiner, bis sie passen), darunter „Zutat x von y“; rechts eine Infotafel mit Waage, Rezept, Teig, Charge und nächstem Auftrag in kleiner Schrift – dort darf das Bild-im-Bild-Fenster liegen
+- **Wiegeansicht:** Soll/Ist füllen die freie Höhe; Quittieren, Zutat übergehen, Tara, Behälter, Behälter wechseln und Handwaage alle gleich hoch und größer
+- **Untere Tastenleiste** beim Wiegen ausgeblendet; **„☰ Mehr“** rechts blendet sie ein (zu nach einer Taste, mit „✕ Weniger“ oder nach 15 s). Ohne laufenden Teig bleibt sie sichtbar
+- **Kompaktansicht** (Taste „Kompakt“ in der unteren Leiste): Vollbild mit großem Grobbalken – darin am unteren Rand Zutat, Soll und Ist – und durchgehendem Feinbalken (Soll ± 4 × Toleranz) mit Abweichung; oben „Quittieren“ und „✕ Normale Ansicht“. Bei Gebinde, Handzugabe, Unterrezept und Behälter-Schritten gilt kurz die normale Ansicht
+
 ## 0.10.5 – Modul 09: Null beim Behälter wiegen zuverlässig (in Entwicklung)
 
 - **„Behälter wiegen“ und „Behälter wechseln“:** Nach `tare` wartet die Software 2 s, bevor sie `zero` sendet. Bestätigt die Waage die Null nicht innerhalb von 2 s, wird `zero` bis zu zweimal wiederholt (Michael, Praxisprüfung: Null musste mehrfach von Hand gedrückt werden). Klappt es trotzdem nicht, steht da „Waage leer lassen und an der Waage Null drücken“

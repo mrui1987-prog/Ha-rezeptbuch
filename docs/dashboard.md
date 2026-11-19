@@ -160,3 +160,4 @@ Im Rahmen des freigegebenen Konzepts; bei Einwand ändern:
 | 19.11.2026, 13:24 | Konzept freigegeben (Michael). |
 | 19.11.2026 | Teil C1 (0.10.0) umgesetzt, Hinweise in Abschnitt 13. |
 | 19.11.2026, 15:31 | 0.10.2 nach der ersten Praxisprüfung (Michael, Sprachgespräch): Ecke umgedreht (Uhrzeit unten, frei), Zutatenname größer, Wiegebereich nach unten, zwei große Tasten Quittieren/Zutat übergehen, übrige Tasten klein ganz unten. |
+| 19.11.2026, 18:01 | 0.10.6 nach Entwürfen 1–6 (Michael 17:27–18:01): oben Mitte Zutat sehr groß, oben rechts Infotafel (kleine Schrift, Bild-im-Bild darf darüber); Soll/Ist füllen die Höhe, alle sechs Tasten gleich hoch; untere Leiste beim Wiegen ausgeblendet, „☰ Mehr“ blendet sie ein (15 s); Kompaktansicht als Vollbild mit Grobbalken (Zutat, Soll, Ist am unteren Rand) und durchgehendem Feinbalken. Weicht vom Bedienkonzept ab (feste untere Leiste). |

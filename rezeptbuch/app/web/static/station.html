@@ -8,8 +8,8 @@
 <style>
   /* Stationsoberfläche (Modul 10 Teil C1, docs/dashboard.md Abschnitt 3/4). Querformat, Bezug 1920 × 1200. */
   body { display: grid; height: 100vh; overflow: hidden;
-    grid-template-columns: 25vw 1fr 13vw; grid-template-rows: 25vh 1fr auto 12vh;
-    grid-template-areas: "corner head head" "main main side" "notice notice notice" "bottom bottom bottom"; }
+    grid-template-columns: 25vw 1fr 15vw 13vw; grid-template-rows: 29vh 1fr auto 13vh;
+    grid-template-areas: "corner name head head" "main main main side" "notice notice notice notice" "bottom bottom bottom bottom"; }
 
   /* Ecke oben links (M10-15, geändert 15:31): oben Datum und Wetter – dort darf das Bild-im-Bild-Fenster liegen –,
      darunter am unteren Rand der Ecke die Uhrzeit, die immer frei bleibt */
@@ -21,31 +21,66 @@
   #weather .w-sym { font-size: 4.4vh; margin-right: .4vw; }
   #weather .w-range { color: #aeb8c2; }
 
-  #head { grid-area: head; background: var(--panel); border-bottom: 2px solid var(--line); padding: 1.4vh 1.6vw;
-    display: flex; flex-direction: column; justify-content: center; gap: .8vh; }
-  #h-station { font-size: 2.6vh; color: var(--muted); font-weight: 600; }
-  #h-recipe { font-size: 5vh; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #h-info { font-size: 2.8vh; color: var(--text); }
-  #h-next { font-size: 2.4vh; color: var(--muted); }
+  /* Oben Mitte: aktuelle Zutat sehr groß (Michael 17:27) */
+  #name { grid-area: name; background: var(--panel); border-bottom: 2px solid var(--line); padding: 1vh 1.6vw;
+    display: flex; flex-direction: column; justify-content: center; min-width: 0; overflow: hidden; }
+  #n-title { font-size: 15vh; font-weight: 800; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #n-sub { font-size: 3vh; color: var(--muted); }
+  /* Oben rechts: Infotafel zu Rezept, Teig, Charge, nächstem Auftrag – kleine Schrift, das Bild-im-Bild darf sie überdecken */
+  #head { grid-area: head; background: #f4f6f8; border-bottom: 2px solid var(--line); border-left: 2px solid var(--line);
+    padding: 1vh 1vw; display: flex; flex-direction: column; justify-content: center; gap: .5vh; min-width: 0; overflow: hidden; }
+  #h-station { font-size: 2.2vh; color: var(--muted); font-weight: 600; }
+  #h-recipe { font-size: 3.2vh; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #h-info { font-size: 2.3vh; color: var(--text); }
+  #h-next { font-size: 2.1vh; color: var(--muted); }
 
   #side { grid-area: side; display: flex; flex-direction: column; gap: 1.2vh; padding: 1.2vh .8vw; background: #e3e6e9; }
   #side button { flex: 1; font-size: 2.8vh; font-weight: 600; }
   #side button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   #main { grid-area: main; overflow: auto; padding: .8vh 1.6vw; display: flex; flex-direction: column; min-height: 0; }
-  #main > * { flex-shrink: 0; }              /* nichts wird gestaucht oder abgeschnitten (Praxisprüfung 16:58) */
+  #main > * { flex-shrink: 0; }
+  #main > .weigh-area { flex-shrink: 1; }
   #notice { grid-area: notice; }
-  #bottom { grid-area: bottom; display: grid; grid-template-columns: repeat(7, 1fr); gap: .6vw; padding: 1vh .8vw;
+  /* Untere Tastenleiste beim Wiegen ausgeblendet, „☰ Mehr“ blendet sie ein (Michael 17:34) */
+  body.bar-hidden { grid-template-rows: 29vh 1fr auto 0; }
+  body.bar-hidden #bottom { display: none; }
+  body.bar-hidden #main { padding-bottom: 1.4vh; }
+  #s-more { flex: 0 0 auto; min-height: 9vh; }
+  #s-more.open { background: var(--text); border-color: var(--text); color: #fff; }
+  /* Kompaktansicht (Michael 17:57): Vollbild, Zutat und Zielgewicht im Grobbalken, Feinbalken immer darunter */
+  #compact { position: fixed; inset: 0; z-index: 30; background: #20262d; color: #fff; display: flex; flex-direction: column;
+    padding: 2vh 1.6vw; gap: 2vh; }
+  #compact .c-top { display: flex; align-items: center; gap: 2vw; font-size: 3vh; color: #cfd6dd; }
+  #compact .c-top .grow { flex: 1; }
+  #compact .c-top button { font-size: 3vh; min-height: 8vh; padding: 0 2vw; font-weight: 700; }
+  #compact #c-exit { background: #3a434d; border-color: #5b6672; color: #fff; }
+  #compact .bar { margin: 0; border-radius: 14px; background: #3a434d; }
+  #compact .bar .zone { background: rgba(46, 157, 58, .45); }
+  #compact .bar .soll { width: 6px; margin-left: -3px; background: #ff4d4d; }
+  #compact .c-coarse { flex: 3; height: auto; }
+  #compact .c-fine { flex: 2; height: auto; }
+  #compact .c-label { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 0 2.4vw 2.2vh; pointer-events: none; text-shadow: 0 2px 6px rgba(0, 0, 0, .55); }
+  #compact .c-name { font-size: 13vh; font-weight: 800; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #compact .c-target { font-size: 5vh; font-weight: 700; color: #e7ecf1; }
+  #compact .c-ist { font-size: 12vh; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #compact .c-fine-lbl { position: absolute; left: 2.4vw; top: 50%; transform: translateY(-50%); font-size: 8vh; line-height: 1; font-weight: 700;
+    color: #e7ecf1; text-shadow: 0 2px 6px rgba(0, 0, 0, .55); pointer-events: none; }
+  #bottom { grid-area: bottom; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: .6vw; padding: 1vh .8vw;
     background: #d5d9dd; }
-  #bottom button { font-size: 2.7vh; font-weight: 600; }
+  #bottom button { font-size: 3vh; font-weight: 600; }
   #b-pause.on { background: var(--high); border-color: var(--high); color: #fff; }
 
   /* Wiegeansicht */
   .item-title { font-size: 8vh; font-weight: 800; line-height: 1.2; margin-bottom: 0; padding-bottom: .2vh;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item-sub { font-size: 2.2vh; color: var(--muted); margin-bottom: .6vh; }
-  .weigh-area { margin-top: auto; }          /* Wiegebereich sitzt unten, über den Tasten */
-  .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
+  .weigh-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }          /* Wiegebereich sitzt unten, über den Tasten */
+  .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; flex: 1; min-height: 0; }
+  .sollist .box { height: 100%; display: flex; flex-direction: column; }
+  .sollist .ring > .box { height: 100%; }
+  .sollist .big { margin: auto 0; font-size: 13vh; }
   .box { background: var(--panel); border-radius: 14px; padding: .8vh 1.4vw; border: 2px solid var(--line); }
   .box .lbl { font-size: 2.4vh; color: var(--muted); font-weight: 600; }
   .box .big { font-size: 11.5vh; font-weight: 800; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
@@ -69,11 +104,11 @@
   .actions button.wide { min-width: 18vw; }
   /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Übergehen gleich groß) */
   .main-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; margin-top: 1vh; }
-  .main-actions button { font-size: 3.6vh; font-weight: 700; min-height: 8.5vh; }
+  .main-actions button { font-size: 4vh; font-weight: 700; min-height: 10.5vh; }
   .main-actions button.skip { background: var(--accent); border-color: var(--accent); color: #fff; }
   /* übrige Tasten klein in einer Leiste ganz unten */
   .more-actions { display: flex; gap: .8vw; margin-top: .8vh; }
-  .more-actions button { flex: 1; font-size: 2.3vh; min-height: 5vh; padding: 0 .8vw; font-weight: 600; }
+  .more-actions button { flex: 1; font-size: 3.2vh; min-height: 10.5vh; padding: 0 .8vw; font-weight: 600; }
 
   /* Startbild, Karten, Tabellen */
   .scale-big { font-size: 15vh; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -103,6 +138,10 @@
   <div id="weather" class="hidden"></div>
   <div id="clock" class="num">--:--</div>
 </div>
+<div id="name">
+  <div id="n-title">Bereit</div>
+  <div id="n-sub"></div>
+</div>
 <header id="head">
   <div id="h-station">Station</div>
   <div id="h-recipe">Keine Verwiegung</div>
@@ -113,6 +152,7 @@
   <button type="button" id="s-weigh" data-view="weigh">Wiegen</button>
   <button type="button" id="s-overview" data-view="overview">Übersicht</button>
   <button type="button" id="s-note" data-view="note">Hinweis</button>
+  <button type="button" id="s-more" class="keep">☰ Mehr</button>
 </nav>
 <main id="main"></main>
 <div id="notice" class="notice hidden" role="status"></div>
@@ -122,10 +162,16 @@
   <button type="button" id="b-cancel">Abbruch</button>
   <button type="button" id="b-select" disabled>Vorwahl</button>
   <button type="button" id="b-orders" disabled>Produktionsliste</button>
+  <button type="button" id="b-compact" class="hidden">Kompakt</button>
   <button type="button" id="b-batches">Chargen</button>
   <button type="button" id="b-menu" class="keep">Menü 🔒</button>
 </footer>
 
+<div id="compact" class="hidden">
+  <div class="c-top"><span id="c-step"></span><span class="grow"></span><span id="c-auto"></span>
+    <button type="button" id="c-ack" class="go">Quittieren</button>
+    <button type="button" id="c-exit" class="keep">✕ Normale Ansicht</button></div>
+</div>
 <script src="../ui/common.js"></script>
 <script>
 "use strict";
@@ -309,7 +355,53 @@
     }
     update();
   }
-  function update() { if (updater) updater(); renderButtons(); }
+  function update() { if (updater) updater(); renderButtons(); renderCompact(); }
+
+  // ------------------------------------------------------------ Kompaktansicht
+  let compact = false;
+  const cBox = $("compact");
+  const cCoarse = makeBar(false), cFine = makeBar(true);
+  cCoarse.node.classList.add("c-coarse"); cFine.node.classList.add("c-fine");
+  const cLabel = el("div", null, "c-label");
+  const cLeft = el("div");
+  const cName = el("div", "", "c-name"), cTarget = el("div", "", "c-target"), cIst = el("div", "", "c-ist");
+  cLeft.appendChild(cName); cLeft.appendChild(cTarget);
+  cLabel.appendChild(cLeft); cLabel.appendChild(cIst);
+  cCoarse.node.appendChild(cLabel);
+  const cFineLbl = el("div", "", "c-fine-lbl");
+  cFine.node.appendChild(cFineLbl);
+  cBox.appendChild(cCoarse.node); cBox.appendChild(cFine.node);
+  function renderCompact() {
+    const b = S.mine, cur = current();
+    const step = S.weigh && b && S.weigh.batch_id === b.id ? S.weigh.container_step : null;
+    // nur beim Wiegen einer Zutat; sonst (Gebinde, Handzugabe, Unterrezept, Behälter) die normale Ansicht
+    const show = compact && b && b.status === "running" && cur && cur.kind === "weigh" && !step && S.view === "weigh";
+    cBox.classList.toggle("hidden", !show);
+    $("b-compact").classList.toggle("hidden", !(b && b.status === "running"));
+    $("b-compact").textContent = compact ? "Normal" : "Kompakt";
+    if (!show) return;
+    const w = S.weigh && S.weigh.batch_id === b.id ? S.weigh : null;
+    const target = w && w.target_g !== null && w.target_g !== undefined ? w.target_g : cur.rest_target_g;
+    const tol = w && w.tolerance_g !== null && w.tolerance_g !== undefined ? w.tolerance_g : cur.tolerance_g;
+    const actual = w ? w.actual_g : null;
+    const zone = w ? w.zone : null;
+    cName.textContent = cur.name;
+    cTarget.textContent = "Soll " + g(target) + " ± " + g(tol);
+    cIst.textContent = actual === null || actual === undefined ? "–" : g(actual);
+    cCoarse.set(actual, target, tol, zone);
+    cFine.set(actual, target, tol, zone);
+    const diff = actual === null || actual === undefined ? null : actual - target;
+    cFineLbl.textContent = diff === null ? "fein ± " + g(4 * tol) : "fein · " + (diff > 0 ? "+" : "") + g(diff);
+    $("c-step").textContent = "Zutat " + (b.progress.done + 1) + " von " + b.progress.total + " · " + (b.recipe ? b.recipe.name : "");
+    const p = w ? w.auto_ack_progress || 0 : 0;
+    $("c-auto").textContent = p ? "Auto-Quittung " + p + " %" : "";
+    $("c-ack").disabled = zone !== "ok";
+  }
+  $("c-exit").addEventListener("click", () => { compact = false; render(); });
+  $("c-ack").addEventListener("click", (ev) => {
+    const cur = current();
+    if (S.mine && cur) act(ev.currentTarget, "batches/" + S.mine.id + "/ack", { station: ST, position: cur.position }, 1000);
+  });
 
   function nextOrder() {
     const open = S.orders.filter((o) => (o.status === "open" || o.status === "in_progress") &&
@@ -320,8 +412,23 @@
     return { order: o, dough: o.doughs.find((d) => !d.batch) };
   }
 
+  // Text verkleinern, bis er in die Breite passt (lange Zutatennamen)
+  function fit(node, maxVh, minVh) {
+    let size = maxVh;
+    node.style.fontSize = size + "vh";
+    while (size > minVh && node.scrollWidth > node.clientWidth + 1) { size -= 0.5; node.style.fontSize = size + "vh"; }
+  }
+
   function renderHead() {
     const b = S.mine;
+    const cur = current();
+    let title = "Bereit", sub = "";
+    if (b && b.status === "running" && cur) { title = cur.name; sub = "Zutat " + (b.progress.done + 1) + " von " + b.progress.total; }
+    else if (b && b.status === "running") { title = "Zutat wählen"; sub = "in der Übersicht"; }
+    else if (b && b.status === "done") { title = "Fertig"; sub = "Behälter abnehmen"; }
+    else if (b) { title = "Handwaage"; sub = "Teig reserviert"; }
+    if ($("n-title").textContent !== title) { $("n-title").textContent = title; fit($("n-title"), 15, 6); }
+    $("n-sub").textContent = sub;
     if (b) {
       $("h-recipe").textContent = (b.recipe ? b.recipe.number + " " + b.recipe.name : "?");
       const total = b.items.reduce((s, i) => s + (i.target_g || 0), 0);
@@ -337,7 +444,20 @@
       " · Teig " + n.dough.dough_index + " von " + n.order.doughs.length + " · " + RB.kg(n.dough.target_g) : "Kein offener Auftrag für heute.";
   }
 
+  // Untere Leiste: beim laufenden Wiegen ausgeblendet, „☰ Mehr“ blendet sie für 15 s ein
+  let barOpen = false, barTimer = null;
+  function setBar(open) {
+    barOpen = open;
+    if (barTimer) { clearTimeout(barTimer); barTimer = null; }
+    if (open) barTimer = setTimeout(() => setBar(false), 15000);
+    renderBars();
+  }
   function renderBars() {
+    const weighing = Boolean(S.mine && S.mine.status === "running") && S.view !== "batches";
+    document.body.classList.toggle("bar-hidden", weighing && !barOpen);
+    $("s-more").classList.toggle("hidden", !weighing);
+    $("s-more").classList.toggle("open", barOpen);
+    $("s-more").textContent = barOpen ? "✕ Weniger" : "☰ Mehr";
     const running = S.mine && S.mine.status === "running";
     ["s-weigh", "s-overview", "s-note"].forEach((id) => {
       const b = $(id);
@@ -402,10 +522,8 @@
     const b = S.mine, cur = current();
     if (b.note && b.note.display === "start" && b.progress.done === 0) main.appendChild(el("div", "Hinweis: " + b.note.text, "hint"));
     if (!cur) { main.appendChild(el("div", "Keine offene Zutat gewählt – in der Übersicht wählen.", "big-msg")); return null; }
-    // Name der Zutat groß oben; Wiegebereich und Tasten sitzen unten (Wunsch Michael 15:31)
-    main.appendChild(el("div", cur.name, "item-title"));        // ohne Rohstoffnummer (Michael 16:58)
-    const sub = el("div", "Zutat " + (b.progress.done + 1) + " von " + b.progress.total, "item-sub");
-    main.appendChild(sub);
+    // Name der Zutat steht oben im Feld „name“ (renderHead, Michael 17:27); hier nur der Wiegebereich
+    const sub = el("div", "", "item-sub hidden");
     const area = el("div", null, "weigh-area");
     main.appendChild(area);
     const bigRow = el("div", null, "main-actions");
@@ -430,7 +548,7 @@
 
     let updateFn = null;
     if (cur.kind === "weigh") {
-      if (cur.units_target && cur.units_acked) sub.textContent += " · " + cur.units_target + " × " + cur.unit_label + " erledigt, Rest wiegen";
+      if (cur.units_target && cur.units_acked) { sub.textContent = cur.units_target + " × " + cur.unit_label + " erledigt, Rest wiegen"; sub.classList.remove("hidden"); main.insertBefore(sub, area); }
       const grid = el("div", null, "sollist");
       const soll = el("div", null, "box");
       soll.appendChild(el("div", "Soll", "lbl"));
@@ -676,6 +794,9 @@
 
   // ------------------------------------------------------------ Tasten
   ["s-weigh", "s-overview", "s-note"].forEach((id) => $(id).addEventListener("click", () => { S.view = $(id).dataset.view; render(); }));
+  $("s-more").addEventListener("click", () => setBar(!barOpen));
+  $("b-compact").addEventListener("click", () => { compact = !compact; S.view = "weigh"; setBar(false); render(); });
+  $("bottom").addEventListener("click", () => { if (barOpen) setBar(false); });
   $("b-batches").addEventListener("click", () => { S.view = S.view === "batches" ? "weigh" : "batches"; render(); });
   $("b-start").addEventListener("click", (ev) => {
     const n = nextOrder();
