@@ -1,5 +1,11 @@
 # Änderungen – HA-Rezeptbuch Waage
 
+## 0.7.5 – Korrektur aus der Praxisprüfung C2
+
+- **Nullstellen nur bei leerer Waage (Z07-1):** `zero` wird nur angenommen, wenn die Waage ein gültiges Gewicht **brutto** zeigt und höchstens **±50 g** (neues Feld „Nullstellen nur bis ±g“ je Waage, 0–1000). Sonst „Befehl Nullstellen verworfen – …“. Grund: Die KFB-TM stellt bis knapp 10 kg auf 0 und meldet danach brutto 0 g, obwohl Last aufliegt. Die Bedingung wird beim Senden noch einmal geprüft. Die Null-Taste an der Waage selbst ist davon nicht betroffen.
+- **Protokoll in Ortszeit (Befund O1):** 0.7.3 wirkte nicht, weil das Programm unter s6 ohne `TZ` startet. `TZ` wird jetzt wie das Supervisor-Token aus der s6-Umgebungsdatei gelesen, sonst Europe/Berlin. Startzeile „Protokoll in Ortszeit …“. `ts` in den Meldungen bleibt UTC.
+- Neues Feld ist optional: Beim Update bleibt die bisherige Konfiguration gültig (Standard 50 g).
+
 ## 0.7.4 – Modul 07, Teil C2 (in Entwicklung)
 
 - **Befehle Tara und Nullstellen:** `{"v":2,"cmd":"tare"|"zero"}` auf `rezeptbuch/v1/station/<nr>/scale/cmd` geht als `T`/`Z` + CR LF an die Waage – per TCP über die offene Verbindung, beim MQTT-Weg auf das Befehls-Topic des Waveshare, beim Simulator im Simulator

@@ -21,6 +21,7 @@ from typing import Awaitable, Callable
 from . import __version__
 from .config import OPTIONS_FILE, AddonConfig, StationConfig, describe, load_options
 from .commands import NAMES
+from .localtime import setup_timezone
 from .messages import CommandError, cmd_topic, parse_command, state_topic
 from .mqtt_client import CredentialsError, MqttBridge, fetch_credentials
 from .simulator import SimulatorTransport
@@ -189,9 +190,11 @@ async def publish_loop(
 
 
 async def amain(options_path: Path = OPTIONS_FILE) -> None:
+    tz = setup_timezone()
     cfg = load_options(options_path)
     setup_logging(cfg.log_level)
     log_start(cfg)
+    log.info("Protokoll in Ortszeit %s", tz)
 
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()

@@ -44,6 +44,9 @@ configuration:
   scale1_resolution_g:
     name: "Waage 1 – Auflösung in g (Standard 1)"
     description: "Kleinster Gewichtsschritt der Waage in Gramm."
+  scale1_zero_limit_g:
+    name: "Waage 1 – Nullstellen nur bis ±g (Standard 50)"
+    description: "Befehl Nullstellen (zero) nur, wenn die Waage brutto höchstens so viele Gramm (0–1000) zeigt; sonst verworfen. Die Null-Taste an der Waage selbst ist davon nicht betroffen."
   scale2_enabled:
     name: "Waage 2 – aktiv (Standard nein)"
     description: "Diese Waagestation verwenden."
@@ -89,6 +92,9 @@ configuration:
   scale2_resolution_g:
     name: "Waage 2 – Auflösung in g (Standard 1)"
     description: "Kleinster Gewichtsschritt der Waage in Gramm."
+  scale2_zero_limit_g:
+    name: "Waage 2 – Nullstellen nur bis ±g (Standard 50)"
+    description: "Befehl Nullstellen (zero) nur, wenn die Waage brutto höchstens so viele Gramm (0–1000) zeigt; sonst verworfen. Die Null-Taste an der Waage selbst ist davon nicht betroffen."
   log_level:
     name: "Protokollstufe (Standard info)"
     description: "Wie ausführlich das Add-on protokolliert. debug zeigt jede Zeile der Waage und die Schwankung im Zeitfenster."

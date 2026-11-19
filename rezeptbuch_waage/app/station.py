@@ -149,6 +149,11 @@ class StationMonitor:
         if not self.cfg.ok:
             log.warning("%s: Befehl %s verworfen – Konfiguration fehlerhaft", name, NAMES[cmd])
             return False
+        if cmd == "zero":
+            reason = self.zero_refusal(now)
+            if reason:
+                log.warning("%s: Befehl %s verworfen – %s", name, NAMES[cmd], reason)
+                return False
         if self.commands.add(cmd) == MERGED:
             log.info("%s: Befehl %s wartet bereits, zusammengefasst", name, NAMES[cmd])
         else:
@@ -167,7 +172,32 @@ class StationMonitor:
                 log.warning("%s: wartender Befehl %s verworfen – Waage offline",
                             self.cfg.label, NAMES[cmd])
             return None
+        if self.commands.pending[0] == "zero":
+            reason = self.zero_refusal(now)
+            if reason:
+                self.commands.pending.pop(0)
+                log.warning("%s: wartender Befehl %s verworfen – %s",
+                            self.cfg.label, NAMES["zero"], reason)
+                return None
         return self.commands.pop(now)
+
+    def zero_refusal(self, now: float) -> str | None:
+        """Grund, warum `zero` jetzt nicht erlaubt ist (Z07-1), sonst None.
+
+        Nullstellen nur bei leerer Waage: gültiges Gewicht, brutto (kein Tara
+        an der Waage) und höchstens ±`zero_limit_g`. Sonst würde die Waage
+        aufliegende Last als 0 melden (Null-Taste wirkt bis knapp 10 kg).
+        """
+        limit = self.cfg.zero_limit_g
+        if self.status(now) != STATUS_OK or self._last_reading is None:
+            return "kein gültiges Gewicht, Nullstellen nur bei leerer Waage"
+        reading = self._last_reading
+        if reading.net:
+            return "Waage zeigt netto (Tara aktiv), Nullstellen nur bei leerer Waage"
+        if abs(reading.weight_g) > limit:
+            return (f"Waage zeigt {reading.weight_g} g, Nullstellen nur bei leerer "
+                    f"Waage (bis ±{limit} g)")
+        return None
 
     # --- Protokoll ----------------------------------------------------------
 

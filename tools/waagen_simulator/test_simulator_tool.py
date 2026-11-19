@@ -98,30 +98,32 @@ def test_two_clients_get_same_lines():
 def test_addon_tcp_way_end_to_end():
     """Add-on (TCP-Anschluss, Station, Befehle) gegen den Simulator."""
     async def body():
-        sim, server, port = await start(tool.FixedScale(1500), interval=0.02)
+        sim, server, port = await start(tool.FixedScale(30), interval=0.02)
         mon = StationMonitor(StationConfig(station=1, enabled=True,
                                            host="127.0.0.1", port=port))
         tcp = TcpTransport(mon)
         task = asyncio.create_task(tcp.run())
         loop = asyncio.get_running_loop()
         await wait_until(lambda: mon.status(loop.time()) == "ok")
-        assert mon.state(loop.time())["weight_g"] == 1500
+        assert mon.state(loop.time())["weight_g"] == 30
 
-        # tare und gleich danach zero: zero wartet 1 s
-        assert handle_command(mon, b'{"v":2,"cmd":"tare"}', clock=loop.time)
+        # zero (leere Waage, ±50 g, Z07-1) und gleich danach tare: tare wartet 1 s
         assert handle_command(mon, b'{"v":2,"cmd":"zero"}', clock=loop.time)
+        assert handle_command(mon, b'{"v":2,"cmd":"tare"}', clock=loop.time)
         runs = [StationRun(mon, send=tcp.send_command)]
         dispatch_commands(runs, loop.time())
-        await wait_until(lambda: mon.state(loop.time())["net"] is True)
-        assert mon.state(loop.time())["weight_g"] == 0
-        assert sim.commands == ["tare"]
+        await wait_until(lambda: mon.state(loop.time())["weight_g"] == 0)
+        assert mon.state(loop.time())["net"] is False
+        assert sim.commands == ["zero"]
         dispatch_commands(runs, loop.time())          # zu früh
         await asyncio.sleep(0.1)
-        assert sim.commands == ["tare"]
+        assert sim.commands == ["zero"]
         await asyncio.sleep(1.0)
         dispatch_commands(runs, loop.time())
-        await wait_until(lambda: sim.commands == ["tare", "zero"])
-        await wait_until(lambda: mon.state(loop.time())["net"] is False)
+        await wait_until(lambda: sim.commands == ["zero", "tare"])
+        await wait_until(lambda: mon.state(loop.time())["net"] is True)
+        # mit Tara aktiv wird zero verworfen (Z07-1)
+        assert handle_command(mon, b'{"v":2,"cmd":"zero"}', clock=loop.time) is False
 
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

@@ -2,7 +2,7 @@
 
 Liest bis zu zwei KERN-Waagen (IFB 30K-3 mit Anzeigegerät KFB-TM) über je einen Waveshare-Konverter und meldet **Gewicht in ganzen Gramm, Stabilität und Status** per MQTT an das HA-Rezeptbuch. Das Add-on kennt keine Rezepte; es läuft auch allein (Simulator).
 
-**Stand 0.7.4 (Modul 07, Teil C2):** Lesen, Stabilität, Status, Meldungen und Befehle Tara/Nullstellen. Im Rezeptbuch sichtbar wird der Zustand erst mit Modul 08.
+**Stand 0.7.5 (Modul 07, Teil C2 mit Korrektur):** Lesen, Stabilität, Status, Meldungen und Befehle Tara/Nullstellen (Nullstellen nur bei leerer Waage). Im Rezeptbuch sichtbar wird der Zustand erst mit Modul 08.
 
 ## Aufbau
 
@@ -70,6 +70,7 @@ Fehlt bei TCP die Adresse (oder bei MQTT ein Topic), startet nur diese Waage nic
 **Befehle** – `rezeptbuch/v1/station/<nr>/scale/cmd`: `{"v": 2, "cmd": "tare"}` (Tara, `T` an die Waage) oder `{"v": 2, "cmd": "zero"}` (Nullstellen, `Z`).
 
 - Angenommen nur, wenn die Waage Zeilen liefert (`ok`, `invalid`, `error`); bei `offline` verworfen.
+- **`zero` nur bei leerer Waage:** gültiges Gewicht, brutto (kein Tara an der Waage) und höchstens **±50 g** („Nullstellen nur bis ±g“, je Waage einstellbar). Sonst verworfen – auch bei `-----`. Die Waage selbst stellt bis knapp 10 kg auf 0 und zeigt dann 0 g trotz Last. **Die Null-Taste an der Waage nur bei leerer Waage drücken.** Zeigt die leere Waage `-----` (Negativwert), an der Waage nullstellen.
 - Zwischen zwei Befehlen an dieselbe Waage liegt mindestens **1 s**; weitere warten (höchstens einer je Art, doppelte werden zusammengefasst). Wird die Waage vorher offline, werden wartende Befehle verworfen.
 - Keine Bestätigung: die Wirkung zeigt der nächste Zustand (`net: true` bzw. Gewicht 0).
 - TCP: über die offene Verbindung; MQTT-Weg: auf das Befehls-Topic des Waveshare (`T\r\n`); Simulator: im Simulator.
@@ -81,7 +82,7 @@ Fehlt bei TCP die Adresse (oder bei MQTT ein Topic), startet nur diese Waage nic
 
 Einstellungen → Geräte & Dienste → MQTT → Konfigurieren → „Auf ein Topic hören“: `rezeptbuch/v1/station/1/scale/state`.
 
-Protokollstufe `debug` zeigt jede Zeile der Waage mit Gewicht und Schwankung im Zeitfenster (zum Einstellen der Stabilitätswerte).
+Das Protokoll zeigt Ortszeit (Europe/Berlin, bzw. die Zeitzone von HA). Protokollstufe `debug` zeigt jede Zeile der Waage mit Gewicht und Schwankung im Zeitfenster (zum Einstellen der Stabilitätswerte).
 
 ## Fehlerbilder
 
@@ -94,4 +95,5 @@ Protokollstufe `debug` zeigt jede Zeile der Waage mit Gewicht und Schwankung im 
 | „Keine Waage aktiv“ | „Waage 1 – aktiv“ einschalten. |
 | „Befehl … verworfen – Waage liefert keine Zeilen (offline)“ | Befehl kam, während die Waage getrennt war; nach der Verbindung erneut senden. |
 | „Befehl verworfen – kein gültiges JSON / falsche Version / unbekannter Befehl“ | Inhalt muss `{"v":2,"cmd":"tare"}` oder `…"zero"}` sein. |
+| „Befehl Nullstellen verworfen – Waage zeigt … g / netto / kein gültiges Gewicht“ | Nullstellen nur bei leerer Waage (Z07-1): Last abnehmen; bei `-----` an der Waage nullstellen. |
 | „Befehl … nicht gesendet – keine Verbindung“ | TCP-Verbindung oder MQTT gerade weg; Befehl erneut senden. |

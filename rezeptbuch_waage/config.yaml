@@ -1,5 +1,5 @@
 name: HA-Rezeptbuch Waage
-version: "0.7.4"
+version: "0.7.5"
 slug: rezeptbuch_waage
 description: Liest bis zu zwei KERN-Waagen über Waveshare-Konverter und meldet Gewicht, Stabilität und Status per MQTT
 url: https://github.com/mrui1987-prog/ha-rezeptbuch
@@ -26,6 +26,7 @@ options:
   scale1_offline_after_s: 5
   scale1_capacity_g: 30000
   scale1_resolution_g: 1
+  scale1_zero_limit_g: 50
   scale2_enabled: false
   scale2_driver: kern
   scale2_connection: tcp
@@ -40,6 +41,7 @@ options:
   scale2_offline_after_s: 5
   scale2_capacity_g: 30000
   scale2_resolution_g: 1
+  scale2_zero_limit_g: 50
   log_level: info
 schema:
   scale1_enabled: bool
@@ -57,6 +59,7 @@ schema:
   scale1_offline_after_s: int(2,30)
   scale1_capacity_g: int(1,1000000)
   scale1_resolution_g: int(1,1000)
+  scale1_zero_limit_g: int(0,1000)?
   scale2_enabled: bool
   scale2_driver: list(kern|simulator)
   scale2_connection: list(tcp|mqtt)
@@ -72,4 +75,5 @@ schema:
   scale2_offline_after_s: int(2,30)
   scale2_capacity_g: int(1,1000000)
   scale2_resolution_g: int(1,1000)
+  scale2_zero_limit_g: int(0,1000)?
   log_level: list(debug|info|warning|error)

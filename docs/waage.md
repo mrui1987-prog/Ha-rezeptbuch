@@ -137,7 +137,8 @@ QoS 0, nicht „retained“ (M07-7). **Schema 2** (K07-1):
 | `tare` | `T` + CR LF | Waage tariert, meldet danach netto (`net: true`) |
 | `zero` | `Z` + CR LF | Waage stellt auf 0, brutto |
 
-- Angenommen nur, wenn die Station Zeilen liefert (`ok`, `invalid` oder `error`); bei `offline` verworfen mit Protokolleintrag. `zero` bei `invalid` ist gewollt (Feldtest: `Z` bei −77 g).
+- Angenommen nur, wenn die Station Zeilen liefert (`ok`, `invalid` oder `error`); bei `offline` verworfen mit Protokolleintrag. ~~`zero` bei `invalid` ist gewollt (Feldtest: `Z` bei −77 g).~~
+- **Seit 0.7.5 (Z07-1, 19.11.2026):** `zero` nur bei leerer Waage – Status `ok`, brutto (`net` falsch) und |Gewicht| ≤ `zero_limit_g` (Standard 50 g, je Waage 0–1000). Sonst verworfen, auch bei `invalid`; erneute Prüfung beim Senden. Grund: Praxisprüfung C2 – die KFB-TM nimmt Nullstellen bis knapp 10 kg an (kein `0rAGE`) und meldet danach brutto 0 g trotz Last. Negativwert der leeren Waage (`-----`) → an der Waage nullstellen.
 - **Mindestabstand 1 s** zwischen zwei Befehlen an dieselbe Waage (Feldtest 11.4: schnelle Befehle gingen teils verloren). Weitere Befehle warten, höchstens einer je Art; doppelte werden zusammengefasst.
 - **Keine eigene Bestätigung** (K07-3): Die Waage bestätigt nicht; die Wirkung zeigt der nächste Zustand (`net`, Gewicht 0).
 - Unbekannte Befehle, falsches JSON oder falsche Version → verworfen mit Protokolleintrag.
@@ -166,6 +167,7 @@ QoS 0, nicht „retained“ (M07-7). **Schema 2** (K07-1):
 | `scale1_offline_after_s` | – Offline nach | 5 | 5 | 2–30 s ohne Zeile |
 | `scale1_capacity_g` | – Höchstlast | 30000 | 30000 | Gramm, für die Warnung in Modul 09/10 |
 | `scale1_resolution_g` | – Auflösung | 1 | 1 | Gramm |
+| `scale1_zero_limit_g` | – Nullstellen nur bis ±g | 50 | 50 | Gramm, 0–1000, optional (seit 0.7.5, Z07-1) |
 | `log_level` | Protokollstufe | `info` | | `debug` zeigt jede Zeile und die Stabilitätsspanne |
 
 Waage 2 hat dieselben Felder mit `scale2_…`. **Keine IP-Adressen und Passwörter im Repo** (feldtest.md, Datenschutz); Adresse trägt Michael in HA ein.
@@ -237,7 +239,7 @@ Add-on 1 (`rezeptbuch/`) wird nicht angefasst.
 | Teil | Inhalt | Version |
 |---|---|---|
 | C1 | Konfiguration, KERN-Telegramm, Stabilität, Status/Wächter, Schema 2, MQTT-Verbindung mit Letztem Willen, TCP- und MQTT-Weg, Simulator-Treiber, DOCS.md | 0.7.0 |
-| C2 | Befehle `tare`/`zero` mit Warteschlange, Werkzeug `tools/waagen_simulator`, Korrekturen aus der Praxisprüfung | 0.7.1 → **0.7.4** (0.7.1–0.7.3 für Korrekturen aus der Praxisprüfung C1 verbraucht) |
+| C2 | Befehle `tare`/`zero` mit Warteschlange, Werkzeug `tools/waagen_simulator`, Korrekturen aus der Praxisprüfung | 0.7.1 → **0.7.4** (0.7.1–0.7.3 für Korrekturen aus der Praxisprüfung C1 verbraucht); Korrektur aus Praxisprüfung C2: **0.7.5** (Z07-1, Ortszeit) |
 
 Je Teil: Zweig `modul07`, Tests, GitHub-Testlauf, Praxisprüfung, dann `main` (nach Freigabe Michael). Erst wenn auch Modul 08 die Gegenstelle hat, wird der Zustand im Rezeptbuch sichtbar.
 

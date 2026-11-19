@@ -20,11 +20,11 @@ from app.transport_tcp import TcpTransport
 WALL = datetime(2026, 11, 19, 6, 0, tzinfo=timezone.utc)
 
 
-def live_monitor(**kw):
+def live_monitor(grams=0, net=False, **kw):
     """Station, die gerade eine Zeile geliefert hat (Status ok bei t=0)."""
     cfg = StationConfig(station=1, enabled=True, host="h", **kw)
     mon = StationMonitor(cfg)
-    mon.feed((format_line(500) + "\r\n").encode(), 0.0, WALL)
+    mon.feed((format_line(grams, net=net) + "\r\n").encode(), 0.0, WALL)
     return mon
 
 
@@ -88,12 +88,14 @@ def test_accepted_when_ok_invalid_or_error():
     mon = StationMonitor(StationConfig(station=1, enabled=True, host="h"))
     mon.feed(b"-----\r\n", 0.0, WALL)                     # invalid
     assert mon.status(0.1) == "invalid"
-    assert mon.submit_command("zero", 0.1)                 # Z bei −77 g gewollt
+    assert mon.submit_command("tare", 0.1)
+    assert mon.submit_command("zero", 0.1) is False        # Z07-1: kein gültiges Gewicht
     mon = StationMonitor(StationConfig(station=1, enabled=True, host="h"))
     mon.feed(b"xx\r\n", 0.0, WALL)
     mon.feed(b"xx\r\n", 3.5, WALL)                         # 3 s nur unlesbar → error
     assert mon.status(3.6) == "error"
-    assert mon.submit_command("zero", 3.6)
+    assert mon.submit_command("tare", 3.6)
+    assert mon.submit_command("zero", 3.6) is False
 
 
 def test_broken_config_rejects():
@@ -167,7 +169,7 @@ def test_listen_commands_subscribes_station_topic():
         mon = live_monitor()
         listen_commands(StationRun(mon), bridge, loop)
         cb = bridge.subs["rezeptbuch/v1/station/1/scale/cmd"]
-        mon.feed((format_line(500) + "\r\n").encode(), loop.time(), WALL)
+        mon.feed((format_line(20) + "\r\n").encode(), loop.time(), WALL)
         # Aufruf wie aus dem paho-Thread
         await asyncio.to_thread(cb, cmd("zero"))
         await asyncio.sleep(0.05)
@@ -285,3 +287,50 @@ def test_tcp_way_writes_to_connection():
         server.close()
 
     asyncio.run(asyncio.wait_for(body(), 10))
+
+
+# --- Z07-1: Nullstellen nur bei leerer Waage (0.7.5) ------------------------
+
+@pytest.mark.parametrize("grams", [0, 50, -50, 13])
+def test_zero_accepted_on_empty_scale(grams):
+    mon = live_monitor(grams=grams)
+    assert mon.submit_command("zero", 0.1)
+    assert mon.next_command(0.1) == "zero"
+
+
+@pytest.mark.parametrize("grams", [51, -51, 718, 9800])
+def test_zero_rejected_with_load(grams, caplog):
+    mon = live_monitor(grams=grams)
+    with caplog.at_level(logging.WARNING, logger="rezeptbuch_waage"):
+        assert mon.submit_command("zero", 0.1) is False
+    assert f"Waage zeigt {grams} g" in caplog.text
+    assert "bis ±50 g" in caplog.text
+    assert mon.commands.pending == []
+
+
+def test_zero_rejected_when_net():
+    mon = live_monitor(grams=0, net=True)                 # Tara an der Waage aktiv
+    assert mon.submit_command("zero", 0.1) is False
+    assert mon.submit_command("tare", 0.1)                # Tara bleibt erlaubt
+
+
+def test_zero_limit_configurable():
+    assert live_monitor(grams=80, zero_limit_g=100).submit_command("zero", 0.1)
+    assert live_monitor(grams=1, zero_limit_g=0).submit_command("zero", 0.1) is False
+    assert live_monitor(grams=0, zero_limit_g=0).submit_command("zero", 0.1)
+
+
+def test_waiting_zero_dropped_when_load_arrives(caplog):
+    mon = live_monitor(grams=0)
+    mon.submit_command("tare", 0.0)
+    mon.submit_command("zero", 0.0)
+    assert mon.next_command(0.0) == "tare"
+    mon.feed((format_line(1200) + "\r\n").encode(), 0.5, WALL)   # Behälter aufgelegt
+    with caplog.at_level(logging.WARNING, logger="rezeptbuch_waage"):
+        assert mon.next_command(1.0) is None
+    assert "wartender Befehl Nullstellen verworfen – Waage zeigt 1200 g" in caplog.text
+    assert mon.commands.pending == []
+
+
+def test_tare_not_limited():
+    assert live_monitor(grams=9800).submit_command("tare", 0.1)

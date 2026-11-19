@@ -37,6 +37,7 @@ DEFAULTS: dict[str, object] = {
     "offline_after_s": 5,
     "capacity_g": 30000,
     "resolution_g": 1,
+    "zero_limit_g": 50,
 }
 
 # Wertebereiche (Grenzen eingeschlossen)
@@ -48,6 +49,7 @@ RANGES: dict[str, tuple[int, int]] = {
     "offline_after_s": (2, 30),
     "capacity_g": (1, 1_000_000),
     "resolution_g": (1, 1000),
+    "zero_limit_g": (0, 1000),
 }
 
 
@@ -69,6 +71,7 @@ class StationConfig:
     offline_after_s: int = 5
     capacity_g: int = 30000
     resolution_g: int = 1
+    zero_limit_g: int = 50
     errors: tuple[str, ...] = field(default=())
 
     @property
@@ -178,4 +181,5 @@ def describe(cfg: StationConfig) -> str:
     return (f"{cfg.label}: {way}; Waage {cfg.baud} Baud, {cfg.format}, "
             f"Sendemodus {cfg.mode}; stabil {cfg.stable_span_g} g in "
             f"{cfg.stable_window_ms} ms; offline nach {cfg.offline_after_s} s; "
-            f"Höchstlast {cfg.capacity_g} g, Auflösung {cfg.resolution_g} g")
+            f"Höchstlast {cfg.capacity_g} g, Auflösung {cfg.resolution_g} g; "
+            f"Nullstellen bis ±{cfg.zero_limit_g} g")
