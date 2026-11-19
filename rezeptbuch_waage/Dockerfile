@@ -1,6 +1,10 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
+# Ortszeit im Protokoll (Standard Europe/Berlin)
+RUN apk add --no-cache tzdata
+ENV TZ=Europe/Berlin
+
 WORKDIR /app
 
 COPY requirements.txt .

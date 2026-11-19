@@ -1,5 +1,9 @@
 # Änderungen – HA-Rezeptbuch Waage
 
+## 0.7.3 – Korrektur aus der Praxisprüfung C1
+
+- **Protokoll:** Zeitstempel in Ortszeit (Europe/Berlin) statt UTC
+
 ## 0.7.2 – Korrektur aus der Praxisprüfung C1
 
 - **Telegramm:** Zeilen mit einem Komma nach dem Modus (`ST,G ,   0.000kg`) werden gelesen; sie galten bisher als unlesbar
