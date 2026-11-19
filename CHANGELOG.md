@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.2 – Modul 10: Stationsoberfläche nach der ersten Praxisprüfung (in Entwicklung)
+
+- **Ecke oben links umgedreht** (M10-15 geändert): oben Datum und Wetter – dort darf das Bild-im-Bild-Fenster liegen –, darunter die Uhrzeit, die frei bleibt
+- **Wiegeansicht:** Name der Zutat etwa doppelt so groß; Soll/Ist und Balken sitzen weiter unten (gleiche Größe); direkt darunter zwei gleich große Tasten **Quittieren** und **Zutat übergehen**; Tara, Behälter, Behälter wechseln und Handwaage kleiner in einer Leiste ganz unten
+
 ## 0.10.1 – Modul 09: Korrekturen aus der Praxisprüfung (in Entwicklung)
 
 - **Befund B1:** Die automatische Quittung verlangt mindestens das halbe Soll (aufgerundet, mindestens 1 g). Vorher wurde z. B. Boerol mit 4 g Soll und ±20 g Toleranz schon bei 0 g quittiert

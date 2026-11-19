@@ -11,11 +11,12 @@
     grid-template-columns: 25vw 1fr 13vw; grid-template-rows: 25vh 1fr auto 12vh;
     grid-template-areas: "corner head head" "main main side" "notice notice notice" "bottom bottom bottom"; }
 
-  /* Ecke oben links (M10-15): Uhrzeit ganz oben bleibt frei, darunter Datum und Wetter (Bild-im-Bild darf überdecken) */
-  #corner { grid-area: corner; background: #20262d; color: #fff; display: flex; flex-direction: column; padding: 0 1.2vw 1vh; }
-  #clock { font-size: 6.5vh; font-weight: 700; line-height: 1; padding-top: .4vh; letter-spacing: .02em; }
-  #date { font-size: 2.6vh; margin-top: 1.4vh; color: #cfd6dd; }
-  #weather { margin-top: 1vh; font-size: 2.6vh; color: #e7ecf1; }
+  /* Ecke oben links (M10-15, geändert 15:31): oben Datum und Wetter – dort darf das Bild-im-Bild-Fenster liegen –,
+     darunter am unteren Rand der Ecke die Uhrzeit, die immer frei bleibt */
+  #corner { grid-area: corner; background: #20262d; color: #fff; display: flex; flex-direction: column; padding: 1vh 1.2vw 0; }
+  #clock { font-size: 6.5vh; font-weight: 700; line-height: 1; margin-top: auto; padding-bottom: .6vh; letter-spacing: .02em; }
+  #date { font-size: 2.6vh; color: #cfd6dd; }
+  #weather { margin-top: .6vh; font-size: 2.6vh; color: #e7ecf1; }
   #weather .w-temp { font-size: 4.4vh; font-weight: 700; color: #fff; }
   #weather .w-sym { font-size: 4.4vh; margin-right: .4vw; }
   #weather .w-range { color: #aeb8c2; }
@@ -31,7 +32,7 @@
   #side button { flex: 1; font-size: 2.8vh; font-weight: 600; }
   #side button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-  #main { grid-area: main; overflow: auto; padding: 1.6vh 1.6vw; }
+  #main { grid-area: main; overflow: auto; padding: 1.2vh 1.6vw; display: flex; flex-direction: column; }
   #notice { grid-area: notice; }
   #bottom { grid-area: bottom; display: grid; grid-template-columns: repeat(7, 1fr); gap: .6vw; padding: 1vh .8vw;
     background: #d5d9dd; }
@@ -39,8 +40,10 @@
   #b-pause.on { background: var(--high); border-color: var(--high); color: #fff; }
 
   /* Wiegeansicht */
-  .item-title { font-size: 4.6vh; font-weight: 700; margin-bottom: .4vh; }
-  .item-sub { font-size: 2.4vh; color: var(--muted); margin-bottom: 1.4vh; }
+  .item-title { font-size: 8.5vh; font-weight: 800; line-height: 1.05; margin-bottom: .3vh;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-sub { font-size: 2.4vh; color: var(--muted); margin-bottom: 1vh; }
+  .weigh-area { margin-top: auto; }          /* Wiegebereich sitzt unten, über den Tasten */
   .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
   .box { background: var(--panel); border-radius: 14px; padding: 1.4vh 1.4vw; border: 2px solid var(--line); }
   .box .lbl { font-size: 2.6vh; color: var(--muted); font-weight: 600; }
@@ -63,6 +66,13 @@
   .actions { display: flex; flex-wrap: wrap; gap: 1vw; margin-top: 1.8vh; }
   .actions button { font-size: 2.8vh; min-height: 8vh; padding: 0 1.6vw; font-weight: 600; }
   .actions button.wide { min-width: 18vw; }
+  /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Übergehen gleich groß) */
+  .main-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; margin-top: 1.4vh; }
+  .main-actions button { font-size: 3.6vh; font-weight: 700; min-height: 9vh; }
+  .main-actions button.skip { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* übrige Tasten klein in einer Leiste ganz unten */
+  .more-actions { display: flex; gap: .8vw; margin-top: 1.2vh; }
+  .more-actions button { flex: 1; font-size: 2.3vh; min-height: 5.5vh; padding: 0 .8vw; font-weight: 600; }
 
   /* Startbild, Karten, Tabellen */
   .scale-big { font-size: 15vh; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -88,9 +98,9 @@
 </head>
 <body>
 <div id="corner">
-  <div id="clock" class="num">--:--</div>
   <div id="date"></div>
   <div id="weather" class="hidden"></div>
+  <div id="clock" class="num">--:--</div>
 </div>
 <header id="head">
   <div id="h-station">Station</div>
@@ -391,25 +401,29 @@
     const b = S.mine, cur = current();
     if (b.note && b.note.display === "start" && b.progress.done === 0) main.appendChild(el("div", "Hinweis: " + b.note.text, "hint"));
     if (!cur) { main.appendChild(el("div", "Keine offene Zutat gewählt – in der Übersicht wählen.", "big-msg")); return null; }
+    // Name der Zutat groß oben; Wiegebereich und Tasten sitzen unten (Wunsch Michael 15:31)
     main.appendChild(el("div", (cur.raw_material_number ? cur.raw_material_number + " " : "") + cur.name, "item-title"));
     const sub = el("div", "Zutat " + (b.progress.done + 1) + " von " + b.progress.total, "item-sub");
     main.appendChild(sub);
-    const actions = el("div", null, "actions");
+    const area = el("div", null, "weigh-area");
+    main.appendChild(area);
+    const bigRow = el("div", null, "main-actions");
+    const skipBtn = () => btn("Zutat übergehen", "skip", (bt) => act(bt, "batches/" + b.id + "/skip", { station: ST, position: cur.position }));
 
     if (cur.kind === "units") {
-      main.appendChild(el("div", cur.units_target + " × " + cur.unit_label + " zugeben (" + g(cur.units_target * cur.unit_size_g) + ")", "big-msg"));
-      if (cur.rest_target_g) main.appendChild(el("div", "danach " + g(cur.rest_target_g) + " wiegen", "item-sub"));
-      actions.appendChild(btn(cur.units_target + " × " + cur.unit_label + " quittieren", "go wide", (bt) => act(bt, "batches/" + b.id + "/units", { station: ST, position: cur.position }, 1000)));
+      area.appendChild(el("div", cur.units_target + " × " + cur.unit_label + " zugeben (" + g(cur.units_target * cur.unit_size_g) + ")", "big-msg"));
+      if (cur.rest_target_g) area.appendChild(el("div", "danach " + g(cur.rest_target_g) + " wiegen", "item-sub"));
+      bigRow.appendChild(btn(cur.units_target + " × " + cur.unit_label + " quittieren", "go", (bt) => act(bt, "batches/" + b.id + "/units", { station: ST, position: cur.position }, 1000)));
     } else if (cur.kind === "hand_need" || cur.kind === "hand_target") {
-      main.appendChild(el("div", cur.kind === "hand_need" ? "Handzugabe nach Bedarf" : "Handzugabe: " + g(cur.target_g), "hint yellow"));
-      actions.appendChild(btn("Zugegeben", "go wide", (bt) => act(bt, "batches/" + b.id + "/hand", { station: ST, position: cur.position }, 1000)));
+      area.appendChild(el("div", cur.kind === "hand_need" ? "Handzugabe nach Bedarf" : "Handzugabe: " + g(cur.target_g), "hint yellow"));
+      bigRow.appendChild(btn("Zugegeben", "go", (bt) => act(bt, "batches/" + b.id + "/hand", { station: ST, position: cur.position }, 1000)));
     } else if (cur.kind === "sub_recipe") {
       if (cur.blocked) {
-        main.appendChild(el("div", "Unterrezept noch nicht fertig (" + (STATUS_TEXT[cur.sub_order && cur.sub_order.status] || "offen") + ") – zuerst abwiegen oder abhaken.", "hint yellow"));
-        actions.appendChild(btn("Unterrezept abhaken", "wide", (bt) => act(bt, "batches/" + b.id + "/sub-check", { station: ST, position: cur.position })));
+        area.appendChild(el("div", "Unterrezept noch nicht fertig (" + (STATUS_TEXT[cur.sub_order && cur.sub_order.status] || "offen") + ") – zuerst abwiegen oder abhaken.", "hint yellow"));
+        bigRow.appendChild(btn("Unterrezept abhaken", "go", (bt) => act(bt, "batches/" + b.id + "/sub-check", { station: ST, position: cur.position })));
       } else {
-        main.appendChild(el("div", "Unterrezept ist gewogen: " + g(cur.target_g), "hint"));
-        actions.appendChild(btn("Unterrezept übernehmen", "go wide", (bt) => act(bt, "batches/" + b.id + "/sub-check", { station: ST, position: cur.position }, 1000)));
+        area.appendChild(el("div", "Unterrezept ist gewogen: " + g(cur.target_g), "hint"));
+        bigRow.appendChild(btn("Unterrezept übernehmen", "go", (bt) => act(bt, "batches/" + b.id + "/sub-check", { station: ST, position: cur.position }, 1000)));
       }
     }
 
@@ -430,15 +444,14 @@
       ist.appendChild(istSub);
       ring.appendChild(ist);
       grid.appendChild(soll); grid.appendChild(ring);
-      main.appendChild(grid);
+      area.appendChild(grid);
       const coarse = makeBar(false), fine = makeBar(true);
-      main.appendChild(coarse.node);
-      main.appendChild(fine.node);
+      area.appendChild(coarse.node);
+      area.appendChild(fine.node);
       const hint = el("div", "", "hint hidden");
-      main.appendChild(hint);
-      const ackBtn = btn("Quittieren", "go wide", (bt) => act(bt, "batches/" + b.id + "/ack", { station: ST, position: cur.position }, 1000));
-      actions.appendChild(ackBtn);
-      actions.appendChild(btn("Tara", "", (bt) => act(bt, "batches/" + b.id + "/tare", { station: ST })));
+      area.appendChild(hint);
+      const ackBtn = btn("Quittieren", "go", (bt) => act(bt, "batches/" + b.id + "/ack", { station: ST, position: cur.position }, 1000));
+      bigRow.appendChild(ackBtn);
       updateFn = function () {
         const w = S.weigh && S.weigh.batch_id === b.id ? S.weigh : null;
         const target = w && w.target_g !== null && w.target_g !== undefined ? w.target_g : cur.rest_target_g;
@@ -460,11 +473,14 @@
         ackBtn.disabled = zone !== "ok" || ackBtn.classList.contains("busy");
       };
     }
-    actions.appendChild(btn("Behälter" + (b.container_g === null || b.container_g === undefined ? "" : " (" + g(b.container_g) + ")"), "", containerMenu));
-    actions.appendChild(btn("Behälter wechseln", "", (bt) => act(bt, "batches/" + b.id + "/container", { station: ST, action: "change" })));
-    actions.appendChild(btn("Übergehen", "", (bt) => act(bt, "batches/" + b.id + "/skip", { station: ST, position: cur.position })));
-    actions.appendChild(btn("Handwaage", "", (bt) => act(bt, "batches/" + b.id + "/hand-scale", { station: ST })));
-    main.appendChild(actions);
+    bigRow.appendChild(skipBtn());
+    area.appendChild(bigRow);
+    const more = el("div", null, "more-actions");
+    if (cur.kind === "weigh") more.appendChild(btn("Tara", "", (bt) => act(bt, "batches/" + b.id + "/tare", { station: ST })));
+    more.appendChild(btn("Behälter" + (b.container_g === null || b.container_g === undefined ? "" : " (" + g(b.container_g) + ")"), "", containerMenu));
+    more.appendChild(btn("Behälter wechseln", "", (bt) => act(bt, "batches/" + b.id + "/container", { station: ST, action: "change" })));
+    more.appendChild(btn("Handwaage", "", (bt) => act(bt, "batches/" + b.id + "/hand-scale", { station: ST })));
+    area.appendChild(more);
     return updateFn;
   }
 

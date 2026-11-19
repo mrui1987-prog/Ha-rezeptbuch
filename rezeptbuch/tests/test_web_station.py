@@ -63,7 +63,8 @@ def test_no_browser_dialogs_and_no_html_injection(name):
     assert "innerHTML" not in text and "insertAdjacentHTML" not in text and "eval(" not in text
 
 
-def test_corner_keeps_clock_on_top():
+def test_corner_keeps_clock_below():
+    # M10-15 (geändert 15:31): oben Datum und Wetter (Bild-im-Bild darf überdecken), Uhrzeit darunter frei
     text = (STATIC / "station.html").read_text(encoding="utf-8")
     corner = text[text.index('<div id="corner">'):text.index("</div>\n<header")]
-    assert corner.index('id="clock"') < corner.index('id="date"') < corner.index('id="weather"')
+    assert corner.index('id="date"') < corner.index('id="weather"') < corner.index('id="clock"')

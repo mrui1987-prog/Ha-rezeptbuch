@@ -40,7 +40,7 @@ Tablet-Oberfläche für die Stationen `/station/1` und `/station/2` und einheitl
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Ecke oben links (M10-15):** 25 % Breite × 25 % Höhe. Erste Zeile **Uhrzeit** ganz oben am Rand (bleibt frei), darunter Datum und Wetter. Unterhalb der Uhrzeitzeile liegt nichts Bedienbares; das Bild-im-Bild-Fenster darf diesen Bereich überdecken.
+- **Ecke oben links (M10-15, geändert 19.11.2026, 15:31):** 25 % Breite × 25 % Höhe. Oben **Datum und Wetter** – dort darf das Bild-im-Bild-Fenster liegen –, darunter am unteren Rand der Ecke die **Uhrzeit**, die frei bleibt. In der Ecke liegt nichts Bedienbares.
 - **Kopfzeile:** Stationsname, laufendes Rezept (Nummer, Kurzname), Teig x von n, Menge in kg, darunter nächster offener Auftrag.
 - **Rechte Leiste:** Wiegen, Übersicht, Hinweis (Bedienkonzept 1).
 - **Untere Leiste:** Start, Pause (rot, solange pausiert), Abbruch, Vorwahl, Produktionsliste, Chargen, Menü 🔒. Tasten, die gerade nicht gehen, sind grau statt ausgeblendet (feste Plätze).
@@ -51,7 +51,7 @@ Tablet-Oberfläche für die Stationen `/station/1` und `/station/2` und einheitl
 | Ansicht | Inhalt | Teil |
 |---|---|---|
 | **Startbild** | Waage groß (Gewicht, Status Bereit/Wiegen/Stopp), laufende/pausierte Chargen dieser und der anderen Station | C1 |
-| **Wiegeansicht** | Zutat (Nummer, Kurzname) groß; Soll links, Ist rechts; Balken (K10-4); Rand um Ist füllt sich mit `auto_ack_progress`; Tasten Quittieren (nur grün), Tara, Übergehen, Behälter wiegen, Behälter wechseln, Handwaage | C1 |
+| **Wiegeansicht** | Zutat (Nummer, Kurzname) sehr groß oben (seit 0.10.2 etwa doppelt so groß); Soll/Ist, Balken und Tasten sitzen unten (0.10.2); Soll links, Ist rechts; Balken (K10-4); Rand um Ist füllt sich mit `auto_ack_progress`; Tasten Quittieren (nur grün), Tara, Übergehen, Behälter wiegen, Behälter wechseln, Handwaage | C1 |
 | Sonderfälle Wiegeansicht | **Gebinde:** Schritt „1 Sack – quittieren“, dann Rest wiegen. **Handzugabe** (Toleranz 0 oder Menge 0): gelber Hinweis, Taste „Zugegeben“. **Unterrezept:** „+“-Zeile, Tasten „Unterrezept starten“/„Abhaken“. **Tara läuft** (`taring`): Ist grau „Tara …“. **Warten auf Nullpunkt:** Text aus `hint` | C1 |
 | **Übersicht** | alle Zutaten des Teigs: Soll, Ist, Haken, Quittierungsart, Station; aktuelle Zutat hervorgehoben; nach Übernahme jede offene antippbar (`select`) | C1 |
 | **Hinweis** | Rezepthinweis, Knetzeit (später Teigtemperatur/-ruhe) | C1 |
@@ -159,3 +159,4 @@ Im Rahmen des freigegebenen Konzepts; bei Einwand ändern:
 | 19.11.2026, 13:08 | K10-1 bis K10-8 wie vorgeschlagen entschieden (Michael). K10-3 ändert M10-5: Kiosk öffnet die HA-Seite des Add-ons, das Gerät merkt sich seine Station. |
 | 19.11.2026, 13:24 | Konzept freigegeben (Michael). |
 | 19.11.2026 | Teil C1 (0.10.0) umgesetzt, Hinweise in Abschnitt 13. |
+| 19.11.2026, 15:31 | 0.10.2 nach der ersten Praxisprüfung (Michael, Sprachgespräch): Ecke umgedreht (Uhrzeit unten, frei), Zutatenname größer, Wiegebereich nach unten, zwei große Tasten Quittieren/Zutat übergehen, übrige Tasten klein ganz unten. |
