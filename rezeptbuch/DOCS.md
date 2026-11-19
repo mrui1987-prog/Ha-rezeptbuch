@@ -21,13 +21,15 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 
 | Adresse | Zweck |
 |---------|-------|
+| `/` | Startseite: öffnet die Station dieses Geräts oder fragt einmal danach |
+| `/station/1`, `/station/2` | Stationsoberfläche für das Tablet an der Waage (ohne PIN) |
 | `/admin` | Rohstoffe (PIN), mit Preis je kg (€ netto; lesen auch ohne PIN über die Schnittstelle) |
 | `/admin/rezepte` | Rezepte, Rezeptgruppen, Import/Export (PIN); Aufträge folgen in späteren Modulen |
 | `/admin/berechnung` | Berechnung nachprüfen (PIN, speichert nichts) |
 | `/admin/waagen` | Waagen – Verbindung prüfen: Live-Gewicht, Status, Tara/Null (PIN) |
 | `/admin/ablauf` | Ablauf prüfen: Aufträge, Teig starten, wiegen und quittieren, Pause/Weiter, Einstellungen (PIN; Prüfseite bis zur Tablet-Oberfläche) |
 
-Die Stationsadressen für die Tablets an den Waagen folgen in Modul 10 und sind in dieser Version noch nicht vorhanden.
+Für die Tablets an den Waagen gibt es seit 0.10.0 die **Stationsoberfläche** `/station/1` und `/station/2` (Abschnitt „Tablet an der Waage“).
 
 Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung folgt in Modul 12. Es wird nur ein Hash gespeichert. Nach 5 Fehlversuchen ist die Eingabe 5 Minuten gesperrt. Die Sitzungsdauer stellt die Add-on-Option `admin_timeout_minutes` ein (Standard 5 Minuten). Beim Öffnen einer Admin-Seite und beim Reiterwechsel wird die Sitzung geprüft; ist sie abgelaufen, kommt gleich die PIN-Eingabe und danach die gewählte Seite (ungespeicherte Änderungen werden vorher abgefragt).
 
@@ -123,6 +125,16 @@ Aufträge, Teige, Zutaten und Protokoll liegen im Rezeptbuch; die Tablets (Modul
 - **Weiter an derselben Waage:** Weicht die Gesamtlast um mehr als 5 g vom Stand bei der Pause ab, fragt die Software „richtiger Behälter?“.
 - **Einstellungen** (Zeit und Wanderung der Auto-Quittung, 45 s, Vorwarnung, Tara-Bestätigung, Lastprüfung) auf der Prüfseite, Ändern mit PIN.
 - Ablauf und Regeln im Einzelnen: `docs/ablauf.md` im Repository.
+
+## Tablet an der Waage (Modul 10)
+
+- **Einrichten:** Tablet (z. B. Android mit „Fully Kiosk Browser“) auf die Seite des Add-ons in Home Assistant stellen, z. B. `http://<HA>:8123/hassio/ingress/<Add-on>` mit einem eigenen HA-Benutzer fürs Tablet („Seitenleiste immer ausblenden“ im Profil). Beim ersten Öffnen „Waage 1“ oder „Waage 2“ antippen – das Gerät merkt es sich. Ändern über **Menü 🔒** (PIN) → „Station dieses Geräts ändern“.
+- **Ecke oben links:** Uhrzeit ganz oben, darunter Datum und Wetter. Bis auf die Uhrzeit darf ein Bild-im-Bild-Fenster diese Ecke überdecken.
+- **Wetter:** aus der Home-Assistant-Entität der Option `weather_entity` (Standard `weather.forecast_home`), alle 15 Minuten. Leer lassen oder „aus“ = kein Wetter. Fehlt das Wetter, läuft alles andere normal.
+- **Startbild:** Waage als normale Waage (Tara, Null nur bei leerer Waage), darunter laufende und pausierte Teige der anderen Station. **Start** startet den nächsten offenen Teig von heute (Aufträge bis 0.10.1 auf der Prüfseite „Ablauf“ anlegen).
+- **Wiegen:** Soll links, Ist rechts; Balken gelb/grün/rot mit rotem Strich beim Soll, bei großen Mengen darunter ein Feinbalken um den Sollwert. Der Rand um „Ist“ füllt sich bis zur automatischen Quittung. Tasten: Quittieren (nur grün), Tara, Behälter, Behälter wechseln, Übergehen, Handwaage. Rechts: Wiegen, Übersicht (offene Zutat antippen = wählen), Hinweis. Unten: Pause/Weiter, Abbruch, Chargen von heute, Menü.
+- **Meldeleiste** über den unteren Tasten: rot = Server-/Datenbankfehler oder Waage getrennt, grau = Verbindung unterbrochen (Tasten gesperrt, verbindet selbst neu), orange = Waage ungültig oder fast voll, blau = Hinweis.
+- Vorwahl und Produktionsliste am Tablet folgen in 0.10.1, die Gestaltung des Admin-Bereichs in 0.10.2.
 
 ## Haftung
 

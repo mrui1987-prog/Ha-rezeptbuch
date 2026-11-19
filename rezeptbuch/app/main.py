@@ -1,9 +1,9 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.9.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.10.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
 Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06),
-Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teile C1 und C2). Beim Start wird die Datenbank geöffnet, geprüft und
+Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teile C1 und C2), Stationsoberfläche (Modul 10, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -19,6 +19,7 @@ from .auth.pin import ensure_default_pin
 from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
 from .calculation.router import router as calculation_router
+from .display.router import router as display_router
 from .db import DatabaseError, default_db_path, init_database
 from .errors import ServiceError
 from .logsetup import setup_logging, setup_timezone
@@ -32,7 +33,7 @@ from .recipes.router import router as recipes_router
 from .scales.router import router as scales_router
 from .scales.service import ScaleService
 from .settings import admin_timeout_minutes, load_options
-from .web.router import router as web_router
+from .web.router import router as web_router, start_page
 
 logger = logging.getLogger("rezeptbuch")
 
@@ -99,6 +100,7 @@ app.include_router(recipes_router)
 app.include_router(calculation_router)
 app.include_router(scales_router)
 app.include_router(production_router)
+app.include_router(display_router)
 app.include_router(web_router)
 
 
@@ -117,29 +119,6 @@ def health():
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    # Relative Links, damit die Seite hinter HA-Ingress funktioniert
-    return f"""<!doctype html>
-<html lang="de">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HA-Rezeptbuch</title>
-<style>
-  :root {{ color-scheme: light; }}
-  html {{ background: #fafafa; }}
-  body {{ font-family: sans-serif; padding: 2rem; margin: 0; background: #fafafa; color: #222;
-         min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }}
-  a.button {{ display: inline-block; padding: .8rem 1.4rem; background: #2563eb; color: #fff;
-             text-decoration: none; border-radius: 6px; font-size: 1.1rem; }}
-</style></head>
-<body>
-<h1>HA-Rezeptbuch</h1>
-<p>Version {__version__} – im Aufbau.</p>
-<p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte, Berechnung, Waagen, Ablauf)</a></p>
-<script>
-  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
-  function repaint() {{ document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }}
-  window.addEventListener('load', function () {{ repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); }});
-  window.addEventListener('pageshow', repaint);
-</script>
-</body>
-</html>"""
+def index() -> HTMLResponse:
+    # Startseite (Modul 10, K10-3): öffnet die gespeicherte Station oder fragt einmal danach
+    return start_page()

@@ -1,5 +1,15 @@
 # Änderungen
 
+## 0.10.0 – Modul 10 Teil C1: Stationsoberfläche für das Tablet (in Entwicklung)
+
+- **Stationsoberfläche** `/station/1` und `/station/2` (ohne PIN), Querformat für das Tablet an der Waage: Ecke oben links mit Uhrzeit (bleibt beim Bild-im-Bild sichtbar), Datum und Wetter; Kopfzeile mit Rezept, Teig, Menge, Fortschritt und nächstem Auftrag; rechts Wiegen/Übersicht/Hinweis, unten Start, Pause/Weiter, Abbruch, Vorwahl, Produktionsliste (beide folgen in 0.10.1), Chargen, Menü 🔒
+- **Wiegeansicht:** Soll und Ist groß, Grob- und Feinbalken mit rotem Soll-Strich, Fortschritt der Auto-Quittung als Rand, Gebinde („1 × Sack quittieren“, dann Rest), Handzugabe, Unterrezept übernehmen/abhaken, Behälter wiegen/eingeben/wechseln mit Schrittanzeige, Handwaage, Übergehen; Abschlussanzeige mit Hinweis und Knetzeit
+- **Startbild:** Handbetrieb (Tara, Null mit Rückfrage), Karten für laufende und pausierte Teige (Weiter/Übernehmen/Abbrechen); „Start“ startet bis zur Vorwahl den nächsten offenen Teig von heute
+- **Meldeleiste** (rot/grau/orange/blau) für Serverfehler (B5), getrennte Verbindung (Tasten gesperrt, Neuaufbau nach 1/2/5/10 s), Waagenzustand und Höchstlast; eigene Dialoge und Zahlenfeld statt Browser-Dialogen; Tasten bis zur Antwort gesperrt
+- **Startseite** `/`: öffnet die im Gerät gespeicherte Station oder fragt einmal danach (K10-3); Menü 🔒 mit PIN → Admin-Bereich oder Station ändern
+- **Wetter:** `GET /api/v1/display/weather` liest die Entität der neuen Option `weather_entity` (Standard `weather.forecast_home`) über die Supervisor-API (`homeassistant_api: true`), Zwischenspeicher 15 min; ohne Wetter fehlt nur die Anzeige
+- Gemeinsame Dateien `ui/common.css` und `ui/common.js` (relative Pfade, Ingress-sicher)
+
 ## 0.9.1 – Modul 09 Teil C2: Waage im Wiegeablauf (in Entwicklung)
 
 - **Tara an der Waage** (M09-5, K09-3): Beim Start, nach jeder Quittung, beim „Weiter“ und auf Tastendruck tariert die Software und sendet `tare` an die Waage; die nächste Zutat wird erst gewogen, wenn die Waage stabil bei etwa 0 steht (höchstens 3 s, sonst rechnet die Software allein weiter und zeigt einen Hinweis). Eine verspätet ausgeführte Tara wird erkannt

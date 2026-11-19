@@ -1,0 +1,60 @@
+/* HA-Rezeptbuch – gemeinsame Gestaltung (Modul 10, docs/dashboard.md, K10-2).
+   Stationsoberfläche ab 0.10.0, Admin-Seiten folgen in 0.10.2. Bezug: Tablet quer, 1920 × 1200. */
+
+:root {
+  color-scheme: light;
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --line: #c9ced4;
+  --text: #1d232a;
+  --muted: #5d6874;
+  --accent: #1f5fbf;
+  --low: #f2c200;        /* zu wenig */
+  --ok: #2e9d3a;         /* in Toleranz */
+  --high: #d32f2f;       /* zu viel */
+  --warn: #ef8a00;
+  --info: #1f5fbf;
+  --grey: #7b8590;
+  --track: #dde1e5;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font-family: "Roboto", "Segoe UI", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { -webkit-transform: translateZ(0); transform: translateZ(0); }
+.hidden { display: none !important; }
+.num { font-variant-numeric: tabular-nums; }
+
+button { font: inherit; color: inherit; border: 2px solid var(--line); background: #f7f8f9; border-radius: var(--radius);
+  padding: .5em .9em; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+button:active:not(:disabled) { transform: scale(.97); }
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.go { background: var(--ok); border-color: var(--ok); color: #fff; }
+button.stop { background: var(--high); border-color: var(--high); color: #fff; }
+button.busy { opacity: .6; }
+
+/* Gesperrt (Verbindung weg oder Serverfehler): Tasten nicht bedienbar, außer Menü */
+body.locked button:not(.keep) { pointer-events: none; opacity: .35; }
+
+/* ---------------------------------------------------------------- Dialog und Zahlenfeld */
+.dlg-back { position: fixed; inset: 0; background: rgba(20, 25, 30, .55); display: flex; align-items: center;
+  justify-content: center; z-index: 50; }
+.dlg { background: var(--panel); border-radius: 14px; padding: 1.4rem 1.6rem; min-width: 34vw; max-width: 70vw;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .3); font-size: 2.6vh; }
+.dlg h2 { margin: 0 0 .6rem; font-size: 3.4vh; }
+.dlg p { margin: .4rem 0 1rem; white-space: pre-line; }
+.dlg .btns { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: flex-end; margin-top: 1rem; }
+.dlg .btns button { font-size: 2.8vh; min-width: 10rem; min-height: 7vh; }
+.pad-show { font-size: 5vh; text-align: right; border: 2px solid var(--line); border-radius: var(--radius);
+  padding: .3rem .7rem; min-height: 7.5vh; background: #fafbfc; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: .7rem; }
+.pad button { font-size: 4vh; min-height: 8.5vh; }
+
+/* ---------------------------------------------------------------- Meldeleiste */
+.notice { padding: .5vh 1.2vw; font-size: 2.6vh; font-weight: 600; color: #fff; min-height: 0; }
+.notice.red { background: var(--high); }
+.notice.grey { background: var(--grey); }
+.notice.orange { background: var(--warn); }
+.notice.blue { background: var(--info); }

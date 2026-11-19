@@ -5,3 +5,6 @@ configuration:
   log_level:
     name: Protokollstufe
     description: Wie ausführlich das Add-on protokolliert.
+  weather_entity:
+    name: Wetter-Entität
+    description: Wetter für die Stationsoberfläche (Ecke oben links), z. B. weather.forecast_home. Leer lassen oder „aus“ = kein Wetter.

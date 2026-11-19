@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HA-Rezeptbuch – Station</title>
+<link rel="stylesheet" href="../ui/common.css">
+<style>
+  /* Stationsoberfläche (Modul 10 Teil C1, docs/dashboard.md Abschnitt 3/4). Querformat, Bezug 1920 × 1200. */
+  body { display: grid; height: 100vh; overflow: hidden;
+    grid-template-columns: 25vw 1fr 13vw; grid-template-rows: 25vh 1fr auto 12vh;
+    grid-template-areas: "corner head head" "main main side" "notice notice notice" "bottom bottom bottom"; }
+
+  /* Ecke oben links (M10-15): Uhrzeit ganz oben bleibt frei, darunter Datum und Wetter (Bild-im-Bild darf überdecken) */
+  #corner { grid-area: corner; background: #20262d; color: #fff; display: flex; flex-direction: column; padding: 0 1.2vw 1vh; }
+  #clock { font-size: 6.5vh; font-weight: 700; line-height: 1; padding-top: .4vh; letter-spacing: .02em; }
+  #date { font-size: 2.6vh; margin-top: 1.4vh; color: #cfd6dd; }
+  #weather { margin-top: 1vh; font-size: 2.6vh; color: #e7ecf1; }
+  #weather .w-temp { font-size: 4.4vh; font-weight: 700; color: #fff; }
+  #weather .w-sym { font-size: 4.4vh; margin-right: .4vw; }
+  #weather .w-range { color: #aeb8c2; }
+
+  #head { grid-area: head; background: var(--panel); border-bottom: 2px solid var(--line); padding: 1.4vh 1.6vw;
+    display: flex; flex-direction: column; justify-content: center; gap: .8vh; }
+  #h-station { font-size: 2.6vh; color: var(--muted); font-weight: 600; }
+  #h-recipe { font-size: 5vh; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #h-info { font-size: 2.8vh; color: var(--text); }
+  #h-next { font-size: 2.4vh; color: var(--muted); }
+
+  #side { grid-area: side; display: flex; flex-direction: column; gap: 1.2vh; padding: 1.2vh .8vw; background: #e3e6e9; }
+  #side button { flex: 1; font-size: 2.8vh; font-weight: 600; }
+  #side button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  #main { grid-area: main; overflow: auto; padding: 1.6vh 1.6vw; }
+  #notice { grid-area: notice; }
+  #bottom { grid-area: bottom; display: grid; grid-template-columns: repeat(7, 1fr); gap: .6vw; padding: 1vh .8vw;
+    background: #d5d9dd; }
+  #bottom button { font-size: 2.7vh; font-weight: 600; }
+  #b-pause.on { background: var(--high); border-color: var(--high); color: #fff; }
+
+  /* Wiegeansicht */
+  .item-title { font-size: 4.6vh; font-weight: 700; margin-bottom: .4vh; }
+  .item-sub { font-size: 2.4vh; color: var(--muted); margin-bottom: 1.4vh; }
+  .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; }
+  .box { background: var(--panel); border-radius: 14px; padding: 1.4vh 1.4vw; border: 2px solid var(--line); }
+  .box .lbl { font-size: 2.6vh; color: var(--muted); font-weight: 600; }
+  .box .big { font-size: 13vh; font-weight: 800; line-height: 1.05; text-align: right; font-variant-numeric: tabular-nums; }
+  .box .tol { font-size: 2.4vh; color: var(--muted); text-align: right; }
+  .ring { border-radius: 18px; padding: .9vh; background: var(--track); }
+  .ring > .box { border: 0; }
+  .big.low { color: #a07c00; } .big.ok { color: var(--ok); } .big.high { color: var(--high); } .big.none { color: var(--grey); }
+
+  .bar { position: relative; height: 4.2vh; background: var(--track); border-radius: 8px; margin-top: 1.6vh; overflow: hidden; }
+  .bar.fine { height: 3vh; margin-top: .8vh; }
+  .bar .zone { position: absolute; top: 0; bottom: 0; background: rgba(46, 157, 58, .25); }
+  .bar .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--low); transition: width .1s linear; }
+  .bar .fill.ok { background: var(--ok); } .bar .fill.high { background: var(--high); }
+  .bar .soll { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--high); }
+  .bar-lbl { font-size: 2vh; color: var(--muted); margin-top: .3vh; }
+
+  .hint { margin-top: 1.4vh; padding: 1vh 1vw; border-radius: 10px; background: #e8f0fb; color: #163e74; font-size: 2.8vh; font-weight: 600; }
+  .hint.yellow { background: #fff4c2; color: #6b5200; }
+  .actions { display: flex; flex-wrap: wrap; gap: 1vw; margin-top: 1.8vh; }
+  .actions button { font-size: 2.8vh; min-height: 8vh; padding: 0 1.6vw; font-weight: 600; }
+  .actions button.wide { min-width: 18vw; }
+
+  /* Startbild, Karten, Tabellen */
+  .scale-big { font-size: 15vh; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; line-height: 1; }
+  .state { font-size: 3vh; font-weight: 700; }
+  .state.ready { color: var(--ok); } .state.weigh { color: var(--accent); } .state.stop { color: var(--high); }
+  .cards { display: flex; flex-direction: column; gap: 1.2vh; margin-top: 1.6vh; }
+  .card { background: var(--panel); border-radius: 12px; border: 2px solid var(--line); padding: 1.2vh 1.2vw;
+    display: flex; align-items: center; gap: 1vw; font-size: 2.6vh; }
+  .card .grow { flex: 1; }
+  .card.grey { background: #e9ecef; color: var(--muted); }
+  .card button { font-size: 2.6vh; min-height: 6.5vh; font-weight: 600; }
+  h2.view { font-size: 3.6vh; margin: 0 0 1.2vh; }
+  table.list { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 2.5vh; }
+  table.list th, table.list td { padding: .9vh .7vw; border-bottom: 1px solid #e0e3e6; text-align: left; }
+  table.list th { background: #f1f3f5; font-size: 2.1vh; color: var(--muted); }
+  table.list td.r, table.list th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  table.list tr.current td { background: #fff4c2; font-weight: 700; }
+  table.list tr.done td { color: var(--muted); }
+  table.list tr.pick td { cursor: pointer; }
+  .big-msg { font-size: 4vh; font-weight: 700; margin: 2vh 0 1vh; }
+  .text-block { font-size: 3vh; white-space: pre-line; background: var(--panel); border-radius: 12px; padding: 1.4vh 1.4vw; border: 2px solid var(--line); }
+</style>
+</head>
+<body>
+<div id="corner">
+  <div id="clock" class="num">--:--</div>
+  <div id="date"></div>
+  <div id="weather" class="hidden"></div>
+</div>
+<header id="head">
+  <div id="h-station">Station</div>
+  <div id="h-recipe">Keine Verwiegung</div>
+  <div id="h-info"></div>
+  <div id="h-next"></div>
+</header>
+<nav id="side">
+  <button type="button" id="s-weigh" data-view="weigh">Wiegen</button>
+  <button type="button" id="s-overview" data-view="overview">Übersicht</button>
+  <button type="button" id="s-note" data-view="note">Hinweis</button>
+</nav>
+<main id="main"></main>
+<div id="notice" class="notice hidden" role="status"></div>
+<footer id="bottom">
+  <button type="button" id="b-start" class="go">Start</button>
+  <button type="button" id="b-pause">Pause</button>
+  <button type="button" id="b-cancel">Abbruch</button>
+  <button type="button" id="b-select" disabled>Vorwahl</button>
+  <button type="button" id="b-orders" disabled>Produktionsliste</button>
+  <button type="button" id="b-batches">Chargen</button>
+  <button type="button" id="b-menu" class="keep">Menü 🔒</button>
+</footer>
+
+<script src="../ui/common.js"></script>
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const el = RB.el, g = RB.grams;
+  const match = location.pathname.match(/\/station\/(\d+)\/?$/);
+  const ST = match ? parseInt(match[1], 10) : 1;
+  RB.notice.attach($("notice"));
+
+  const S = {
+    view: "weigh",          // weigh | overview | note | batches
+    batches: [],            // offene Chargen aller Stationen
+    mine: null,             // Charge dieser Station (Detail)
+    orders: [],             // Aufträge von heute
+    station: null,          // Waage dieser Station (Live „scale“)
+    weigh: null,            // Live „weigh“ dieser Station
+    configured: true,
+    liveOk: false, serverOk: true,
+  };
+
+  const STATUS_TEXT = { running: "läuft", paused: "pausiert", done: "fertig", cancelled: "abgebrochen", open: "offen" };
+  const PAUSE_TEXT = { manual: "Pause", scale_offline: "Waage getrennt", restart: "Neustart", hand_scale: "Handwaage" };
+  const OFFLINE_TEXT = {
+    broker: "Nachrichtendienst (MQTT) nicht erreichbar",
+    bridge: "Waagen-Add-on läuft nicht",
+    silent: "Waage sendet nicht",
+    scale: "Waage aus oder nicht verbunden",
+  };
+
+  function today() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function current() {
+    if (!S.mine) return null;
+    return S.mine.items.find((i) => i.position === S.mine.current_position && !i.done) || null;
+  }
+
+  // ------------------------------------------------------------ Uhr, Datum, Wetter (M10-15, M10-16)
+  function tick() {
+    const d = new Date();
+    $("clock").textContent = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    $("date").textContent = d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+  async function loadWeather() {
+    let w = null;
+    try { w = await RB.api("display/weather"); } catch (e) { w = null; }
+    const box = $("weather");
+    box.textContent = "";
+    if (!w || !w.available) { box.classList.add("hidden"); return; }
+    const top = el("div");
+    if (w.symbol) top.appendChild(el("span", w.symbol, "w-sym"));
+    if (w.temp !== null && w.temp !== undefined) top.appendChild(el("span", w.temp + " " + (w.unit || "°C"), "w-temp"));
+    box.appendChild(top);
+    box.appendChild(el("div", w.text || ""));
+    if (w.max !== null && w.max !== undefined) box.appendChild(el("div", "↑ " + w.max + "°  ↓ " + (w.min === null ? "–" : w.min + "°"), "w-range"));
+    box.classList.remove("hidden");
+  }
+
+  // ------------------------------------------------------------ Meldeleiste und Sperre (Abschnitt 6)
+  RB.onApiResult((err) => {
+    if (!err) { if (!S.serverOk) { S.serverOk = true; RB.notice.clear("server"); lock(); } return; }
+    if (err.status === 0 || err.status >= 500) {
+      S.serverOk = false;
+      RB.notice.set("server", "red", err.status === 0 ? "Rezeptserver nicht erreichbar – verbinde neu …"
+        : "Server-/Datenbankfehler – bitte Chef rufen (" + err.message + ")");
+      lock();
+    }
+  });
+  function lock() { document.body.classList.toggle("locked", !S.liveOk || !S.serverOk); }
+  function scaleNotice() {
+    const s = S.station;
+    if (!S.configured) { RB.notice.set("scale", "orange", "Waage " + ST + " ist nicht eingerichtet."); return; }
+    if (!s) { RB.notice.clear("scale"); return; }
+    if (s.status === "offline") RB.notice.set("scale", "red", "Waage getrennt: " + (OFFLINE_TEXT[s.offline_reason] || "keine Werte"));
+    else if (s.status === "invalid") RB.notice.set("scale", "orange", "Waage zeigt keinen gültigen Wert (Überlast oder unter Null?)");
+    else if (s.status === "error") RB.notice.set("scale", "orange", "Waage meldet einen Fehler");
+    else RB.notice.clear("scale");
+    if (S.weigh && S.weigh.capacity_warning) RB.notice.set("capacity", "orange", "Waage fast voll – Höchstlast bald erreicht");
+    else RB.notice.clear("capacity");
+  }
+  function info(text) { RB.notice.set("info", "blue", text, 6); }
+
+  // ------------------------------------------------------------ Aktionen (K10-8: Taste bis zur Antwort gesperrt)
+  async function act(button, path, body, extraLockMs) {
+    if (button) { button.disabled = true; button.classList.add("busy"); }
+    try {
+      const data = await RB.api(path, { method: "POST", body: body || { station: ST } });
+      await refresh();
+      return data;
+    } catch (err) {
+      if (err.status === 409 && (err.code === "confirm_required" || err.code === "resume_deviation")) {
+        const ok = await RB.dialog({ title: err.code === "resume_deviation" ? "Gewicht weicht ab" : "Bitte bestätigen",
+          text: err.message, buttons: [{ label: "Nein", value: false },
+            { label: err.code === "resume_deviation" ? "Trotzdem weiter" : "Ja", value: true, kind: "primary" }] });
+        if (ok) {
+          const extra = err.code === "resume_deviation" ? { confirm_deviation: true } : { confirm: true };
+          return act(button, path, Object.assign({}, body || { station: ST }, extra));
+        }
+      } else if (err.status === 400 || err.status === 422) {
+        await RB.dialog({ title: "Nicht möglich", text: err.message });
+      } else if (err.status && err.status < 500) {
+        info(err.message);
+        await refresh();
+      }
+      return null;
+    } finally {
+      if (button) {
+        setTimeout(() => { button.disabled = false; button.classList.remove("busy"); }, extraLockMs || 0);
+      }
+    }
+  }
+  function btn(text, cls, handler) {
+    const b = el("button", text, cls || "");
+    b.type = "button";
+    b.addEventListener("click", () => handler(b));
+    return b;
+  }
+
+  // ------------------------------------------------------------ Laden
+  let loading = false, again = false;
+  async function refresh() {
+    if (loading) { again = true; return; }
+    loading = true;
+    try {
+      const list = (await RB.api("batches")).batches;
+      S.batches = list;
+      const mine = list.find((b) => b.owner_station === ST &&
+        (b.status === "running" || b.status === "done" || (b.status === "paused" && b.pause_reason === "hand_scale")));
+      S.mine = mine ? await RB.api("batches/" + mine.id) : null;
+      if (S.mine && S.mine.scale && !S.weigh) S.weigh = S.mine.scale;
+      S.orders = (await RB.api("orders?date=" + today())).orders || [];
+    } catch (err) { /* Meldeleiste zeigt den Fehler */ }
+    finally {
+      loading = false;
+      render();
+      if (again) { again = false; refresh(); }
+    }
+  }
+  async function loadStation() {
+    try {
+      const data = await RB.api("stations");
+      const s = (data.stations || []).find((x) => x.station === ST);
+      S.configured = Boolean(s && s.configured);
+      if (s) { S.station = s; $("h-station").textContent = s.name || ("Waage " + ST); }
+      else $("h-station").textContent = "Waage " + ST;
+    } catch (e) { $("h-station").textContent = "Waage " + ST; }
+    scaleNotice();
+  }
+
+  function onLive(m) {
+    if (m.type === "scale" && m.station === ST) { S.station = m; S.configured = m.configured !== false; scaleNotice(); update(); }
+    else if (m.type === "weigh" && m.station === ST) {
+      const prev = S.weigh;
+      S.weigh = m;
+      scaleNotice();
+      if (S.mine && m.batch_id && (m.batch_id !== S.mine.id || m.position !== S.mine.current_position)) refresh();
+      else if (prev && prev.container_step !== m.container_step) refresh();
+      else update();
+    } else if (m.type === "batch" || m.type === "orders") refresh();
+  }
+  function onLiveState(ok) {
+    S.liveOk = ok;
+    if (ok) { RB.notice.clear("live"); refresh(); loadStation(); }
+    else RB.notice.set("live", "grey", "Verbindung unterbrochen – verbinde neu …");
+    lock();
+  }
+
+  // ------------------------------------------------------------ Darstellung
+  let lastKey = null, updater = null;
+  function render() {
+    renderHead();
+    renderBars();
+    const built = buildView();
+    if (built.key !== lastKey) {
+      lastKey = built.key;
+      const main = $("main");
+      main.textContent = "";
+      updater = built.build(main) || null;
+    }
+    update();
+  }
+  function update() { if (updater) updater(); renderButtons(); }
+
+  function nextOrder() {
+    const open = S.orders.filter((o) => (o.status === "open" || o.status === "in_progress") &&
+      (!o.fixed_station || o.fixed_station === ST) && o.doughs.some((d) => !d.batch));
+    open.sort((a, b) => (a.list_position || 0) - (b.list_position || 0));
+    if (!open.length) return null;
+    const o = open[0];
+    return { order: o, dough: o.doughs.find((d) => !d.batch) };
+  }
+
+  function renderHead() {
+    const b = S.mine;
+    if (b) {
+      $("h-recipe").textContent = (b.recipe ? b.recipe.number + " " + b.recipe.name : "?");
+      const total = b.items.reduce((s, i) => s + (i.target_g || 0), 0);
+      $("h-info").textContent = "Teig " + b.dough_index + " von " + b.dough_count + " · " + RB.kg(total) +
+        " · Zutat " + Math.min(b.progress.done + 1, b.progress.total) + " von " + b.progress.total +
+        " · Charge " + b.batch_no + (b.status !== "running" ? " · " + (b.status === "done" ? "fertig" : PAUSE_TEXT[b.pause_reason] || "pausiert") : "");
+    } else {
+      $("h-recipe").textContent = "Keine Verwiegung";
+      $("h-info").textContent = "";
+    }
+    const n = nextOrder();
+    $("h-next").textContent = n ? "Nächster Auftrag: " + n.order.recipe.number + " " + n.order.recipe.name +
+      " · Teig " + n.dough.dough_index + " von " + n.order.doughs.length + " · " + RB.kg(n.dough.target_g) : "Kein offener Auftrag für heute.";
+  }
+
+  function renderBars() {
+    const running = S.mine && S.mine.status === "running";
+    ["s-weigh", "s-overview", "s-note"].forEach((id) => {
+      const b = $(id);
+      b.disabled = !running;
+      b.classList.toggle("active", running && S.view === b.dataset.view);
+    });
+    $("b-batches").classList.toggle("primary", S.view === "batches");
+  }
+
+  function renderButtons() {
+    const b = S.mine;
+    const running = b && b.status === "running";
+    const myPaused = S.batches.find((x) => x.status === "paused" && x.owner_station === ST && x.pause_reason !== "hand_scale");
+    const pause = $("b-pause");
+    pause.textContent = myPaused && !b ? "Weiter" : "Pause";
+    pause.classList.toggle("on", Boolean(myPaused && !b));
+    pause.disabled = !(running || (myPaused && !b));
+    $("b-cancel").disabled = !(running || (b && b.status === "paused"));
+    $("b-start").disabled = Boolean(b) || !nextOrder() || !S.configured;
+  }
+
+  function buildView() {
+    if (S.view === "batches") return { key: "batches|" + JSON.stringify(S.orders.map((o) => [o.id, o.status, o.doughs.map((d) => d.batch && d.batch.status)])), build: viewBatches };
+    const b = S.mine;
+    if (b) {
+      if (b.status === "done") return { key: "done|" + b.id, build: viewDone };
+      if (b.status === "paused") return { key: "handscale|" + b.id, build: viewHandScale };
+      const step = S.weigh && S.weigh.batch_id === b.id ? S.weigh.container_step : (b.scale && b.scale.container_step);
+      if (step) return { key: "container|" + b.id + "|" + step, build: (m) => viewContainer(m, step) };
+      const cur = current();
+      const curKey = cur ? [cur.position, cur.kind, cur.blocked, cur.units_acked].join(",") : "-";
+      if (S.view === "overview") return { key: "overview|" + b.id + "|" + b.progress.done + "|" + curKey, build: viewOverview };
+      if (S.view === "note") return { key: "note|" + b.id, build: viewNote };
+      return { key: "weigh|" + b.id + "|" + curKey + "|" + b.progress.done + "|" + b.container_g, build: viewWeigh };
+    }
+    const cards = S.batches.map((x) => [x.id, x.status, x.owner_station, x.pause_reason, x.fixed_station].join(",")).join(";");
+    const n = nextOrder();
+    return { key: "start|" + cards + "|" + (n ? n.order.id + "," + n.dough.dough_index : "-") + "|" + S.configured, build: viewStart };
+  }
+
+  // ---------- Balken (K10-4): grob 0 … Soll + 2 × Toleranz, fein Soll ± 4 × Toleranz
+  function makeBar(fine) {
+    const bar = el("div", null, "bar" + (fine ? " fine" : ""));
+    const zone = el("div", null, "zone"), fill = el("div", null, "fill"), soll = el("div", null, "soll");
+    bar.appendChild(zone); bar.appendChild(fill); bar.appendChild(soll);
+    return {
+      node: bar,
+      set(actual, target, tol, zoneName) {
+        const min = fine ? target - 4 * tol : 0;
+        const max = fine ? target + 4 * tol : target + 2 * tol;
+        const pos = (x) => Math.max(0, Math.min(1, (x - min) / (max - min || 1))) * 100;
+        zone.style.left = pos(target - tol) + "%";
+        zone.style.width = (pos(target + tol) - pos(target - tol)) + "%";
+        soll.style.left = pos(target) + "%";
+        fill.style.width = (actual === null || actual === undefined ? 0 : pos(actual)) + "%";
+        fill.className = "fill" + (zoneName === "ok" ? " ok" : zoneName === "high" ? " high" : "");
+      },
+    };
+  }
+
+  function viewWeigh(main) {
+    const b = S.mine, cur = current();
+    if (b.note && b.note.display === "start" && b.progress.done === 0) main.appendChild(el("div", "Hinweis: " + b.note.text, "hint"));
+    if (!cur) { main.appendChild(el("div", "Keine offene Zutat gewählt – in der Übersicht wählen.", "big-msg")); return null; }
+    main.appendChild(el("div", (cur.raw_material_number ? cur.raw_material_number + " " : "") + cur.name, "item-title"));
+    const sub = el("div", "Zutat " + (b.progress.done + 1) + " von " + b.progress.total, "item-sub");
+    main.appendChild(sub);
+    const actions = el("div", null, "actions");
+
+    if (cur.kind === "units") {
+      main.appendChild(el("div", cur.units_target + " × " + cur.unit_label + " zugeben (" + g(cur.units_target * cur.unit_size_g) + ")", "big-msg"));
+      if (cur.rest_target_g) main.appendChild(el("div", "danach " + g(cur.rest_target_g) + " wiegen", "item-sub"));
+      actions.appendChild(btn(cur.units_target + " × " + cur.unit_label + " quittieren", "go wide", (bt) => act(bt, "batches/" + b.id + "/units", { station: ST, position: cur.position }, 1000)));
+    } else if (cur.kind === "hand_need" || cur.kind === "hand_target") {
+      main.appendChild(el("div", cur.kind === "hand_need" ? "Handzugabe nach Bedarf" : "Handzugabe: " + g(cur.target_g), "hint yellow"));
+      actions.appendChild(btn("Zugegeben", "go wide", (bt) => act(bt, "batches/" + b.id + "/hand", { station: ST, position: cur.position }, 1000)));
+    } else if (cur.kind === "sub_recipe") {
+      if (cur.blocked) {
+        main.appendChild(el("div", "Unterrezept noch nicht fertig (" + (STATUS_TEXT[cur.sub_order && cur.sub_order.status] || "offen") + ") – zuerst abwiegen oder abhaken.", "hint yellow"));
+        actions.appendChild(btn("Unterrezept abhaken", "wide", (bt) => act(bt, "batches/" + b.id + "/sub-check", { station: ST, position: cur.position })));
+      } else {
+        main.appendChild(el("div", "Unterrezept ist gewogen: " + g(cur.target_g), "hint"));
+        actions.appendChild(btn("Unterrezept übernehmen", "go wide", (bt) => act(bt, "batches/" + b.id + "/sub-check", { station: ST, position: cur.position }, 1000)));
+      }
+    }
+
+    let updateFn = null;
+    if (cur.kind === "weigh") {
+      if (cur.units_target && cur.units_acked) sub.textContent += " · " + cur.units_target + " × " + cur.unit_label + " erledigt, Rest wiegen";
+      const grid = el("div", null, "sollist");
+      const soll = el("div", null, "box");
+      soll.appendChild(el("div", "Soll", "lbl"));
+      soll.appendChild(el("div", g(cur.rest_target_g), "big"));
+      soll.appendChild(el("div", "± " + g(cur.tolerance_g), "tol"));
+      const ring = el("div", null, "ring");
+      const ist = el("div", null, "box");
+      ist.appendChild(el("div", "Ist", "lbl"));
+      const istBig = el("div", "–", "big none");
+      ist.appendChild(istBig);
+      const istSub = el("div", "", "tol");
+      ist.appendChild(istSub);
+      ring.appendChild(ist);
+      grid.appendChild(soll); grid.appendChild(ring);
+      main.appendChild(grid);
+      const coarse = makeBar(false), fine = makeBar(true);
+      main.appendChild(coarse.node);
+      main.appendChild(fine.node);
+      const hint = el("div", "", "hint hidden");
+      main.appendChild(hint);
+      const ackBtn = btn("Quittieren", "go wide", (bt) => act(bt, "batches/" + b.id + "/ack", { station: ST, position: cur.position }, 1000));
+      actions.appendChild(ackBtn);
+      actions.appendChild(btn("Tara", "", (bt) => act(bt, "batches/" + b.id + "/tare", { station: ST })));
+      updateFn = function () {
+        const w = S.weigh && S.weigh.batch_id === b.id ? S.weigh : null;
+        const target = w && w.target_g !== null && w.target_g !== undefined ? w.target_g : cur.rest_target_g;
+        const tol = w && w.tolerance_g !== null && w.tolerance_g !== undefined ? w.tolerance_g : cur.tolerance_g;
+        const actual = w ? w.actual_g : null;
+        const zone = w ? w.zone : null;
+        istBig.textContent = actual === null || actual === undefined ? "–" : g(actual);
+        istBig.className = "big " + (zone || "none");
+        const diff = actual === null || actual === undefined ? null : actual - target;
+        istSub.textContent = w && w.taring ? "Tara läuft …" : (diff === null ? "" : (diff > 0 ? "+" : "") + g(diff));
+        const p = w ? Math.max(0, Math.min(100, w.auto_ack_progress || 0)) : 0;
+        ring.style.background = p ? "conic-gradient(var(--ok) " + (p * 3.6) + "deg, var(--track) 0)" : "var(--track)";
+        coarse.set(actual, target, tol, zone);
+        fine.set(actual, target, tol, zone);
+        fine.node.classList.toggle("hidden", !(actual !== null && actual !== undefined && actual >= target - 4 * tol && tol > 0));
+        const h = w && w.hint;
+        hint.textContent = h || "";
+        hint.classList.toggle("hidden", !h);
+        ackBtn.disabled = zone !== "ok" || ackBtn.classList.contains("busy");
+      };
+    }
+    actions.appendChild(btn("Behälter" + (b.container_g === null || b.container_g === undefined ? "" : " (" + g(b.container_g) + ")"), "", containerMenu));
+    actions.appendChild(btn("Behälter wechseln", "", (bt) => act(bt, "batches/" + b.id + "/container", { station: ST, action: "change" })));
+    actions.appendChild(btn("Übergehen", "", (bt) => act(bt, "batches/" + b.id + "/skip", { station: ST, position: cur.position })));
+    actions.appendChild(btn("Handwaage", "", (bt) => act(bt, "batches/" + b.id + "/hand-scale", { station: ST })));
+    main.appendChild(actions);
+    return updateFn;
+  }
+
+  async function containerMenu(bt) {
+    const b = S.mine;
+    const choice = await RB.dialog({ title: "Behälter",
+      text: "Behältergewicht: " + (b.container_g === null || b.container_g === undefined ? "unbekannt" : g(b.container_g)),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Gewicht eingeben", value: "set" },
+        { label: "Behälter wiegen", value: "weigh", kind: "primary" }] });
+    if (choice === "weigh") await act(bt, "batches/" + b.id + "/container", { station: ST, action: "weigh" });
+    if (choice === "set") {
+      const v = await RB.numpad({ title: "Behältergewicht", unit: "g", value: b.container_g || "" });
+      if (v !== null && v !== "") await act(bt, "batches/" + b.id + "/container", { station: ST, action: "set", container_g: v });
+    }
+  }
+
+  function viewContainer(main, step) {
+    const b = S.mine;
+    const kind = S.weigh && S.weigh.hint ? S.weigh.hint : (b.scale && b.scale.hint) || "";
+    main.appendChild(el("h2", "Behälter", "view"));
+    const hint = el("div", kind || "Bitte warten …", "big-msg");
+    main.appendChild(hint);
+    const w = el("div", "–", "scale-big");
+    main.appendChild(w);
+    const actions = el("div", null, "actions");
+    const call = (action) => (bt) => act(bt, "batches/" + b.id + "/container", { station: ST, action: action });
+    if (step === "place") actions.appendChild(btn("Ohne Behälter", "", call("none")));
+    if (step === "confirm") actions.appendChild(btn("Ja, anderer Behälter", "go wide", call("confirm")));
+    actions.appendChild(btn("Abbrechen", "", call("cancel")));
+    main.appendChild(actions);
+    return function () {
+      const s = S.station;
+      w.textContent = s && s.status === "ok" ? g(s.weight_g) : "–";
+      if (S.weigh && S.weigh.hint) hint.textContent = S.weigh.hint;
+    };
+  }
+
+  function viewOverview(main) {
+    const b = S.mine;
+    main.appendChild(el("h2", "Übersicht – Antippen wählt eine offene Zutat", "view"));
+    const t = el("table", null, "list");
+    const hr = el("tr");
+    [["Pos."], ["Zutat"], ["Soll", "r"], ["Ist", "r"], ["Quittung"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
+    t.appendChild(el("thead")).appendChild(hr);
+    const body = el("tbody");
+    b.items.forEach((it) => {
+      const tr = el("tr", null, it.done ? "done" : (it.position === b.current_position ? "current" : "pick"));
+      tr.appendChild(el("td", it.position));
+      let name = (it.item_type === "sub_recipe" ? "+ " : "") + it.name;
+      if (it.unit_label && it.units_target) name += " (" + it.units_target + " × " + it.unit_label + " + " + g(it.rest_target_g) + ")";
+      tr.appendChild(el("td", name));
+      tr.appendChild(el("td", g(it.target_g), "r"));
+      tr.appendChild(el("td", it.done ? g(it.actual_g) : "", "r"));
+      tr.appendChild(el("td", it.done ? (it.ack_text || "") + (it.station_id ? " · W" + it.station_id : "") : (it.blocked ? "wartet" : "")));
+      if (!it.done && it.position !== b.current_position) {
+        tr.addEventListener("click", async () => {
+          const r = await act(null, "batches/" + b.id + "/select", { station: ST, position: it.position });
+          if (r) { S.view = "weigh"; render(); }
+        });
+      }
+      body.appendChild(tr);
+    });
+    t.appendChild(body);
+    main.appendChild(t);
+    return null;
+  }
+
+  function knead(b) {
+    if (!b.knead) return "";
+    const p = b.knead.split("+");
+    return "Knetzeit: " + p[0] + " min langsam + " + (p[1] || 0) + " min schnell";
+  }
+
+  function viewNote(main) {
+    const b = S.mine;
+    main.appendChild(el("h2", "Hinweis", "view"));
+    const text = [b.note ? b.note.text : "Kein Hinweis im Rezept.", knead(b)].filter(Boolean).join("\n\n");
+    main.appendChild(el("div", text, "text-block"));
+    return null;
+  }
+
+  function viewDone(main) {
+    const b = S.mine;
+    main.appendChild(el("div", "Wiegevorgang abgeschlossen", "big-msg"));
+    const text = [(b.recipe ? b.recipe.number + " " + b.recipe.name : "") + " · Teig " + b.dough_index + " von " + b.dough_count + " · Charge " + b.batch_no,
+      b.note ? "Hinweis: " + b.note.text : "", knead(b)].filter(Boolean).join("\n\n");
+    main.appendChild(el("div", text, "text-block"));
+    main.appendChild(el("div", "Behälter abnehmen – das schließt den Teig ab. Ohne Waage: „OK“.", "hint"));
+    const actions = el("div", null, "actions");
+    actions.appendChild(btn("OK – abschließen", "go wide", (bt) => act(bt, "batches/" + b.id + "/finish", { station: ST })));
+    main.appendChild(actions);
+    return null;
+  }
+
+  function scaleBlock(main) {
+    const wrap = el("div", null, "box");
+    const st = el("div", "", "state");
+    const big = el("div", "–", "scale-big");
+    const sub = el("div", "", "tol");
+    wrap.appendChild(st); wrap.appendChild(big); wrap.appendChild(sub);
+    main.appendChild(wrap);
+    return function () {
+      const s = S.station, w = S.weigh;
+      const ok = s && s.status === "ok";
+      st.textContent = !S.configured ? "Nicht eingerichtet" : !ok ? "Stopp" : (S.mine ? "Wiegen" : "Bereit");
+      st.className = "state " + (!ok ? "stop" : (S.mine ? "weigh" : "ready"));
+      const shown = w && w.actual_g !== null && w.actual_g !== undefined ? w.actual_g : (ok ? s.weight_g : null);
+      big.textContent = shown === null || shown === undefined ? "–" : g(shown);
+      sub.textContent = (w && w.taring ? "Tara läuft … · " : "") + (ok ? (s.stable ? "stabil" : "unruhig") : "") +
+        (w && w.gross_g !== null && w.gross_g !== undefined ? " · Gesamtlast " + g(w.gross_g) : "");
+    };
+  }
+
+  function handButtons(actions) {
+    actions.appendChild(btn("Tara", "", (bt) => act(bt, "stations/" + ST + "/hand/tare", undefined).then(() => {})));
+    actions.appendChild(btn("Null", "", async (bt) => {
+      const ok = await RB.dialog({ title: "Null setzen", text: "Null nur bei leerer Waage. Ist die Waage leer?",
+        buttons: [{ label: "Nein", value: false }, { label: "Ja, Null setzen", value: true, kind: "primary" }] });
+      if (ok) await act(bt, "stations/" + ST + "/scale/zero", undefined);
+    }));
+  }
+
+  function viewHandScale(main) {
+    const b = S.mine;
+    main.appendChild(el("h2", "Handwaage – Teig ist an dieser Waage reserviert", "view"));
+    const upd = scaleBlock(main);
+    const actions = el("div", null, "actions");
+    actions.appendChild(btn("Weiter mit dem Teig", "go wide", (bt) => act(bt, "batches/" + b.id + "/resume", { station: ST })));
+    handButtons(actions);
+    main.appendChild(actions);
+    return upd;
+  }
+
+  function viewStart(main) {
+    if (!S.configured) {
+      main.appendChild(el("div", "Waage " + ST + " ist nicht eingerichtet.", "big-msg"));
+      main.appendChild(el("div", "Einrichten im Admin-Bereich unter „Waagen“ (Menü 🔒).", "item-sub"));
+      return null;
+    }
+    const upd = scaleBlock(main);
+    const actions = el("div", null, "actions");
+    handButtons(actions);
+    main.appendChild(actions);
+    const cards = el("div", null, "cards");
+    S.batches.filter((x) => !(x.owner_station === ST && x.status !== "paused")).forEach((x) => {
+      const fixedElse = x.fixed_station && x.fixed_station !== ST;
+      const reservedElse = x.status === "paused" && x.pause_reason === "hand_scale" && x.owner_station !== ST;
+      const takeable = x.status === "paused" && !fixedElse && !reservedElse && x.pause_reason !== "hand_scale";
+      const card = el("div", null, "card" + (takeable ? "" : " grey"));
+      let text = x.recipe_name + " · Teig " + x.dough_index + " · " + x.batch_no + " – ";
+      if (x.status === "running") text += "in Arbeit an Waage " + x.owner_station;
+      else if (x.status === "done") text += "fertig, Behälter an Waage " + x.owner_station + " abnehmen";
+      else if (reservedElse) text += "Handwaage an Waage " + x.owner_station;
+      else text += (PAUSE_TEXT[x.pause_reason] || "pausiert") + (x.owner_station ? " (Waage " + x.owner_station + ")" : "") +
+        (fixedElse ? ", fest an Waage " + x.fixed_station : "");
+      card.appendChild(el("div", text, "grow"));
+      if (takeable) {
+        card.appendChild(btn(x.owner_station === ST ? "Weiter" : "Übernehmen", "go", (bt) => act(bt, "batches/" + x.id + "/resume", { station: ST })));
+        card.appendChild(btn("Abbrechen", "", (bt) => act(bt, "batches/" + x.id + "/cancel", { station: ST })));
+      }
+      cards.appendChild(card);
+    });
+    if (cards.childNodes.length) main.appendChild(cards);
+    return upd;
+  }
+
+  function viewBatches(main) {
+    main.appendChild(el("h2", "Chargen von heute an Waage " + ST + " (nur lesen)", "view"));
+    const rows = [];
+    S.orders.forEach((o) => o.doughs.forEach((d) => {
+      if (d.batch && d.batch.owner_station === ST) rows.push({ o: o, d: d });
+    }));
+    if (!rows.length) { main.appendChild(el("div", "Heute noch keine Chargen an dieser Waage.", "item-sub")); return null; }
+    const t = el("table", null, "list");
+    const hr = el("tr");
+    [["Charge"], ["Rezept"], ["Teig"], ["Menge", "r"], ["Stand"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
+    t.appendChild(el("thead")).appendChild(hr);
+    const body = el("tbody");
+    rows.forEach((r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", r.d.batch.batch_no));
+      tr.appendChild(el("td", r.o.recipe.number + " " + r.o.recipe.name));
+      tr.appendChild(el("td", r.d.dough_index + " von " + r.o.doughs.length));
+      tr.appendChild(el("td", RB.kg(r.d.target_g), "r"));
+      tr.appendChild(el("td", STATUS_TEXT[r.d.batch.status] || r.d.batch.status));
+      body.appendChild(tr);
+    });
+    t.appendChild(body);
+    main.appendChild(t);
+    return null;
+  }
+
+  // ------------------------------------------------------------ Tasten
+  ["s-weigh", "s-overview", "s-note"].forEach((id) => $(id).addEventListener("click", () => { S.view = $(id).dataset.view; render(); }));
+  $("b-batches").addEventListener("click", () => { S.view = S.view === "batches" ? "weigh" : "batches"; render(); });
+  $("b-start").addEventListener("click", (ev) => {
+    const n = nextOrder();
+    if (!n) return;
+    S.view = "weigh";
+    act(ev.currentTarget, "orders/" + n.order.id + "/start", { station: ST, dough_index: n.dough.dough_index });
+  });
+  $("b-pause").addEventListener("click", (ev) => {
+    const b = S.mine;
+    if (b && b.status === "running") { act(ev.currentTarget, "batches/" + b.id + "/pause", { station: ST }); return; }
+    const p = S.batches.find((x) => x.status === "paused" && x.owner_station === ST && x.pause_reason !== "hand_scale");
+    if (p) act(ev.currentTarget, "batches/" + p.id + "/resume", { station: ST });
+  });
+  $("b-cancel").addEventListener("click", (ev) => {
+    const b = S.mine;
+    if (b) act(ev.currentTarget, "batches/" + b.id + "/cancel", { station: ST });
+  });
+  $("b-menu").addEventListener("click", async () => {
+    const pin = await RB.numpad({ title: "Menü – PIN eingeben", secret: true, max: 12 });
+    if (pin === null || pin === "") return;
+    let data;
+    try { data = await RB.api("admin/login", { method: "POST", body: { pin: pin } }); }
+    catch (err) { await RB.dialog({ title: "Anmeldung", text: err.message }); return; }
+    try { sessionStorage.setItem("rezeptbuch_admin_session", data.session); } catch (e) { /* ohne Speicher */ }
+    const choice = await RB.dialog({ title: "Menü", buttons: [{ label: "Zurück", value: null },
+      { label: "Station dieses Geräts ändern", value: "station" }, { label: "Admin-Bereich", value: "admin", kind: "primary" }] });
+    if (choice === "admin") location.href = RB.BASE + "admin/rohstoffe";
+    if (choice === "station") { RB.store.del("rezeptbuch_station"); location.href = RB.BASE + "?wahl=1"; }
+  });
+
+  // ------------------------------------------------------------ Start
+  tick();
+  setInterval(tick, 1000);
+  loadWeather();
+  setInterval(loadWeather, 15 * 60 * 1000);
+  loadStation();
+  refresh();
+  RB.live(onLive, onLiveState);
+  setInterval(() => { if (S.liveOk) refresh(); }, 10000);      // Sicherheitsnetz für verpasste Nachrichten
+})();
+</script>
+</body>
+</html>

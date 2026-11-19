@@ -51,7 +51,7 @@ Status: **freigegeben am 12.11.2026** (2 Add-ons)
 | `/station/2` | Tablet an Waage 2 | identisch, eigene Waage |
 | `/admin` | Tablet, Handy, PC | Rohstoffe, Rezepte, Aufträge anlegen, Waagen, Export, System |
 
-Jedes Tablet wird einmal auf seine Station-Adresse eingestellt (Browser im Vollbild/Kiosk-Modus). Taste „Menü“ öffnet die PIN-Eingabe und führt nach `/admin`.
+Jedes Tablet öffnet im Kiosk-Browser die Seite des Add-ons in Home Assistant; die Startseite fragt einmal „Welche Station ist dieses Gerät?“ und merkt es sich im Gerät (seit Modul 10, K10-3: die Ingress-Adresse wechselt, eine feste Stationsadresse geht nicht zuverlässig). Taste „Menü“ öffnet die PIN-Eingabe; danach Admin-Bereich oder Station des Geräts ändern.
 
 ## 4. PIN-Schutz – echter Schutz statt nur Dashboard-Wechsel
 

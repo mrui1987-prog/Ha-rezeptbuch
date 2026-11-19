@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch</title>
+<link rel="stylesheet" href="ui/common.css">
+<style>
+  /* Startseite (Modul 10, K10-3): Das Gerät merkt sich seine Station, weil die Ingress-Adresse wechselt. */
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3vh; padding: 4vh; }
+  h1 { margin: 0; font-size: 5vh; }
+  p { margin: 0; font-size: 2.6vh; color: var(--muted); text-align: center; }
+  .choice { display: flex; gap: 3vw; }
+  .choice button { font-size: 4vh; font-weight: 700; min-width: 26vw; min-height: 18vh; }
+  a.admin { font-size: 2.4vh; color: var(--accent); }
+</style>
+</head>
+<body>
+<h1>HA-Rezeptbuch</h1>
+<div id="wait"><p>Station wird geöffnet …</p></div>
+<div id="pick" class="hidden">
+  <p>Welche Station ist dieses Gerät? Die Auswahl wird auf diesem Gerät gespeichert.<br>
+     Ändern später über Menü 🔒 an der Station.</p>
+  <div class="choice" style="margin-top:3vh">
+    <button type="button" class="primary" data-station="1">Waage 1</button>
+    <button type="button" class="primary" data-station="2">Waage 2</button>
+  </div>
+</div>
+<a class="admin" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte, Berechnung, Waagen, Ablauf)</a>
+<p id="version"></p>
+<script src="ui/common.js"></script>
+<script>
+"use strict";
+(function () {
+  const KEY = "rezeptbuch_station";
+  const params = new URLSearchParams(location.search);
+  const saved = RB.store.get(KEY);
+  if (!params.has("wahl") && (saved === "1" || saved === "2")) {
+    location.replace("station/" + saved);
+    return;
+  }
+  document.getElementById("wait").classList.add("hidden");
+  document.getElementById("pick").classList.remove("hidden");
+  document.querySelectorAll("[data-station]").forEach((b) => b.addEventListener("click", () => {
+    RB.store.set(KEY, b.dataset.station);
+    location.replace("station/" + b.dataset.station);
+  }));
+  RB.api("system/info").then((i) => { document.getElementById("version").textContent = "Version " + i.version; }).catch(() => {});
+})();
+</script>
+</body>
+</html>
