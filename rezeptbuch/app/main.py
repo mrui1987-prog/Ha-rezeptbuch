@@ -1,8 +1,9 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.6.1: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.8.0: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
-Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
+Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06),
+Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -24,6 +25,8 @@ from .exports.router import router as exports_router
 from .imports.router import router as imports_router
 from .raw_materials.router import router as raw_materials_router
 from .recipes.router import router as recipes_router
+from .scales.router import router as scales_router
+from .scales.service import ScaleService
 from .settings import admin_timeout_minutes, load_options
 from .web.router import router as web_router
 
@@ -44,7 +47,11 @@ async def lifespan(app: FastAPI):
         # Kein Produktionsbetrieb mit fehlerhafter Datenbank (docs/datenmodell.md, Abschnitt 8)
         logger.error("Datenbank nicht betriebsbereit: %s", exc)
         app.state.db_error = str(exc)
+    # Waagen-Anbindung (Modul 08): läuft auch ohne MQTT oder ohne Datenbank weiter (M08-10)
+    app.state.scales = ScaleService(db_path=app.state.db_path)
+    await app.state.scales.start()
     yield
+    await app.state.scales.stop()
     if app.state.db is not None:
         app.state.db.close()
 
@@ -74,18 +81,22 @@ app.include_router(imports_router)
 app.include_router(exports_router)      # vor recipes_router: /admin/recipes/export.xlsx ist keine Rezept-ID
 app.include_router(recipes_router)
 app.include_router(calculation_router)
+app.include_router(scales_router)
 app.include_router(web_router)
 
 
 @app.get("/api/v1/health")
 def health():
     db_error = getattr(app.state, "db_error", None)
+    # MQTT-Stand nur zur Information: ohne MQTT bleibt der Status 200 (M08-10, K08-7)
+    scales = getattr(app.state, "scales", None)
+    mqtt = scales.hub.mqtt_state if scales is not None else "unavailable"
     if db_error:
         return JSONResponse(
             status_code=503,
-            content={"status": "error", "version": __version__, "detail": db_error},
+            content={"status": "error", "version": __version__, "detail": db_error, "mqtt": mqtt},
         )
-    return {"status": "ok", "version": __version__}
+    return {"status": "ok", "version": __version__, "mqtt": mqtt}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -106,7 +117,7 @@ def index() -> str:
 <body>
 <h1>HA-Rezeptbuch</h1>
 <p>Version {__version__} – im Aufbau.</p>
-<p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte, Berechnung)</a></p>
+<p><a class="button" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte, Berechnung, Waagen)</a></p>
 <script>
   // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
   function repaint() {{ document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }}

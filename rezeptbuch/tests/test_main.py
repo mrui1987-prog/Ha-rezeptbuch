@@ -16,7 +16,8 @@ client = TestClient(app)
 def test_health():
     response = client.get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": __version__}
+    # Ohne gestartete Waagen-Anbindung meldet Health MQTT „unavailable“, Status bleibt 200 (Modul 08, K08-7)
+    assert response.json() == {"status": "ok", "version": __version__, "mqtt": "unavailable"}
 
 
 def test_index():

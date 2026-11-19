@@ -1,5 +1,15 @@
 # Änderungen
 
+## 0.8.0 – Modul 08: Waagen-Anbindung im Rezeptbuch (in Entwicklung)
+
+- **Waagen-Anbindung per MQTT** (Modul 08, docs/schnittstellen.md): Das Rezeptbuch empfängt den Zustand der Waagen von „HA-Rezeptbuch Waage“ (Schema 2) und sendet Tara/Null. Zugangsdaten vom Supervisor (`services: mqtt:need`), neue Abhängigkeiten `paho-mqtt` 2.1 und `websockets` (Live-Kanal unter uvicorn)
+- **Mittelsmann** `app/scales/hub.py`: einzige Stelle für den Waagenzustand (später auch für den Wiegeablauf, Modul 09). Eine Station gilt als **offline**, wenn die Waage keine Werte liefert, das Waagen-Add-on weg ist, MQTT getrennt ist oder seit 3 s keine Meldung kam; Grund (`offline_reason`) und Beginn (`offline_since`) werden mitgegeben
+- **Schnittstelle ohne PIN:** `GET /api/v1/stations`, `GET /api/v1/stations/{nr}/scale`, `POST /api/v1/stations/{nr}/scale/tare` und `…/zero` (202 gesendet; 409 offline oder Station nicht eingerichtet; 503 ohne MQTT). Befehle mit QoS 1, nie „retained“
+- **Live-Kanal** WebSocket `/api/v1/live`: beim Verbinden alle Stationen, danach jede Änderung, Herzschlag alle 15 s
+- **Prüfseite „Waagen“** `/admin/waagen` (PIN): Live-Gewicht, Status, Stabilität, Tasten Tara/Null; neuer Reiter „Waagen“ auf den Admin-Seiten
+- **Ohne MQTT** läuft das Rezeptbuch weiter (Rezepte, Rohstoffe, Berechnung); neuer Versuch alle 30 s. `/api/v1/health` meldet zusätzlich `mqtt` (Status bleibt 200)
+- Versionsnummer folgt ab jetzt dem zuletzt begonnenen Modul (0.8.0); Korrekturen an Modul 06 erscheinen als 0.8.x
+
 ## 0.6.4 – Wiederherstellen mit archiviertem Unterrezept (in Entwicklung)
 
 - **Alte Version wiederherstellen:** Enthält die alte Version ein archiviertes Unterrezept, fragt die Oberfläche „„Vorteig“ ist archiviert – mit wiederherstellen?“. „Mit wiederherstellen“ holt das Unterrezept (und dessen archivierte Unterrezepte) und die alte Version in einem Schritt zurück, alles oder nichts. R05-23 bleibt bestehen (kein aktives Rezept mit archiviertem Unterrezept). Schnittstelle: `POST …/versions/{n}/restore` mit zusätzlichem `restore_sub_recipes: true`; ohne dieses Feld weiterhin 409 `archived_sub_recipe`, jetzt mit der Liste `sub_recipes`

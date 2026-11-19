@@ -1,5 +1,6 @@
 """Liefert die Seiten des Admin-Bereichs: PIN-Eingabe und Rohstoffliste (``admin.html``),
-Rezepte und Gruppen (``recipes.html``, Modul 05), Prüfseite „Berechnung“ (``calc.html``, Modul 06).
+Rezepte und Gruppen (``recipes.html``, Modul 05), Prüfseite „Berechnung“ (``calc.html``, Modul 06),
+Prüfseite „Waagen“ (``scales.html``, Modul 08).
 
 Jede Seite ist eine einzige, in sich geschlossene HTML-Datei (Stil und Skript eingebettet).
 Dadurch gibt es keine weiteren Adressen für Dateien, die hinter HA-Ingress wechseln
@@ -16,6 +17,7 @@ from fastapi.responses import HTMLResponse
 PAGE = Path(__file__).parent / "static" / "admin.html"
 RECIPES_PAGE = Path(__file__).parent / "static" / "recipes.html"
 CALC_PAGE = Path(__file__).parent / "static" / "calc.html"
+SCALES_PAGE = Path(__file__).parent / "static" / "scales.html"
 
 router = APIRouter(include_in_schema=False)
 
@@ -35,3 +37,8 @@ def recipes_page() -> HTMLResponse:
 @router.get("/admin/berechnung", response_class=HTMLResponse)
 def calc_page() -> HTMLResponse:
     return HTMLResponse(CALC_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/admin/waagen", response_class=HTMLResponse)
+def scales_page() -> HTMLResponse:
+    return HTMLResponse(SCALES_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})

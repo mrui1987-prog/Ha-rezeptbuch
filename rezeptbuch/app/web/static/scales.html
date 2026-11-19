@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch – Waagen</title>
+<style>
+  /* Bewusst schlicht: Prüfseite für Modul 08 („Waagen – Verbindung prüfen“), Gestaltung in Modul 10 */
+  :root { color-scheme: light; }
+  html { background: #fafafa; }
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
+  main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
+  h2 { font-size: 1.2rem; margin: 0 0 .5rem; }
+  button { font-size: 1.1rem; padding: .6rem 1.2rem; margin: .2rem .4rem .2rem 0; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  .hidden { display: none !important; }
+  #probe { background: #c62828; color: #fff; font-weight: bold; text-align: center; padding: .6rem; }
+  nav { display: flex; flex-wrap: wrap; gap: .3rem; background: #fff; border-bottom: 1px solid #ccc; padding: .4rem 1rem; }
+  nav a, nav button { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; margin: 0; }
+  nav .active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  nav .grow { flex: 1; }
+  .msg { margin: .6rem 0; padding: .5rem .7rem; border-radius: 4px; white-space: pre-line; }
+  .msg.error { background: #fdecea; color: #8a1c13; border: 1px solid #f5c2bd; }
+  .msg.info { background: #e8f1fb; color: #14406b; border: 1px solid #b9d3ee; }
+  .link { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: .3rem 0 1rem; }
+  .dot { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; margin-right: .3rem; vertical-align: middle; background: #999; }
+  .dot.ok { background: #2e7d32; } .dot.bad { background: #c62828; } .dot.warn { background: #e0a100; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; }
+  .card { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; }
+  .card.off { background: #f3f3f3; }
+  .weight { font-size: 3rem; font-weight: bold; font-variant-numeric: tabular-nums; margin: .3rem 0; }
+  .status { font-weight: bold; margin: .2rem 0 .5rem; }
+  .status.ok { color: #2e7d32; } .status.bad { color: #c62828; } .status.warn { color: #9a6b00; }
+  .facts div { margin: .15rem 0; } .facts b { display: inline-block; min-width: 10rem; }
+  .small { font-size: .9rem; color: #555; }
+  .note { background: #fff7e0; border: 1px solid #e6c56b; padding: .4rem .6rem; border-radius: 4px; margin: .4rem 0; }
+</style>
+</head>
+<body>
+<div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<nav>
+  <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
+  <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
+  <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
+  <a class="active" href="#" aria-current="page">Waagen</a>
+  <span class="grow"></span>
+  <button type="button" id="nav-logout">Abmelden</button>
+</nav>
+<main>
+  <h1>Waagen – Verbindung prüfen</h1>
+  <div class="link">
+    <span><span id="dot-live" class="dot"></span>Live-Verbindung: <b id="live-text">verbinde …</b></span>
+    <span><span id="dot-mqtt" class="dot"></span>MQTT: <b id="mqtt-text">–</b></span>
+    <span><span id="dot-bridge" class="dot"></span>Waagen-Add-on: <b id="bridge-text">–</b></span>
+  </div>
+  <div id="msg" class="msg hidden" role="alert"></div>
+  <div id="cards" class="cards"></div>
+  <p class="small">Die Waage bleibt auf brutto; Tara rechnet später der Wiegeablauf (Modul 09). „Null“ nur bei leerer Waage
+    (bis ±50 g) – sonst lehnt das Waagen-Add-on den Befehl ab und das Gewicht ändert sich nicht.</p>
+</main>
+
+<script>
+"use strict";
+
+// Adressen aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
+const BASE = location.pathname.replace(/\/admin(\/[^\/]*)?$/, "/");
+const API = BASE + "api/v1/";
+const SESSION_KEY = "rezeptbuch_admin_session";
+const $ = (id) => document.getElementById(id);
+
+let token = null;
+try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+
+const stations = {};      // Nr → Zustand
+let socket = null;
+let retryTimer = null;
+let lastMessage = 0;
+
+$("nav-raw").href = BASE + "admin/rohstoffe";
+$("nav-recipes").href = BASE + "admin/rezepte";
+$("nav-calc").href = BASE + "admin/berechnung";
+
+function toLogin(next) {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
+  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "waagen"));
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (token) headers["X-Rezeptbuch-Session"] = token;
+  let res;
+  try {
+    res = await fetch(API + path, { method: opts.method || "GET", headers: headers });
+  } catch (e) {
+    const err = new Error("Keine Verbindung zum Rezeptserver."); err.status = 0; throw err;
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (!res.ok) {
+    const err = new Error((data && typeof data.detail === "string") ? data.detail : "Fehler " + res.status);
+    err.status = res.status; throw err;
+  }
+  return data;
+}
+
+function showMsg(text, kind) {
+  const box = $("msg");
+  box.textContent = text || "";
+  box.className = "msg " + (kind || "error") + (text ? "" : " hidden");
+}
+
+async function checkSession(next) {
+  if (!token) { toLogin(next); return false; }
+  try { await api("admin/session"); return true; }
+  catch (err) { if (err.status === 401) { toLogin(next); return false; } return true; }
+}
+async function goTab(ev) {
+  ev.preventDefault();
+  const target = ev.currentTarget.href;
+  if (await checkSession(ev.currentTarget.dataset.next)) location.href = target;
+}
+$("nav-raw").addEventListener("click", goTab);
+$("nav-recipes").addEventListener("click", goTab);
+$("nav-calc").addEventListener("click", goTab);
+window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
+$("nav-logout").addEventListener("click", async () => {
+  try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
+  toLogin();
+});
+
+// ---------------------------------------------------------------- Anzeige
+
+const STATUS_TEXT = { ok: "bereit", invalid: "kein gültiger Wert (-----)", error: "Waage liefert unlesbare Daten" };
+const REASON_TEXT = {
+  scale: "Waage getrennt (keine Werte vom Waveshare)",
+  bridge: "Waagen-Add-on nicht erreichbar",
+  broker: "Waage nicht verbunden (MQTT)",
+  silent: "keine Meldung seit 3 s",
+};
+
+function fmtGram(g) {
+  if (g === null || g === undefined) return "–";
+  return g.toLocaleString("de-DE") + " g";
+}
+function fmtTime(iso) {
+  if (!iso) return "–";
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleTimeString("de-DE");
+}
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+function fact(box, label, value) {
+  const row = el("div"); row.appendChild(el("b", label)); row.appendChild(document.createTextNode(value)); box.appendChild(row);
+}
+function setDot(id, kind) { $(id).className = "dot " + (kind || ""); }
+
+function renderLink(link) {
+  const mqtt = link.mqtt;
+  $("mqtt-text").textContent = mqtt === "connected" ? "verbunden" : mqtt === "disconnected" ? "getrennt" : "nicht verfügbar";
+  setDot("dot-mqtt", mqtt === "connected" ? "ok" : "bad");
+  $("bridge-text").textContent = link.bridge === "online" ? "online" : link.bridge === "offline" ? "offline" : "unbekannt";
+  setDot("dot-bridge", link.bridge === "online" ? "ok" : link.bridge === "offline" ? "bad" : "warn");
+}
+
+function render() {
+  const box = $("cards");
+  box.textContent = "";
+  const numbers = Object.keys(stations).map(Number).sort();
+  if (!numbers.length) { box.appendChild(el("p", "Noch keine Waage bekannt.", "small")); return; }
+  for (const nr of numbers) {
+    const s = stations[nr];
+    const card = el("div", null, "card" + (s.status === "offline" ? " off" : ""));
+    card.appendChild(el("h2", s.name || ("Waage " + nr)));
+    if (!s.configured) card.appendChild(el("div", "Station im Rezeptbuch nicht eingerichtet – nur Anzeige, keine Befehle.", "note"));
+    card.appendChild(el("div", s.status === "ok" ? fmtGram(s.weight_g) : "–", "weight"));
+    let text, kind;
+    if (s.status === "offline") { text = REASON_TEXT[s.offline_reason] || "offline"; kind = "bad"; }
+    else { text = STATUS_TEXT[s.status] || s.status; kind = s.status === "ok" ? "ok" : "warn"; }
+    card.appendChild(el("div", text, "status " + kind));
+    const facts = el("div", null, "facts");
+    fact(facts, "Stabil (Software)", s.status === "ok" ? (s.stable ? "ja" : "nein") : "–");
+    fact(facts, "Merker der Waage", s.scale_stable === null || s.scale_stable === undefined ? "–" : (s.scale_stable ? "stabil" : "unruhig"));
+    fact(facts, "Höchstlast / Auflösung", s.capacity_g ? fmtGram(s.capacity_g) + " / " + fmtGram(s.resolution_g) : "–");
+    fact(facts, "Letzte Meldung", fmtTime(s.received_at));
+    if (s.status === "offline") fact(facts, "Offline seit", fmtTime(s.offline_since));
+    card.appendChild(facts);
+    if (s.net === true) card.appendChild(el("div", "Tara an der Waage aktiv – die Waage meldet netto.", "note"));
+    const tare = el("button", "Tara"); tare.type = "button";
+    const zero = el("button", "Null"); zero.type = "button";
+    const usable = s.configured && s.status !== "offline";
+    tare.disabled = !usable; zero.disabled = !usable;
+    tare.addEventListener("click", () => command(nr, "tare"));
+    zero.addEventListener("click", () => command(nr, "zero"));
+    card.appendChild(tare); card.appendChild(zero);
+    box.appendChild(card);
+  }
+}
+
+async function command(nr, cmd) {
+  try {
+    const res = await api("stations/" + nr + "/scale/" + cmd, { method: "POST" });
+    showMsg((cmd === "tare" ? "Tara" : "Null") + " an Waage " + nr + ": " + res.detail, "info");
+  } catch (err) {
+    showMsg(err.message, "error");
+  }
+}
+
+// ---------------------------------------------------------------- Live-Kanal
+
+function connect() {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + API + "live";
+  $("live-text").textContent = "verbinde …"; setDot("dot-live", "warn");
+  try { socket = new WebSocket(url); } catch (e) { scheduleRetry(); return; }
+  socket.onopen = () => { $("live-text").textContent = "verbunden"; setDot("dot-live", "ok"); lastMessage = Date.now(); };
+  socket.onmessage = (ev) => {
+    lastMessage = Date.now();
+    let data; try { data = JSON.parse(ev.data); } catch (e) { return; }
+    if (data.type === "link") renderLink(data);
+    else if (data.type === "scale") { stations[data.station] = data; render(); }
+  };
+  socket.onclose = () => { $("live-text").textContent = "getrennt – neuer Versuch …"; setDot("dot-live", "bad"); scheduleRetry(); };
+  socket.onerror = () => { try { socket.close(); } catch (e) { /* egal */ } };
+}
+function scheduleRetry() {
+  if (!retryTimer) retryTimer = setTimeout(connect, 2000);
+}
+// Kommt 40 s nichts (Herzschlag alle 15 s), gilt die Verbindung als hängend
+setInterval(() => {
+  if (socket && socket.readyState === 1 && Date.now() - lastMessage > 40000) { try { socket.close(); } catch (e) { /* egal */ } }
+}, 5000);
+
+async function start() {
+  try { const info = await api("system/info"); $("probe").classList.toggle("hidden", info.pin_is_default !== true); } catch (e) { /* egal */ }
+  if (!token) { toLogin(); return; }
+  if (!(await checkSession())) return;
+  connect();
+}
+start();
+</script>
+<script>
+  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
+  (function () {
+    function repaint() { document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }
+    window.addEventListener('load', function () { repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); });
+    window.addEventListener('pageshow', repaint);
+  })();
+</script>
+</body>
+</html>

@@ -83,6 +83,7 @@
   <button type="button" id="nav-groups">Gruppen</button>
   <button type="button" id="nav-io">Import/Export</button>
   <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
+  <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
   <span class="grow"></span>
   <button type="button" id="nav-logout">Abmelden</button>
 </nav>
@@ -320,6 +321,7 @@ let searchTimer = null;
 
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-calc").href = BASE + "admin/berechnung";
+$("nav-scales").href = BASE + "admin/waagen";
 
 function toLogin(next) {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
@@ -488,6 +490,7 @@ async function goPage(ev) {
 }
 $("nav-raw").addEventListener("click", goPage);
 $("nav-calc").addEventListener("click", goPage);
+$("nav-scales").addEventListener("click", goPage);
 window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
 $("nav-logout").addEventListener("click", async () => {
   try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }

@@ -14,7 +14,7 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 ## Voraussetzungen
 
 - Home Assistant OS oder Supervised (Add-ons)
-- MQTT-Broker (Add-on „Mosquitto broker“)
+- MQTT-Broker (Add-on „Mosquitto broker“); ohne ihn läuft das Rezeptbuch, aber ohne Waagen
 - Add-on „HA-Rezeptbuch Waage“ für die Waagenanbindung
 
 ## Oberflächen
@@ -24,6 +24,7 @@ Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien.
 | `/admin` | Rohstoffe (PIN), mit Preis je kg (€ netto; lesen auch ohne PIN über die Schnittstelle) |
 | `/admin/rezepte` | Rezepte, Rezeptgruppen, Import/Export (PIN); Aufträge folgen in späteren Modulen |
 | `/admin/berechnung` | Berechnung nachprüfen (PIN, speichert nichts) |
+| `/admin/waagen` | Waagen – Verbindung prüfen: Live-Gewicht, Status, Tara/Null (PIN) |
 
 Die Stationsadressen für die Tablets an den Waagen folgen in Modul 09/10 und sind in dieser Version noch nicht vorhanden.
 
@@ -98,6 +99,16 @@ Reiter **„Berechnung“**: Rezept wählen (auch gesperrte, auf Wunsch archivie
 - **Vorteig/Unterrezept bei mehreren Teigen:** je Teig ein eigener Unterrezept-Auftrag oder einer für alle (Hinweis, wenn er über der Obergrenze des Unterrezepts liegt).
 - **Mehl gesamt** wird in ganzen Gramm angezeigt (kaufmännisch gerundet, genauer Wert beim Darüberfahren); die Bäckerprozente rechnen mit dem genauen Wert.
 - Schnittstelle ohne PIN (für die Stationen ab Modul 09/10): `GET /api/v1/recipes/{id}/basis-options`, `POST /api/v1/calculation`.
+
+## Waagen-Anbindung (Modul 08)
+
+Das Rezeptbuch liest die Waagen nicht selbst, sondern über das Add-on **„HA-Rezeptbuch Waage“** und MQTT (Mosquitto). Die Zugangsdaten holt es selbst vom Supervisor; einzustellen ist nichts. Fehlt MQTT, läuft das Rezeptbuch normal weiter und versucht es alle 30 s erneut; die Stationen zeigen dann „Waage nicht verbunden“.
+
+- **Welche Stationen es gibt**, bestimmt das Rezeptbuch (Waage 1 eingerichtet, Waage 2 nicht). Liefert das Waagen-Add-on Werte für eine nicht eingerichtete Station, zeigt die Prüfseite sie mit Hinweis an, Befehle sind dort gesperrt. Adresse, Port und Stabilitätswerte der Waage stellt man nur im Waagen-Add-on ein.
+- **Offline** ist eine Station, wenn die Waage keine Werte liefert, das Waagen-Add-on gestoppt ist, MQTT getrennt ist oder 3 s lang keine Meldung kam. „Kein gültiger Wert“ (`-----`) ist kein Ausfall.
+- **Tara/Null** über die Prüfseite oder `POST /api/v1/stations/{nr}/scale/tare|zero` (ohne PIN). „Gesendet“ heißt nicht „ausgeführt“: Null nimmt das Waagen-Add-on nur bei leerer Waage (bis ±50 g) an; die Wirkung zeigt der nächste Wert.
+- **Live-Kanal** für Tablets: WebSocket `/api/v1/live` (relativer Pfad, funktioniert hinter HA-Ingress).
+- Schnittstelle und Nachrichten im Einzelnen: `docs/schnittstellen.md` im Repository.
 
 ## Haftung
 
