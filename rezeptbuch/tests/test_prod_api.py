@@ -2,6 +2,7 @@
 (laufen im GitHub-Testlauf)."""
 
 import json
+import time
 
 import pytest
 
@@ -117,7 +118,6 @@ def test_whole_flow_over_rest(client, recipe):
     assert client.get(f"/api/v1/orders/{order['id']}").json()["status"] == "done"
     events = client.portal.call(_drain, queue)
     batch_events = [e["event"] for e in events if e["type"] == "batch"]
-    assert any(e["type"] == "weigh" for e in events)
     assert batch_events == ["started", "acked", "acked", "finished_dough", "finished"]
     assert any(e["type"] == "orders" for e in events)
 
@@ -198,3 +198,11 @@ def test_container_hand_tare_and_weigh_view(client, recipe):
     assert r.status_code == 200, r.text
     view = client.get("/api/v1/stations/1/weigh").json()
     assert view["reference_g"] == 400 and view["status"] == "ok"
+
+
+def test_weigh_live_messages_from_background(client):
+    queue = client.portal.call(_subscribe, client.hub)
+    put(client, 500)
+    time.sleep(0.8)                                   # Hintergrund prüft alle 0,2 s
+    events = [e for e in client.portal.call(_drain, queue) if e["type"] == "weigh"]
+    assert events and events[-1]["station"] == 1 and events[-1]["batch_id"] is None
