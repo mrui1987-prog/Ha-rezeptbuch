@@ -279,6 +279,21 @@
           const extra = err.code === "resume_deviation" ? { confirm_deviation: true } : { confirm: true };
           return act(button, path, Object.assign({}, body || { station: ST }, extra));
         }
+      } else if (err.status === 409 && err.code === "stock_question") {
+        // Bestand (VC03-b, B5): Abbruch – Gewogenes abgezogen lassen oder zurückbuchen; „Zurück“ bricht nicht ab
+        const keep = await RB.dialog({ title: "Teig abbrechen – Bestand", text: err.message, buttons: [
+          { label: "Zurück", value: "back" },
+          { label: "Nein, zurückbuchen", value: "no" },
+          { label: "Ja, abgezogen lassen", value: "yes", kind: "primary" }] });
+        if (keep === "yes" || keep === "no") {
+          return act(button, path, Object.assign({}, body || { station: ST }, { stock_keep: keep === "yes" }));
+        }
+      } else if (err.status === 409 && err.code === "stock_short") {
+        // Bestand (VC03-b, B6): Start trotz zu wenig Bestand nur mit Bestätigung
+        const ok = await RB.dialog({ title: "Bestand reicht nicht", text: err.message, buttons: [
+          { label: "Abbrechen", value: false },
+          { label: "OK, trotzdem starten", value: true, kind: "primary" }] });
+        if (ok === true) return act(button, path, Object.assign({}, body || { station: ST }, { confirm_stock: true }));
       } else if (err.status === 400 || err.status === 422) {
         await RB.dialog({ title: "Nicht möglich", text: err.message });
       } else if (err.status && err.status < 500) {

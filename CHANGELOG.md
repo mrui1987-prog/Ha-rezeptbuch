@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.10.11 – Bestand: Rückfragen am Tablet (in Entwicklung)
+
+- **Station:** Beim Abbrechen eines Teigs mit schon abgezogenem Gewogenen erscheint jetzt ein Fenster „Gewogenes vom Bestand abgezogen lassen?“ mit „Ja, abgezogen lassen“, „Nein, zurückbuchen“ und „Zurück“ (Praxisprüfung Michael 22:07: bisher nur kurz als blauer Text unten, ohne Tasten, der Abbruch lief nicht durch). Ebenso beim Start die Rückfrage „Bestand reicht nicht“ mit „OK, trotzdem starten“ und „Abbrechen“
+
 ## 0.10.10 – Modul 10: Balken, Kompaktansicht, Zutat überspringen (in Entwicklung)
 
 - **Soll-Strich wird grün**, sobald der Balken über der Toleranz rot ist – er bleibt so sichtbar (normale und Kompaktansicht)
