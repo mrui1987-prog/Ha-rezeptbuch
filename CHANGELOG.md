@@ -4,6 +4,8 @@
 
 - **Soll-Strich wird grün**, sobald der Balken über der Toleranz rot ist – er bleibt so sichtbar (normale und Kompaktansicht)
 - **Feinbalken** von Anfang an sichtbar (vorher erst kurz vor dem Soll eingeblendet – das wirkte verzögert)
+- **„Zutat überspringen“** statt „Zutat übergehen“: die Zutat bleibt offen, es geht mit der nächsten offenen weiter; die übersprungene kommt am Ende wieder. Dafür geht es nach jeder Quittung hinter der quittierten Zutat weiter und erst danach wieder vorn (Server, Modul 09; im normalen Ablauf unverändert)
+- **Endgültig weglassen** nur noch in der Übersicht (Zutat antippen → „Weglassen“, Rückfrage); im Protokoll „weggelassen“ statt „übergangen“; Prüfseite „Ablauf“: Taste „Weglassen“
 - **Grobbalken:** das Soll liegt bei 2/3 der Skala (vorher am rechten Rand); bei sehr kleinem Soll mit großer Toleranz reicht die Skala bis Soll + 2 × Toleranz
 
 ## 0.10.8 – Rückfragefenster auf Höhe der Taste (in Entwicklung)

@@ -448,3 +448,34 @@ def test_list_batches(conn, recipes, runner, hub):
     listed = batches.list_batches(conn)
     assert [(b["id"], b["status"], b["owner_station"]) for b in listed] == [(batch["id"], "running", 1)]
     assert batches.list_batches(conn, station=2) == []
+
+
+def test_skipped_item_comes_back_at_the_end(conn, recipes, runner, hub):
+    """Überspringen (Oberfläche: andere Zutat wählen): weiter hinter der quittierten Zutat, die übersprungene
+    kommt zum Schluss wieder (Michael 19.11.2026, 21:18)."""
+    order = orders.create_order(conn, total(recipes["brot"], 1620))
+    hub.put(1, 0)
+    batch = start(conn, runner, order["id"])
+    targets = {i["position"]: i["rest_target_g"] for i in batch["items"]}
+    assert len(targets) >= 3
+    batch = batches.select_item(conn, batch["id"], st(position=2), runner)      # 1 überspringen
+    load = targets[2]
+    hub.put(1, load)
+    batch = batches.ack_weighed(conn, batch["id"], st(), runner)
+    assert batch["current_position"] == 3                                       # nicht zurück auf 1
+    load += targets[3]
+    hub.put(1, load)
+    batch = batches.ack_weighed(conn, batch["id"], st(), runner)
+    assert batch["current_position"] == (4 if 4 in targets else 1)
+    assert not batch["items"][0]["done"]
+
+
+def test_skip_text_is_weglassen(conn, recipes, runner, hub):
+    order = orders.create_order(conn, total(recipes["brot"], 1620))
+    hub.put(1, 0)
+    batch = start(conn, runner, order["id"])
+    with pytest.raises(ConflictError) as err:
+        batches.skip_item(conn, batch["id"], st(), runner)
+    assert "weglassen" in str(err.value)
+    batch = batches.skip_item(conn, batch["id"], st(confirm=True), runner)
+    assert batch["items"][0]["ack_type"] == "skipped" and batch["items"][0]["ack_text"] == "weggelassen"

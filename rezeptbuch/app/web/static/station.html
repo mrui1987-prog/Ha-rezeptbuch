@@ -103,7 +103,7 @@
   .actions { display: flex; flex-wrap: wrap; gap: 1vw; margin-top: 1.8vh; }
   .actions button { font-size: 2.8vh; min-height: 8vh; padding: 0 1.6vw; font-weight: 600; }
   .actions button.wide { min-width: 18vw; }
-  /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Übergehen gleich groß) */
+  /* zwei große Tasten direkt unter dem Wiegebereich (Quittieren und Zutat überspringen gleich groß) */
   .main-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; margin-top: 1vh; }
   .main-actions button { font-size: 4vh; font-weight: 700; min-height: 10.5vh; }
   .main-actions button.skip { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -531,7 +531,14 @@
     const area = el("div", null, "weigh-area");
     main.appendChild(area);
     const bigRow = el("div", null, "main-actions");
-    const skipBtn = () => btn("Zutat übergehen", "skip", (bt) => act(bt, "batches/" + b.id + "/skip", { station: ST, position: cur.position }));
+    // „Zutat überspringen“: Zutat bleibt offen, weiter mit der nächsten offenen; sie kommt am Ende wieder (Michael 21:18).
+    // Endgültig weglassen nur noch in der Übersicht.
+    const skipBtn = () => btn("Zutat überspringen", "skip", (bt) => {
+      const open = b.items.filter((i) => !i.done && i.position !== cur.position);
+      const next = open.find((i) => i.position > cur.position) || open[0];
+      if (!next) { info("Keine andere offene Zutat – zum Weglassen die Übersicht nutzen."); return; }
+      act(bt, "batches/" + b.id + "/select", { station: ST, position: next.position });
+    });
 
     if (cur.kind === "units") {
       area.appendChild(el("div", cur.units_target + " × " + cur.unit_label + " zugeben (" + g(cur.units_target * cur.unit_size_g) + ")", "big-msg"));
@@ -644,14 +651,14 @@
 
   function viewOverview(main) {
     const b = S.mine;
-    main.appendChild(el("h2", "Übersicht – Antippen wählt eine offene Zutat", "view"));
+    main.appendChild(el("h2", "Übersicht – offene Zutat antippen: jetzt wiegen oder weglassen", "view"));
     const t = el("table", null, "list");
     const hr = el("tr");
     [["Pos."], ["Zutat"], ["Soll", "r"], ["Ist", "r"], ["Quittung"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
     t.appendChild(el("thead")).appendChild(hr);
     const body = el("tbody");
     b.items.forEach((it) => {
-      const tr = el("tr", null, it.done ? "done" : (it.position === b.current_position ? "current" : "pick"));
+      const tr = el("tr", null, it.done ? "done" : (it.position === b.current_position ? "current pick" : "pick"));
       tr.appendChild(el("td", it.position));
       let name = (it.item_type === "sub_recipe" ? "+ " : "") + it.name;
       if (it.unit_label && it.units_target) name += " (" + it.units_target + " × " + it.unit_label + " + " + g(it.rest_target_g) + ")";
@@ -659,10 +666,18 @@
       tr.appendChild(el("td", g(it.target_g), "r"));
       tr.appendChild(el("td", it.done ? g(it.actual_g) : "", "r"));
       tr.appendChild(el("td", it.done ? (it.ack_text || "") + (it.station_id ? " · W" + it.station_id : "") : (it.blocked ? "wartet" : "")));
-      if (!it.done && it.position !== b.current_position) {
+      if (!it.done) {
+        // Antippen: jetzt wiegen oder endgültig weglassen (Rückfrage kommt vom Server)
         tr.addEventListener("click", async () => {
-          const r = await act(null, "batches/" + b.id + "/select", { station: ST, position: it.position });
-          if (r) { S.view = "weigh"; render(); }
+          const choice = await RB.dialog({ title: it.name, buttons: [{ label: "Abbrechen", value: null },
+            { label: "Weglassen", value: "skip" },
+            ...(it.position !== b.current_position ? [{ label: "Jetzt wiegen", value: "select", kind: "primary" }] : [])] });
+          if (choice === "select") {
+            const r = await act(null, "batches/" + b.id + "/select", { station: ST, position: it.position });
+            if (r) { S.view = "weigh"; render(); }
+          } else if (choice === "skip") {
+            await act(null, "batches/" + b.id + "/skip", { station: ST, position: it.position });
+          }
         });
       }
       body.appendChild(tr);

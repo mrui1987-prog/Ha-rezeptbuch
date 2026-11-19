@@ -35,7 +35,7 @@ ACK_TEXT = {
     "hand": "Handzugabe",
     "sub_checked": "abgehakt",
     "sub_done": "Unterrezept gewogen",
-    "skipped": "übergangen",
+    "skipped": "weggelassen",
 }
 
 
@@ -203,9 +203,17 @@ def _open_item(conn: sqlite3.Connection, batch_id: int, payload, current) -> sql
     return item
 
 
-def _next_position(conn: sqlite3.Connection, batch_id: int) -> int | None:
-    """Nächste offene Zutat: zuerst die nicht wartenden, sonst eine wartende Unterrezept-Zeile."""
+def _next_position(conn: sqlite3.Connection, batch_id: int, after: int | None = None) -> int | None:
+    """Nächste offene Zutat: zuerst die nicht wartenden, sonst eine wartende Unterrezept-Zeile.
+
+    Mit ``after`` (Position der gerade erledigten Zutat) geht es hinter ihr weiter und erst am
+    Ende wieder vorn – so kommt eine übersprungene Zutat zum Schluss wieder dran (Michael
+    19.11.2026, 21:18). Im normalen Ablauf von oben nach unten ändert das nichts.
+    """
     open_items = [i for i in _item_rows(conn, batch_id) if i["ack_type"] is None]
+    if after is not None:
+        open_items = ([i for i in open_items if i["position"] > after]
+                      + [i for i in open_items if i["position"] <= after])
     for item in open_items:
         if not _blocked(item):
             return item["position"]
@@ -232,7 +240,7 @@ def _complete(conn: sqlite3.Connection, row, item, ack_type: str, actual_g, stat
         # Bestand (VC03-b, B4): Ist abziehen; nach Bedarf (Ist leer) und Unterrezept-Zeilen nichts
         stock.consume_in_tx(conn, item["raw_material_id"], actual_g, batch_id=row["id"], batch_item_id=item["id"],
                             station=station)
-    nxt = _next_position(conn, row["id"])
+    nxt = _next_position(conn, row["id"], after=item["position"])
     if nxt is None:
         conn.execute("UPDATE batch SET status = 'done', finished_at = ?, current_position = NULL WHERE id = ?",
                      (now, row["id"]))
@@ -482,14 +490,15 @@ def ack_hand(conn, batch_id: int, payload, runner=None, *, now: str | None = Non
 
 
 def skip_item(conn, batch_id: int, payload, runner=None, *, now: str | None = None) -> dict:
-    """Zutat übergehen, nur mit Bestätigung (M09-12)."""
+    """Zutat endgültig weglassen, nur mit Bestätigung (M09-12; Bezeichnung „weglassen“ seit 19.11.2026, 21:18)."""
     now = now or utc_now()
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
     _refuse_flow(runner, station)
     item = _open_item(conn, batch_id, payload, row["current_position"])
-    require_confirm(payload, f"Zeile {item['position']} wirklich übergehen?")
+    require_confirm(payload, f"{_item_dict(item)['name'] or 'Zeile ' + str(item['position'])} weglassen? "
+                             "Die Zutat wird in diesem Teig nicht mehr abgefragt und als „weggelassen“ protokolliert.")
     with transaction(conn):
         _event(conn, item["id"], "skipped", station, now)
         _complete(conn, row, item, "skipped", None, station, now)

@@ -90,7 +90,7 @@ Jedes Dashboard kann jedes Rezept auswählen. Gesperrte Rezepte und alte Rezeptv
 - Tasten:
   - **Quittieren** (nur aktiv, wenn grün)
   - **Tara**
-  - **Zutat übergehen** (mit Rückfrage, wird im Protokoll vermerkt)
+  - **Zutat überspringen** (bleibt offen, kommt am Ende wieder; seit 19.11.2026). Endgültig **weglassen** über die Übersicht (mit Rückfrage, im Protokoll „weggelassen“)
   - **Übersicht** (alle Zutaten des Rezepts mit Haken für erledigte)
 - **Waagenausfall:** Kurze Aussetzer werden ignoriert. Kommen 45 Sekunden lang keine Werte, geht der Auftrag automatisch auf Pause und das Tablet zeigt einen Hinweis.
 - **Sollhandzugabe:** Zutaten mit Toleranz 0 werden nicht gewogen, nur quittiert (z. B. bereits vorbereitetes Quellstück). Anzeige mit gelbem Hinweis „Handzugabe“.
