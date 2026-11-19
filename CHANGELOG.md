@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.5 – Modul 09: Null beim Behälter wiegen zuverlässig (in Entwicklung)
+
+- **„Behälter wiegen“ und „Behälter wechseln“:** Nach `tare` wartet die Software 2 s, bevor sie `zero` sendet. Bestätigt die Waage die Null nicht innerhalb von 2 s, wird `zero` bis zu zweimal wiederholt (Michael, Praxisprüfung: Null musste mehrfach von Hand gedrückt werden). Klappt es trotzdem nicht, steht da „Waage leer lassen und an der Waage Null drücken“
+- Hinweis während des Nullens: „Waage wird genullt – bitte warten“
+
 ## 0.10.4 – Modul 10: Wiegeansicht passt auf iPad, Galaxy Tab A und iPhone (in Entwicklung)
 
 - **Name der Zutat wurde abgeschnitten** (Praxisprüfung, iPad quer, Galaxy Tab A, iPhone 16 Pro quer): Abstände und Soll/Ist-Ziffern etwas kleiner, nichts in der Wiegeansicht wird mehr gestaucht; passt etwas nicht, lässt sich die Fläche verschieben statt abzuschneiden

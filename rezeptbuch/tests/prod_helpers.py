@@ -32,6 +32,7 @@ class FakeHub:
         self.events: list[dict] = []
         self.commands: list[tuple[int, str]] = []
         self.ignore_commands = False
+        self.zero_misses = 0        # so viele ``zero`` ignoriert die Waage (KERN nach Tara noch unruhig)
 
     def put(self, station: int, weight_g: int | None, stable: bool = True, status: str = "ok") -> None:
         self.gross[station] = weight_g
@@ -70,6 +71,8 @@ class FakeHub:
         shown = self.display(station)
         if cmd == "tare" and shown is not None and shown > 0 and self.status[station] == "ok":
             self.offset[station] = self.offset.get(station, 0) + shown
+        elif cmd == "zero" and self.zero_misses > 0:
+            self.zero_misses -= 1
         elif cmd == "zero" and (shown is None or shown < 0 or abs(shown) <= 50):
             self.offset[station] = 0
         return "sent"

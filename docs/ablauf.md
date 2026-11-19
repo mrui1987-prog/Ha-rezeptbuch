@@ -98,7 +98,7 @@ Nach jeder Quittung (und beim Start, beim „Weiter“, auf Tastendruck):
 
 Taste **„Behälter wiegen“**, **jederzeit** während der Charge (geändert 12:22, Michael: „Vielleicht brauche ich einen anderen Behälter“):
 1. Hinweis „Waage leeren“. Die Software wartet auf eine leere Waage: stabil bei ~0 (|Wert| ≤ 50 g) oder `-----` (tarierter Behälter abgenommen).
-2. Befehl `tare`, 1 s später `zero` (Mindestabstand Modul 07). Tara auf leerer Waage löscht eine alte Tara, Null gleicht die Drift aus.
+2. Befehl `tare`, **2 s Pause**, dann `zero` (geändert 19.11.2026, 17:14, Michael: `zero` direkt nach `tare` wurde an der KERN mehrfach nicht ausgeführt). Hinweis „Waage wird genullt – bitte warten“. Die Software wartet 2 s auf die Bestätigung (stabil, ohne Tara, Anzeige ≤ ±5 g) und sendet `zero` sonst erneut, **höchstens zweimal**. Bleibt die Null aus: Hinweis „Waage leer lassen und an der Waage Null drücken“; die Null von Hand wird erkannt. Tara auf leerer Waage löscht eine alte Tara, Null gleicht die Drift aus.
 3. Hinweis „Behälter jetzt aufstellen“ mit Taste **„Ohne Behälter“**.
 4. Wert stabil über 50 g → Software speichert ihn als **Behältergewicht** (`batch.container_g`) und sendet erneut `tare` (Phasen wie 6.2). „Ohne Behälter“ → `container_g = 0`, keine weitere Tara.
 5. Das Behältergewicht wird angezeigt und ist **von Hand änderbar**. Das ändert nur den gespeicherten Wert (Höchstlast, Protokoll), nicht das Wiegen.
@@ -113,7 +113,7 @@ Mitten in einer Zutat beginnt die Zutat im neuen Behälter **wieder bei 0**; das
 
 Für Mengen, die nicht auf einmal in den Behälter passen. Taste **„Behälter wechseln“**, während einer Zutat oder zwischen zwei Zutaten:
 1. Die Software speichert die bisher gewogene Menge der aktuellen Zutat als **Teilmenge** (nur bei Status `ok` und stabil, sonst wartet sie). Die Zutat bleibt offen. Zwischen zwei Zutaten gibt es keine Teilmenge.
-2. Hinweis „Behälter abnehmen und ausleeren“. Sobald die Waage das Abnehmen meldet (`-----`, Last kleiner als Tara), sendet die Software **`tare`, 1 s später `zero`** (geändert 12:22, Michael; wie bei „Behälter wiegen“; `zero` bei `-----` erlaubt, Z07-2).
+2. Hinweis „Behälter abnehmen und ausleeren“. Sobald die Waage das Abnehmen meldet (`-----`, Last kleiner als Tara), sendet die Software **`tare` und `zero` mit Pause und Wiederholung wie bei „Behälter wiegen“** (6.2a Schritt 2; geändert 12:22 und 17:14, Michael; `zero` bei `-----` erlaubt, Z07-2).
 3. Hinweis „Leeren Behälter aufstellen“. Wert stabil über 50 g → Software merkt ihn als **Behältergewicht** (`container_g`) und sendet `tare` (Phasen wie 6.2).
 4. Weiter mit dem Rest: **Ist = Summe der Teilmengen + aktuelle Anzeige − Tara-Bezug**, Rest = Soll − Teilmengen. Auto-Quittung und Toleranz gelten für die Gesamtmenge.
 5. Nach dem Ausleeren beginnt die **Tara-Summe neu** beim leeren Behälter (Höchstlast 6.4, Lastprüfung K09-12).
@@ -282,6 +282,7 @@ docs/ablauf.md                               dieses Dokument (ins Repo mit C1)
 | 19.11.2026, 12:17 | K09-14 Behälter wechseln neu (Michael): Teilmenge, Ausleeren, `zero` bei `-----`, leerer Behälter, Tara, Rest. Abschnitte 6.2b, 11, 12, 15 angepasst. |
 | 19.11.2026, 12:22 | Michael: „Behälter wiegen“ jederzeit (mit Teilmenge mitten in einer Zutat); beim Behälterwechsel nach dem Abnehmen `tare` + `zero`. Abschnitte 6.2a, 6.2b, 15 angepasst. |
 | 19.11.2026, 12:25 | **Konzept freigegeben (Michael).** Nächster Schritt: Teil C1 (0.9.0) auf Zweig `modul09`. |
+| 19.11.2026, 17:14 | Michael: beim Behälter wiegen/wechseln Pause zwischen `tare` und `zero`, `zero` bis zu zweimal wiederholen, wenn nicht bestätigt. Abschnitte 6.2a, 6.2b. |
 
 ## 19. Umsetzung Teil C1 (0.9.0) – Ergänzungen und Abweichungen
 

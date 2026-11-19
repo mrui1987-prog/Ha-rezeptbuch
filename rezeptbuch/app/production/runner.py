@@ -64,6 +64,7 @@ class ContainerFlow:
     """Behälter wiegen (``weigh``) oder wechseln (``change``) an einer Station (K09-13, K09-14).
 
     Schritte: ``empty`` (Waage leeren) bzw. ``remove`` (Behälter abnehmen und ausleeren) →
+    ``zeroing`` (Tara, Pause, Null, Null bis zu zweimal wiederholen, Michael 17:14) →
     ``place`` (Behälter aufstellen) → bei Abweichung zum bekannten Behältergewicht ``confirm``.
     """
     kind: str
@@ -71,10 +72,15 @@ class ContainerFlow:
     step: str
     sent_at: float | None = None
     measured_g: int | None = None
+    zero_sent: int = 0              # wie oft ``zero`` im Schritt ``zeroing`` gesendet wurde
+    zero_at: float | None = None    # Zeit des letzten ``zero``
+    zero_failed: bool = False       # Null nach allen Versuchen nicht bestätigt: von Hand nullen
 
     HINTS = {
         ("weigh", "empty"): "Waage leeren",
         ("change", "remove"): "Behälter abnehmen und ausleeren",
+        ("weigh", "zeroing"): "Waage wird genullt – bitte warten",
+        ("change", "zeroing"): "Waage wird genullt – bitte warten",
         ("weigh", "place"): "Behälter jetzt aufstellen",
         ("change", "place"): "Leeren Behälter aufstellen",
         ("weigh", "confirm"): "Anderer Behälter? Bitte bestätigen",
@@ -83,6 +89,8 @@ class ContainerFlow:
 
     @property
     def hint(self) -> str:
+        if self.step == "zeroing" and self.zero_failed:
+            return "Waage leer lassen und an der Waage Null drücken"
         return self.HINTS.get((self.kind, self.step), "")
 
 

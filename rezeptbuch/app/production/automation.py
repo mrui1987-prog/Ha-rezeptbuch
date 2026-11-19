@@ -21,7 +21,10 @@ from .weigh import EMPTY_LIMIT_G, capacity_warning, zone
 
 log = logging.getLogger("rezeptbuch.production")
 
-PLACE_DELAY_S = 2.0     # nach Tara + Null (1 s Abstand in Add-on 2) erst dann auf den Behälter achten
+TARE_PAUSE_S = 2.0      # Pause zwischen Tara und Null, damit die Waage die Tara verarbeitet (Michael 17:14)
+ZERO_WAIT_S = 2.0       # so lange auf die Bestätigung der Null warten, dann erneut senden
+ZERO_REPEATS = 2        # Null höchstens zweimal wiederholen (Michael 17:14)
+ZERO_OK_G = 5           # Null bestätigt: Waage stabil, ohne Tara, Anzeige höchstens ±5 g
 
 
 def _active_batch(conn: sqlite3.Connection, station: int):
@@ -116,15 +119,33 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
                 sample.ok and sample.stable and abs(sample.weight_g) <= EMPTY_LIMIT_G
                 and (gross is None or gross <= EMPTY_LIMIT_G))
         if ready:
-            # Tara, 1 s später Null (Add-on 2 hält den Abstand ein, K09-14 Michael 12:22)
             runner.send(station, "tare")
-            runner.zero(station)
+            sw.clear()
+            flow.step, flow.sent_at = "zeroing", now
+            flow.zero_sent, flow.zero_at, flow.zero_failed = 0, None, False
+        return
+    if flow.step == "zeroing":
+        if flow.zero_sent == 0:
+            if now - flow.sent_at >= TARE_PAUSE_S:
+                runner.zero(station)
+                flow.zero_sent, flow.zero_at = 1, now
+            return
+        if _zero_confirmed(sample):
             sw.clear()
             flow.step, flow.sent_at = "place", now
+            log.info("Waage %d: Null bestätigt nach %d Befehl(en)", station, flow.zero_sent)
+            return
+        if now - flow.zero_at >= ZERO_WAIT_S:
+            if flow.zero_sent <= ZERO_REPEATS:
+                runner.zero(station)
+                flow.zero_sent, flow.zero_at = flow.zero_sent + 1, now
+                log.info("Waage %d: Null nicht bestätigt, %d. Wiederholung", station, flow.zero_sent - 1)
+            elif not flow.zero_failed:
+                flow.zero_failed = True
+                log.warning("Waage %d: Null nach %d Versuchen nicht bestätigt – bitte von Hand", station,
+                            flow.zero_sent)
         return
     if flow.step == "place":
-        if flow.sent_at is not None and now - flow.sent_at < PLACE_DELAY_S:
-            return
         if sample.ok and sample.stable and sample.net is not True and sample.weight_g > EMPTY_LIMIT_G:
             weight = sample.weight_g
             row = conn.execute("SELECT container_g FROM batch WHERE id = ?", (flow.batch_id,)).fetchone()
@@ -135,6 +156,12 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             batches.save_container(conn, flow.batch_id, station, runner, weight, "gewogen")
             runner.set_reference(station)        # Tara mit dem Behälter
             log.info("Waage %d: Behälter %d g", station, weight)
+
+
+def _zero_confirmed(sample) -> bool:
+    """Die Waage zeigt nach ``zero`` stabil brutto 0 (keine Tara aktiv)."""
+    return bool(sample.ok and sample.stable and sample.net is not True and sample.weight_g is not None
+                and abs(sample.weight_g) <= ZERO_OK_G)
 
 
 def _weigh_message(conn, runner: ProductionRunner, station: int, row) -> dict:
