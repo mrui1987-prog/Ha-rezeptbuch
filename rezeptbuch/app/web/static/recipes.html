@@ -83,6 +83,7 @@
   <button type="button" id="nav-groups">Gruppen</button>
   <button type="button" id="nav-io">Import/Export</button>
   <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
+  <a id="nav-planner" href="#" data-next="planer">Planer</a>
   <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
   <a id="nav-production" href="#" data-next="ablauf">Ablauf</a>
   <span class="grow"></span>
@@ -206,6 +207,16 @@
       <div id="portion-msg" class="msg hidden" role="alert"></div>
     </div>
 
+    <div id="planning-panel" class="panel">
+      <h2>Planung</h2>
+      <p class="small">Für den Planer (keine neue Version). Wird <b>nur mit der Taste in diesem Kasten</b> gespeichert.</p>
+      <div><label class="inline"><input id="pl-preproduce" type="checkbox"> darf vorproduziert werden (Planer bietet Vorproduktion für mehrere Tage an)</label></div>
+      <div><label class="inline">Abwiegezuschlag <input id="pl-surcharge" type="text" inputmode="decimal" style="width:5rem" placeholder="leer"> %</label>
+        <span class="small">z. B. 1,2 – Vorgabe für die Plus-Taste im Planer, dort änderbar; 0 bis 20 %, eine Nachkommastelle</span></div>
+      <div class="toolbar"><button type="button" id="pl-save">Planung speichern</button></div>
+      <div id="pl-msg" class="msg hidden" role="alert"></div>
+    </div>
+
     <div id="version-panel" class="panel">
       <h2>Versionen</h2>
       <div class="scroll"><table>
@@ -282,6 +293,28 @@
       <div id="io-export-msg" class="msg hidden" role="alert"></div>
     </div>
     <div class="panel">
+      <h2>Verkaufsartikel aus der Vectron-Artikelliste importieren (.xlsx)</h2>
+      <p class="small">Artikelliste aus der Kasse (Spalten Nummer, Name, Warengruppe). Zuordnung über die Kassennummer.
+        Neue Artikel werden angelegt (Warengruppe 12 mit 12, 13 mit 14 Stück je Ganzes), geänderte Namen übernommen.
+        Artikel, die in den gewählten Warengruppen nicht mehr in der Liste stehen, werden als „nicht mehr in der Kasse“
+        markiert – nie gelöscht, Stückliste bleibt. Überschriften (#), leere Zeilen und Warengruppe 0 werden übersprungen.
+        Erst „Probelauf“, Warengruppen wählen, dann „Importieren“.</p>
+      <input id="va-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div id="va-groups" class="hidden"></div>
+      <div class="toolbar">
+        <button type="button" id="va-check">Probelauf</button>
+        <button type="button" id="va-run" disabled>Importieren</button>
+      </div>
+      <div id="va-msg" class="msg hidden" role="alert"></div>
+      <div id="va-report"></div>
+    </div>
+    <div class="panel">
+      <h2>Verkaufsartikel exportieren (.xlsx)</h2>
+      <p class="small">Blätter „Artikel“ und „Stückliste“ (alle Artikel, auch „nicht mehr in der Kasse“).</p>
+      <div class="toolbar"><button type="button" id="va-export">Export herunterladen</button></div>
+      <div id="va-export-msg" class="msg hidden" role="alert"></div>
+    </div>
+    <div class="panel">
       <h2>Rohstoffe aus CSV importieren</h2>
       <p class="small">Format wie der CSV-Export (Semikolon, Kopfzeile). Zuordnung über die Nummer, ohne Nummer über
         den Namen; sonst wird der Rohstoff neu angelegt. <b>Vorhandene Rohstoffe werden mit den Werten der Datei
@@ -345,6 +378,7 @@ let searchTimer = null;
 
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-calc").href = BASE + "admin/berechnung";
+$("nav-planner").href = BASE + "admin/planer";
 $("nav-scales").href = BASE + "admin/waagen";
 $("nav-production").href = BASE + "admin/ablauf";
 
@@ -517,6 +551,7 @@ async function goPage(ev) {
 }
 $("nav-raw").addEventListener("click", goPage);
 $("nav-calc").addEventListener("click", goPage);
+$("nav-planner").addEventListener("click", goPage);
 $("nav-scales").addEventListener("click", goPage);
 $("nav-production").addEventListener("click", goPage);
 window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
@@ -777,7 +812,8 @@ function renderEditor() {
   $("f-internal-note").value = rec.internal_note;
   show("dirty", dirty); showPortionDirty();
   renderStatus(); renderSteps(); renderItems(); renderSums(); renderPieces(); renderBatches(); renderVersions();
-  show("portion-panel", !isNew); show("version-panel", !isNew);
+  show("portion-panel", !isNew); show("version-panel", !isNew); show("planning-panel", !isNew);
+  renderPlanning();
 }
 
 function renderStatus() {
@@ -1652,25 +1688,113 @@ $("io-run").addEventListener("click", async () => {
   }
 });
 
-async function downloadFile(path, fallback, okText) {
-  showMsg("io-export-msg", "");
+async function downloadFile(path, fallback, okText, msgId) {
+  const target = msgId || "io-export-msg";
+  showMsg(target, "");
   try {
     const res = await api(path, { raw: true });
     const blob = await res.blob();
     const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url; link.download = match ? match[1] : "rezepte.xlsx";
+    link.href = url; link.download = match ? match[1] : (fallback || "rezepte.xlsx");
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    showMsg("io-export-msg", okText, "info");
-  } catch (err) { handleError(err, "io-export-msg"); }
+    showMsg(target, okText, "info");
+  } catch (err) { handleError(err, target); }
 }
 $("io-export").addEventListener("click", () => downloadFile(
   "admin/recipes/export.xlsx" + ($("io-archived").checked ? "?include_archived=true" : ""), "rezepte.xlsx", "Export erstellt."));
 $("io-sample").addEventListener("click", () => downloadFile(
   "admin/recipes/template.xlsx", "mustervorlage_rezepte.xlsx",
   "Mustervorlage erstellt. Die gelben Musterzeilen überspringt der Import; eigene Zeilen einfach darunter ergänzen."));
+
+// ---- Verkaufsartikel: Vectron-Import und Export (Modul 10 C2, docs/planer.md 4) ---------------
+
+let vaFile = null, vaReport = null;
+
+function vaGroupsParam() {
+  const boxes = [...$("va-groups").querySelectorAll("input[type=checkbox]")];
+  if (!boxes.length) return "";
+  return "&groups=" + boxes.filter((b) => b.checked).map((b) => b.value).join(",");
+}
+function renderVaReport(report) {
+  vaReport = report;
+  const box = $("va-report"); box.textContent = "";
+  const c = report.counts;
+  box.appendChild(el("p", (report.imported ? "Importiert: " : "Probelauf: ") + c.new + " neu, " + c.changed + " geändert, "
+    + c.unchanged + " unverändert, " + c.returned + " wieder in der Kasse, " + c.missing + " nicht mehr in der Kasse. "
+    + "Übersprungen: " + c.skipped_headings + " Überschriften, " + c.skipped_empty + " leer, " + c.skipped_group_0 + " Warengruppe 0."));
+  const art = (a) => el("li", a.number + " " + a.name + (a.group !== undefined ? " (WG " + a.group + ")" : ""));
+  addList(box, "Neu (" + c.new + ")", report.new, art);
+  addList(box, "Geändert (" + c.changed + ")", report.changed, (a) => el("li", a.number + " " + a.old_name + " → " + a.name
+    + (a.old_group !== a.group ? " (WG " + a.old_group + " → " + a.group + ")" : "")));
+  addList(box, "Wieder in der Kasse (" + c.returned + ")", report.returned, art);
+  addList(box, "Nicht mehr in der Kasse (" + c.missing + ")", report.missing, art);
+  addList(box, "Gleicher Name, verschiedene Nummern", report.same_names, (s) => el("li", s.name + ": " + s.numbers.join(", ")));
+  const g = $("va-groups");
+  if (!report.imported) {
+    g.textContent = "";
+    g.appendChild(el("p", "Warengruppen (nur gewählte werden importiert und abgeglichen):", "small"));
+    report.groups.forEach((x) => {
+      const lab = el("label", null, "inline"); const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = x.group; cb.checked = x.selected;
+      cb.addEventListener("change", () => { $("va-run").disabled = true; showMsg("va-msg", "Auswahl geändert – bitte erneut „Probelauf“.", "info"); });
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(" WG " + x.group + " (" + x.count + ")  "));
+      g.appendChild(lab);
+    });
+    show("va-groups", report.groups.length > 0);
+  }
+  $("va-run").disabled = report.imported;
+}
+$("va-file").addEventListener("change", () => {
+  vaFile = $("va-file").files[0] || null; vaReport = null;
+  $("va-report").textContent = ""; $("va-groups").textContent = ""; show("va-groups", false);
+  $("va-run").disabled = true; showMsg("va-msg", "");
+});
+$("va-check").addEventListener("click", async () => {
+  showMsg("va-msg", "");
+  if (!vaFile) { showMsg("va-msg", "Bitte zuerst die Artikelliste (.xlsx) wählen."); return; }
+  $("va-check").disabled = true;
+  try { renderVaReport(await api("admin/articles/import?mode=check" + vaGroupsParam(), { method: "POST", file: vaFile })); }
+  catch (err) { $("va-report").textContent = ""; handleError(err, "va-msg"); }
+  finally { $("va-check").disabled = false; }
+});
+$("va-run").addEventListener("click", async () => {
+  if (!vaFile || !vaReport) return;
+  const c = vaReport.counts;
+  if (!(await ask(c.new + " neu, " + c.changed + " geändert, " + c.returned + " wieder in der Kasse, "
+    + c.missing + " nicht mehr in der Kasse.\nImportieren?", [{ label: "Importieren", value: true }]))) return;
+  $("va-run").disabled = true;
+  try {
+    renderVaReport(await api("admin/articles/import?mode=run" + vaGroupsParam(), { method: "POST", file: vaFile }));
+    showMsg("va-msg", "Import abgeschlossen. Stücklisten pflegen: Planer → Artikel.", "info");
+  } catch (err) { $("va-run").disabled = false; handleError(err, "va-msg"); }
+});
+$("va-export").addEventListener("click", () => downloadFile(
+  "admin/articles/export.xlsx", "verkaufsartikel.xlsx", "Export erstellt.", "va-export-msg"));
+
+// ---- Planung am Rezept (K10-P17, K10-P21) --------------------------------------------------
+
+function renderPlanning() {
+  showMsg("pl-msg", "");
+  if (!loaded) return;
+  $("pl-preproduce").checked = loaded.preproduce === true;
+  const t = loaded.weigh_surcharge_tenths;
+  $("pl-surcharge").value = t === null || t === undefined ? "" : String(t / 10).replace(".", ",");
+}
+$("pl-save").addEventListener("click", async () => {
+  if (!loaded) return;
+  $("pl-save").disabled = true;
+  try {
+    const fresh = await api("admin/recipes/" + loaded.id + "/planning", { method: "PUT",
+      body: { preproduce: $("pl-preproduce").checked, weigh_surcharge: $("pl-surcharge").value } });
+    loaded.preproduce = fresh.preproduce; loaded.weigh_surcharge_tenths = fresh.weigh_surcharge_tenths;
+    renderPlanning();
+    showMsg("pl-msg", "Planung gespeichert.", "info");
+  } catch (err) { handleError(err, "pl-msg"); }
+  finally { $("pl-save").disabled = false; }
+});
 
 // ---- Rohstoffe: CSV-Import und -Export (seit R1 hier, M03-20) ---------------------------------
 

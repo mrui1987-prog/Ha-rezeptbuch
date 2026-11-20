@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HA-Rezeptbuch – Planer</title>
+<style>
+  /* Planer (Modul 10 C2, docs/planer.md): Teil P-A = Verkaufsartikel und Stückliste; „Planen“ folgt mit P-B */
+  :root { color-scheme: light; }
+  html { background: #fafafa; }
+  body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
+  main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: .5rem 0 1rem; }
+  h2 { font-size: 1.2rem; margin: 1rem 0 .5rem; }
+  button { font-size: 1rem; padding: .5rem 1rem; margin: .2rem .4rem .2rem 0; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  input, select { font-size: 1rem; padding: .35rem .4rem; }
+  .hidden { display: none !important; }
+  #probe { background: #c62828; color: #fff; font-weight: bold; text-align: center; padding: .6rem; }
+  nav { display: flex; flex-wrap: wrap; gap: .3rem; background: #fff; border-bottom: 1px solid #ccc; padding: .4rem 1rem; }
+  nav a, nav button { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; margin: 0; }
+  nav .active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  nav .grow { flex: 1; }
+  .subnav { display: flex; gap: .3rem; margin-bottom: .8rem; }
+  .subnav button { margin: 0; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; }
+  .subnav button.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+  .msg { margin: .6rem 0; padding: .5rem .7rem; border-radius: 4px; white-space: pre-line; }
+  .msg.error { background: #fdecea; color: #8a1c13; border: 1px solid #f5c2bd; }
+  .msg.info { background: #e8f1fb; color: #14406b; border: 1px solid #b9d3ee; }
+  .filters { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; margin-bottom: .6rem; }
+  .bulk { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; background: #fff; border: 1px solid #ccc; border-radius: 5px; padding: .4rem .6rem; margin-bottom: .6rem; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border-bottom: 1px solid #ddd; padding: .4rem .5rem; text-align: left; vertical-align: middle; }
+  th { background: #f0f0f0; position: sticky; top: 0; }
+  tr.click { cursor: pointer; } tr.click:hover { background: #f5f8ff; }
+  tr.out td { color: #888; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .warn { color: #b45309; font-weight: bold; }
+  .small { font-size: .9rem; color: #555; }
+  .card { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: .5rem 1.2rem; align-items: center; margin: .4rem 0; }
+  .lines td input[type=number] { width: 6.5rem; }
+  .lines td input.item { width: 100%; min-width: 14rem; }
+  .sum { font-weight: bold; margin: .6rem 0; }
+  .note { background: #fff7e0; border: 1px solid #e6c56b; padding: .4rem .6rem; border-radius: 4px; margin: .4rem 0; }
+</style>
+</head>
+<body>
+<div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
+<nav>
+  <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
+  <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
+  <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
+  <a class="active" href="#" aria-current="page">Planer</a>
+  <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
+  <a id="nav-production" href="#" data-next="ablauf">Ablauf</a>
+  <span class="grow"></span>
+  <button type="button" id="nav-logout">Abmelden</button>
+</nav>
+<main>
+  <div class="subnav">
+    <button type="button" id="tab-plan">Planen</button>
+    <button type="button" id="tab-articles" class="active">Artikel</button>
+  </div>
+  <div id="msg" class="msg hidden" role="alert"></div>
+
+  <section id="view-plan" class="hidden">
+    <h1>Planen</h1>
+    <p class="note">Der Tagesplan („Jetzt planen“, Aufträge, Übersicht) kommt mit Teil P-B. Hier werden zuerst die
+      Verkaufsartikel und ihre Stücklisten gepflegt.</p>
+  </section>
+
+  <section id="view-list">
+    <h1>Verkaufsartikel</h1>
+    <div class="filters">
+      <input id="f-search" type="search" placeholder="Nummer oder Name" aria-label="Suche">
+      <select id="f-group" aria-label="Warengruppe"><option value="">alle Warengruppen</option></select>
+      <select id="f-status" aria-label="Status">
+        <option value="active">in der Kasse</option>
+        <option value="missing">nicht mehr in der Kasse</option>
+        <option value="all">alle</option>
+      </select>
+      <label><input id="f-nolines" type="checkbox"> ohne Stückliste</label>
+      <label><input id="f-notplanned" type="checkbox"> „nicht planen“</label>
+    </div>
+    <div class="bulk">
+      <span id="sel-count">0 ausgewählt</span>
+      <button type="button" id="b-disable" disabled>nicht planen</button>
+      <button type="button" id="b-enable" disabled>wieder planen</button>
+      <label>Stück je Ganzes <input id="b-ppw" type="number" min="1" max="1000" style="width:5rem" placeholder="leer"></label>
+      <button type="button" id="b-ppw-set" disabled>setzen</button>
+    </div>
+    <p class="small" id="list-info"></p>
+    <table>
+      <thead><tr>
+        <th><input id="sel-all" type="checkbox" aria-label="alle auswählen"></th>
+        <th class="num">Nr.</th><th>Name</th><th class="num">WG</th><th class="num">Stück/Ganzes</th>
+        <th class="num">Zeilen</th><th>Planen</th>
+      </tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+    <p class="small">Import und Export der Vectron-Artikelliste: Rezepte → Import/Export.</p>
+  </section>
+
+  <section id="view-edit" class="hidden">
+    <button type="button" id="edit-back">← Zur Liste</button>
+    <h1 id="e-title"></h1>
+    <div class="card">
+      <div class="row small" id="e-facts"></div>
+      <div class="row">
+        <label>Stück je Ganzes <input id="e-ppw" type="number" min="1" max="1000" style="width:6rem" placeholder="leer"></label>
+        <label><input id="e-plan" type="checkbox"> planen</label>
+      </div>
+      <div class="row"><label style="flex:1">Bemerkung <input id="e-note" type="text" maxlength="500" style="width:100%"></label></div>
+      <button type="button" id="e-save">Speichern</button>
+      <span class="small">Ist „Stück je Ganzes“ gesetzt, gilt die Stückliste für ein Ganzes (z. B. ganzer Kuchen), sonst für ein Stück.</span>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Stückliste <span class="small" id="l-per"></span></h2>
+      <div id="l-warn" class="note hidden"></div>
+      <table class="lines">
+        <thead><tr><th>Art</th><th>Rezept / Rohstoff</th><th>Menge</th><th></th></tr></thead>
+        <tbody id="lines"></tbody>
+      </table>
+      <div class="sum" id="l-sum"></div>
+      <button type="button" id="l-add-recipe">+ Rezept</button>
+      <button type="button" id="l-add-raw">+ Rohstoff</button>
+      <button type="button" id="l-save">Stückliste speichern</button>
+      <div class="row">
+        <label>Kopieren von Artikel-Nr. <input id="l-copy-no" type="number" min="1" style="width:7rem"></label>
+        <button type="button" id="l-copy">kopieren</button>
+      </div>
+    </div>
+  </section>
+</main>
+<datalist id="dl-recipes"></datalist>
+<datalist id="dl-raw"></datalist>
+
+<script>
+"use strict";
+
+// Adressen aus der Adresse dieser Seite (funktioniert auch hinter HA-Ingress)
+const BASE = location.pathname.replace(/\/admin(\/planer(\/[^\/]*)?)?\/?$/, "/");
+const API = BASE + "api/v1/";
+const SESSION_KEY = "rezeptbuch_admin_session";
+const $ = (id) => document.getElementById(id);
+
+let token = null;
+try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
+
+let articles = [];           // aktuelle Liste
+const selected = new Set();  // ausgewählte Artikel-IDs
+let art = null;              // Artikel im Editor
+let lines = [];              // Stückliste im Editor (Arbeitskopie)
+let linesDirty = false;
+let recipes = [];            // Rezepte für die Auswahl
+let raws = [];               // Rohstoffe für die Auswahl
+const pieceCache = {};       // Rezept-ID → Stückgewichte
+let searchTimer = null;
+
+$("nav-raw").href = BASE + "admin/rohstoffe";
+$("nav-recipes").href = BASE + "admin/rezepte";
+$("nav-calc").href = BASE + "admin/berechnung";
+$("nav-scales").href = BASE + "admin/waagen";
+$("nav-production").href = BASE + "admin/ablauf";
+
+function toLogin(next) {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* egal */ }
+  location.href = BASE + "admin/login" + (next === "rohstoffe" ? "" : "?next=" + (next || "planer"));
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (token) headers["X-Rezeptbuch-Session"] = token;
+  let body;
+  if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+  let res;
+  try {
+    res = await fetch(API + path, { method: opts.method || "GET", headers: headers, body: body });
+  } catch (e) {
+    const err = new Error("Keine Verbindung zum Rezeptserver."); err.status = 0; throw err;
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (!res.ok) {
+    let text = "Fehler " + res.status;
+    if (data && typeof data.detail === "string") text = data.detail;
+    else if (data && data.detail && data.detail.message) text = data.detail.message;
+    else if (data && data.message) text = data.message;
+    const err = new Error(text); err.status = res.status; err.data = data; throw err;
+  }
+  return data;
+}
+
+function showMsg(text, kind) {
+  const box = $("msg");
+  box.textContent = text || "";
+  box.className = "msg " + (kind || "error") + (text ? "" : " hidden");
+}
+function handleError(err) {
+  if (err.status === 401) { toLogin(); return; }
+  showMsg(err.message || "Unbekannter Fehler.");
+}
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+const fmtG = (g) => (g === null || g === undefined) ? "–" : g.toLocaleString("de-DE") + " g";
+
+async function checkSession(next) {
+  if (!token) { toLogin(next); return false; }
+  try { await api("admin/session"); return true; }
+  catch (err) { if (err.status === 401) { toLogin(next); return false; } return true; }
+}
+function leaveOk() {
+  return !linesDirty || confirm("Die Stückliste ist nicht gespeichert. Verwerfen?");
+}
+async function goTab(ev) {
+  ev.preventDefault();
+  const target = ev.currentTarget.href;
+  if (leaveOk() && await checkSession(ev.currentTarget.dataset.next)) { linesDirty = false; location.href = target; }
+}
+["nav-raw", "nav-recipes", "nav-calc", "nav-scales", "nav-production"].forEach((id) => $(id).addEventListener("click", goTab));
+window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
+window.addEventListener("beforeunload", (ev) => { if (linesDirty) { ev.preventDefault(); ev.returnValue = ""; } });
+$("nav-logout").addEventListener("click", async () => {
+  if (!leaveOk()) return;
+  try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }
+  linesDirty = false; toLogin();
+});
+
+function showView(name) {
+  $("view-plan").classList.toggle("hidden", name !== "plan");
+  $("view-list").classList.toggle("hidden", name !== "list");
+  $("view-edit").classList.toggle("hidden", name !== "edit");
+  $("tab-plan").classList.toggle("active", name === "plan");
+  $("tab-articles").classList.toggle("active", name !== "plan");
+  showMsg("");
+}
+$("tab-plan").addEventListener("click", () => { if (leaveOk()) { linesDirty = false; showView("plan"); } });
+$("tab-articles").addEventListener("click", () => { if (leaveOk()) { linesDirty = false; showView("list"); loadList(); } });
+
+// ---- Liste ------------------------------------------------------------------------
+
+async function loadGroups() {
+  const sel = $("f-group");
+  const keep = sel.value;
+  try {
+    const groups = await api("articles/groups");
+    sel.length = 1;
+    groups.forEach((g) => { const o = el("option", "WG " + g.group + " (" + g.count + ")"); o.value = g.group; sel.appendChild(o); });
+    sel.value = keep;
+  } catch (err) { handleError(err); }
+}
+
+async function loadList() {
+  const p = new URLSearchParams();
+  const q = $("f-search").value.trim();
+  if (q) p.set("q", q);
+  if ($("f-group").value) p.set("group", $("f-group").value);
+  p.set("status", $("f-status").value);
+  if ($("f-nolines").checked) p.set("without_lines", "true");
+  if ($("f-notplanned").checked) p.set("not_planned", "true");
+  try { articles = await api("articles?" + p.toString()); }
+  catch (err) { handleError(err); return; }
+  const ids = new Set(articles.map((a) => a.id));
+  [...selected].forEach((id) => { if (!ids.has(id)) selected.delete(id); });
+  renderList();
+}
+
+function renderList() {
+  const body = $("list"); body.textContent = "";
+  articles.forEach((a) => {
+    const tr = el("tr", null, "click" + (a.in_register ? "" : " out"));
+    const td0 = el("td"); const cb = el("input"); cb.type = "checkbox"; cb.checked = selected.has(a.id);
+    cb.addEventListener("click", (ev) => { ev.stopPropagation(); cb.checked ? selected.add(a.id) : selected.delete(a.id); updateBulk(); });
+    td0.appendChild(cb); td0.addEventListener("click", (ev) => ev.stopPropagation()); tr.appendChild(td0);
+    tr.appendChild(el("td", a.register_no, "num"));
+    const name = el("td", a.name);
+    if (!a.in_register) name.appendChild(el("span", " (nicht mehr in der Kasse)", "small"));
+    if (a.has_warning) name.appendChild(el("span", " ⚠", "warn"));
+    tr.appendChild(name);
+    tr.appendChild(el("td", a.register_group, "num"));
+    tr.appendChild(el("td", a.pieces_per_whole || "–", "num"));
+    tr.appendChild(el("td", a.line_count || "–", "num" + (a.line_count ? "" : " warn")));
+    tr.appendChild(el("td", a.plan_enabled ? "ja" : "nicht planen"));
+    tr.addEventListener("click", () => openArticle(a.id));
+    body.appendChild(tr);
+  });
+  $("list-info").textContent = articles.length + (articles.length === 1 ? " Artikel" : " Artikel");
+  $("sel-all").checked = articles.length > 0 && articles.every((a) => selected.has(a.id));
+  updateBulk();
+}
+function updateBulk() {
+  const n = selected.size;
+  $("sel-count").textContent = n + " ausgewählt";
+  ["b-disable", "b-enable", "b-ppw-set"].forEach((id) => { $(id).disabled = n === 0; });
+}
+$("sel-all").addEventListener("change", () => {
+  articles.forEach((a) => $("sel-all").checked ? selected.add(a.id) : selected.delete(a.id));
+  renderList();
+});
+$("f-search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 250); });
+["f-group", "f-status", "f-nolines", "f-notplanned"].forEach((id) => $(id).addEventListener("change", loadList));
+
+async function bulk(action, value) {
+  const body = { ids: [...selected], action: action };
+  if (action === "pieces_per_whole") body.value = value;
+  try {
+    const r = await api("admin/articles/bulk", { method: "POST", body: body });
+    showMsg(r.changed + (r.changed === 1 ? " Artikel geändert." : " Artikel geändert."), "info");
+    await loadList();
+  } catch (err) { handleError(err); }
+}
+$("b-disable").addEventListener("click", () => bulk("plan_disable"));
+$("b-enable").addEventListener("click", () => bulk("plan_enable"));
+$("b-ppw-set").addEventListener("click", () => {
+  const v = $("b-ppw").value.trim();
+  const value = v === "" ? null : Number(v);
+  const text = value === null ? "„Stück je Ganzes“ bei " + selected.size + " Artikel(n) leeren?"
+    : "„Stück je Ganzes“ = " + value + " bei " + selected.size + " Artikel(n) setzen?";
+  if (confirm(text)) bulk("pieces_per_whole", value);
+});
+
+// ---- Auswahllisten (Rezepte, Rohstoffe) ---------------------------------------------
+
+const recipeLabel = (r) => r.number + " " + r.name;
+const rawLabel = (m) => m.number + " " + m.name;
+
+async function loadChoices() {
+  try {
+    const [rs, ms] = await Promise.all([api("recipes?include_locked=true"), api("raw-materials")]);
+    recipes = rs; raws = ms;
+    const dr = $("dl-recipes"); dr.textContent = "";
+    recipes.forEach((r) => { const o = el("option"); o.value = recipeLabel(r); dr.appendChild(o); });
+    const dm = $("dl-raw"); dm.textContent = "";
+    raws.forEach((m) => { const o = el("option"); o.value = rawLabel(m); dm.appendChild(o); });
+  } catch (err) { handleError(err); }
+}
+function findByLabel(list, text, labelFn) {
+  const t = text.trim();
+  if (!t) return null;
+  const exact = list.find((x) => labelFn(x) === t);
+  if (exact) return exact;
+  const num = Number(t.split(" ")[0]);
+  return Number.isInteger(num) ? list.find((x) => x.number === num) || null : null;
+}
+async function pieceWeights(recipeId) {
+  if (!pieceCache[recipeId]) {
+    const r = await api("recipes/" + recipeId);
+    pieceCache[recipeId] = r.piece_weights || [];
+  }
+  return pieceCache[recipeId];
+}
+
+// ---- Artikel bearbeiten -------------------------------------------------------------
+
+async function openArticle(id) {
+  if (!leaveOk()) return;
+  try { art = await api("articles/" + id); }
+  catch (err) { handleError(err); return; }
+  linesDirty = false;
+  showView("edit");
+  renderArticle();
+}
+
+function renderArticle() {
+  $("e-title").textContent = art.register_no + " " + art.name;
+  const facts = $("e-facts"); facts.textContent = "";
+  facts.appendChild(el("span", "Warengruppe " + art.register_group));
+  facts.appendChild(el("span", art.in_register ? "in der Kasse" : "nicht mehr in der Kasse", art.in_register ? "" : "warn"));
+  facts.appendChild(el("span", "zuletzt Auftrag " + art.last_order_no));
+  $("e-ppw").value = art.pieces_per_whole || "";
+  $("e-plan").checked = art.plan_enabled;
+  $("e-note").value = art.note || "";
+  lines = art.lines.map((ln) => ({
+    kind: ln.kind, recipe_id: ln.recipe_id || null, raw_material_id: ln.raw_material_id || null,
+    text: ln.kind === "recipe" ? ln.recipe_number + " " + ln.name : ln.raw_number + " " + ln.name,
+    piece_weight_id: ln.piece_weight_id || null, amount_g: ln.amount_g, amount_pieces: ln.amount_pieces,
+    mode: ln.kind === "recipe" ? (ln.piece_weight_id ? "piece" : "g") : (ln.amount_pieces ? "pcs" : "g"),
+    unit_size_g: ln.unit_size_g || null, piece_weight_g: ln.piece_weight_g || null, warning: ln.warning,
+  }));
+  $("l-warn").classList.toggle("hidden", !art.warnings.length);
+  $("l-warn").textContent = art.warnings.join("\n");
+  renderLines();
+}
+
+$("e-save").addEventListener("click", async () => {
+  const v = $("e-ppw").value.trim();
+  const body = { pieces_per_whole: v === "" ? null : Number(v), plan_enabled: $("e-plan").checked, note: $("e-note").value };
+  try {
+    const fresh = await api("admin/articles/" + art.id, { method: "PATCH", body: body });
+    art.pieces_per_whole = fresh.pieces_per_whole; art.plan_enabled = fresh.plan_enabled; art.note = fresh.note;
+    art.per = fresh.per;
+    $("l-per").textContent = "(je " + art.per + ")";
+    showMsg("Gespeichert.", "info");
+  } catch (err) { handleError(err); }
+});
+
+function lineGrams(ln) {
+  if (ln.kind === "recipe") return ln.mode === "piece" ? ln.piece_weight_g : ln.amount_g;
+  if (ln.mode === "g") return ln.amount_g;
+  return ln.unit_size_g && ln.amount_pieces ? ln.amount_pieces * ln.unit_size_g : null;
+}
+
+function renderLines() {
+  $("l-per").textContent = "(je " + art.per + ")";
+  const body = $("lines"); body.textContent = "";
+  lines.forEach((ln, i) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", ln.kind === "recipe" ? "Rezept" : "Rohstoff"));
+
+    const tdItem = el("td");
+    const inp = el("input", null, "item");
+    inp.setAttribute("list", ln.kind === "recipe" ? "dl-recipes" : "dl-raw");
+    inp.value = ln.text || ""; inp.placeholder = "Nummer oder Name";
+    inp.addEventListener("change", async () => {
+      linesDirty = true;
+      if (ln.kind === "recipe") {
+        const r = findByLabel(recipes, inp.value, recipeLabel);
+        ln.recipe_id = r ? r.id : null; ln.text = r ? recipeLabel(r) : inp.value;
+        ln.piece_weight_id = null; ln.piece_weight_g = null;
+        if (ln.mode === "piece" && r) {
+          try { const pw = await pieceWeights(r.id); if (!pw.length) ln.mode = "g"; } catch (e) { ln.mode = "g"; }
+        }
+      } else {
+        const m = findByLabel(raws, inp.value, rawLabel);
+        ln.raw_material_id = m ? m.id : null; ln.text = m ? rawLabel(m) : inp.value;
+        ln.unit_size_g = m ? m.unit_size_g : null;
+        if (ln.mode === "pcs" && !ln.unit_size_g) ln.mode = "g";
+      }
+      renderLines();
+    });
+    tdItem.appendChild(inp);
+    if (ln.warning) tdItem.appendChild(el("div", ln.warning, "warn small"));
+    if (!(ln.kind === "recipe" ? ln.recipe_id : ln.raw_material_id) && ln.text) tdItem.appendChild(el("div", "nicht gefunden", "warn small"));
+    tr.appendChild(tdItem);
+
+    const tdAmt = el("td");
+    const mode = el("select");
+    const modes = ln.kind === "recipe" ? [["g", "Gramm"], ["piece", "Stückgewicht"]] : [["g", "Gramm"], ["pcs", "Stück"]];
+    modes.forEach(([v, t]) => { const o = el("option", t); o.value = v; mode.appendChild(o); });
+    mode.value = ln.mode;
+    mode.addEventListener("change", () => { ln.mode = mode.value; linesDirty = true; renderLines(); });
+    tdAmt.appendChild(mode); tdAmt.appendChild(document.createTextNode(" "));
+    if (ln.kind === "recipe" && ln.mode === "piece") {
+      const sel = el("select");
+      sel.appendChild(Object.assign(el("option", "– wählen –"), { value: "" }));
+      sel.disabled = !ln.recipe_id;
+      if (ln.recipe_id) {
+        pieceWeights(ln.recipe_id).then((pw) => {
+          if (!pw.length) sel.appendChild(Object.assign(el("option", "keine Stückgewichte"), { value: "", disabled: true }));
+          pw.forEach((p) => { const o = el("option", p.label + " (" + fmtG(p.weight_g) + ")"); o.value = p.id; sel.appendChild(o); });
+          sel.value = ln.piece_weight_id || "";
+        }).catch(handleError);
+      }
+      sel.addEventListener("change", () => {
+        ln.piece_weight_id = sel.value ? Number(sel.value) : null;
+        const pw = (pieceCache[ln.recipe_id] || []).find((p) => p.id === ln.piece_weight_id);
+        ln.piece_weight_g = pw ? pw.weight_g : null; linesDirty = true; updateSum();
+      });
+      tdAmt.appendChild(sel);
+    } else {
+      const num = el("input"); num.type = "number"; num.min = "1"; num.step = "1";
+      const key = ln.mode === "pcs" ? "amount_pieces" : "amount_g";
+      num.value = ln[key] || "";
+      num.addEventListener("input", () => { ln[key] = num.value === "" ? null : Number(num.value); linesDirty = true; updateSum(); });
+      tdAmt.appendChild(num);
+      tdAmt.appendChild(document.createTextNode(ln.mode === "pcs" ? " Stück" + (ln.unit_size_g ? " à " + fmtG(ln.unit_size_g) : " (Gebindegröße fehlt)") : " g"));
+    }
+    tr.appendChild(tdAmt);
+
+    const tdAct = el("td");
+    const up = el("button", "↑"); up.type = "button"; up.disabled = i === 0;
+    up.addEventListener("click", () => { [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; linesDirty = true; renderLines(); });
+    const down = el("button", "↓"); down.type = "button"; down.disabled = i === lines.length - 1;
+    down.addEventListener("click", () => { [lines[i + 1], lines[i]] = [lines[i], lines[i + 1]]; linesDirty = true; renderLines(); });
+    const del = el("button", "✕"); del.type = "button";
+    del.addEventListener("click", () => { lines.splice(i, 1); linesDirty = true; renderLines(); });
+    tdAct.append(up, down, del);
+    tr.appendChild(tdAct);
+    body.appendChild(tr);
+  });
+  updateSum();
+}
+
+function updateSum() {
+  if (!lines.length) { $("l-sum").textContent = "Noch keine Zeilen."; return; }
+  const grams = lines.map(lineGrams);
+  const known = grams.filter((g) => typeof g === "number" && g > 0);
+  const sum = known.reduce((a, b) => a + b, 0);
+  $("l-sum").textContent = "Summe: " + fmtG(sum) + " je " + art.per + (known.length < lines.length ? " (unvollständig)" : "");
+}
+
+function addLine(kind) {
+  lines.push({ kind: kind, recipe_id: null, raw_material_id: null, text: "", piece_weight_id: null,
+    amount_g: null, amount_pieces: null, mode: "g", unit_size_g: null, piece_weight_g: null, warning: null });
+  linesDirty = true; renderLines();
+  const inputs = $("lines").querySelectorAll("input.item");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+$("l-add-recipe").addEventListener("click", () => addLine("recipe"));
+$("l-add-raw").addEventListener("click", () => addLine("raw"));
+
+$("l-save").addEventListener("click", async () => {
+  const payload = [];
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (ln.kind === "recipe") {
+      if (!ln.recipe_id) { showMsg("Zeile " + (i + 1) + ": Rezept nicht gefunden."); return; }
+      payload.push(ln.mode === "piece" ? { kind: "recipe", recipe_id: ln.recipe_id, piece_weight_id: ln.piece_weight_id }
+        : { kind: "recipe", recipe_id: ln.recipe_id, amount_g: ln.amount_g });
+    } else {
+      if (!ln.raw_material_id) { showMsg("Zeile " + (i + 1) + ": Rohstoff nicht gefunden."); return; }
+      payload.push(ln.mode === "pcs" ? { kind: "raw", raw_material_id: ln.raw_material_id, amount_pieces: ln.amount_pieces }
+        : { kind: "raw", raw_material_id: ln.raw_material_id, amount_g: ln.amount_g });
+    }
+  }
+  try {
+    art = await api("admin/articles/" + art.id + "/lines", { method: "PUT", body: { lines: payload } });
+    linesDirty = false; renderArticle();
+    showMsg("Stückliste gespeichert.", "info");
+  } catch (err) { handleError(err); }
+});
+
+$("l-copy").addEventListener("click", async () => {
+  const no = $("l-copy-no").value.trim();
+  if (!no) { showMsg("Bitte die Artikel-Nr. eingeben, von der kopiert wird."); return; }
+  let from;
+  try {
+    const found = await api("articles?status=all&q=" + encodeURIComponent(no));
+    from = found.find((a) => String(a.register_no) === no);
+  } catch (err) { handleError(err); return; }
+  if (!from) { showMsg("Artikel-Nr. " + no + " nicht gefunden."); return; }
+  if (!confirm("Stückliste von „" + from.register_no + " " + from.name + "“ übernehmen? Die bisherigen Zeilen werden ersetzt.")) return;
+  try {
+    art = await api("admin/articles/" + art.id + "/copy-lines", { method: "POST", body: { from_article_id: from.id } });
+    linesDirty = false; renderArticle();
+    showMsg("Stückliste kopiert.", "info");
+  } catch (err) { handleError(err); }
+});
+
+$("edit-back").addEventListener("click", () => { if (leaveOk()) { linesDirty = false; showView("list"); loadList(); } });
+
+// ---- Start --------------------------------------------------------------------------
+
+async function start() {
+  try { const info = await api("system/info"); $("probe").classList.toggle("hidden", info.pin_is_default !== true); } catch (e) { /* egal */ }
+  if (!token) { toLogin(); return; }
+  if (!(await checkSession())) return;
+  await Promise.all([loadGroups(), loadList(), loadChoices()]);
+}
+start();
+</script>
+<script>
+  // iOS-App (WKWebView/Ingress): erstes Zeichnen erzwingen, sonst bleibt die Seite bis zur Berührung leer
+  (function () {
+    function repaint() { document.body.style.display = 'none'; void document.body.offsetHeight; document.body.style.display = ''; }
+    window.addEventListener('load', function () { repaint(); requestAnimationFrame(repaint); setTimeout(repaint, 150); });
+    window.addEventListener('pageshow', repaint);
+  })();
+</script>
+</body>
+</html>

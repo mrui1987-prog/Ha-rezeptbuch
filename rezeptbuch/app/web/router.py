@@ -1,6 +1,6 @@
 """Liefert die Seiten des Admin-Bereichs: PIN-Eingabe und Rohstoffliste (``admin.html``),
 Rezepte und Gruppen (``recipes.html``, Modul 05), Prüfseite „Berechnung“ (``calc.html``, Modul 06),
-Prüfseite „Waagen“ (``scales.html``, Modul 08), Prüfseite „Ablauf“ (``production.html``, Modul 09),
+Prüfseite „Waagen“ (``scales.html``, Modul 08), Prüfseite „Ablauf“ (``production.html``, Modul 09), Planer (``planner.html``, Modul 10),
 Startseite und Stationsoberfläche (``start.html``, ``station.html``, Modul 10).
 
 Die Admin-Seiten sind je eine in sich geschlossene HTML-Datei (Stil und Skript eingebettet).
@@ -21,6 +21,7 @@ RECIPES_PAGE = Path(__file__).parent / "static" / "recipes.html"
 CALC_PAGE = Path(__file__).parent / "static" / "calc.html"
 SCALES_PAGE = Path(__file__).parent / "static" / "scales.html"
 PRODUCTION_PAGE = Path(__file__).parent / "static" / "production.html"
+PLANNER_PAGE = Path(__file__).parent / "static" / "planner.html"
 START_PAGE = Path(__file__).parent / "static" / "start.html"
 STATION_PAGE = Path(__file__).parent / "static" / "station.html"
 UI_DIR = Path(__file__).parent / "static" / "ui"
@@ -58,6 +59,14 @@ def scales_page() -> HTMLResponse:
 @router.get("/admin/ablauf", response_class=HTMLResponse)
 def production_page() -> HTMLResponse:
     return HTMLResponse(PRODUCTION_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/admin/planer", response_class=HTMLResponse)
+@router.get("/admin/planer/{rest}", response_class=HTMLResponse)
+def planner_page(rest: str | None = None) -> HTMLResponse:
+    """Planer (Modul 10, docs/planer.md 12): Unterreiter „Planen“ und „Artikel“;
+    Unterpfade (z. B. ``/admin/planer/artikel``) liefern dieselbe Seite."""
+    return HTMLResponse(PLANNER_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
 def start_page() -> HTMLResponse:

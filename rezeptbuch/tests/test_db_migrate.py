@@ -33,6 +33,8 @@ EXPECTED_TABLES = {
     # Modul 04 (0009)
     "dealer", "raw_material_source", "raw_material_label", "allergen", "raw_material_allergen",
     "raw_material_nutrient",
+    # Modul 10, Planer Teil P-A (0010)
+    "sales_article", "sales_article_line",
 }
 
 
