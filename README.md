@@ -15,17 +15,20 @@ Digitale Rezeptverwaltung und Wiegestation für kleine Bäckereien auf Basis von
 
 ## Aufbau
 
-Zwei Home-Assistant-Add-ons aus diesem Repository:
+Drei Home-Assistant-Add-ons aus diesem Repository:
 
 | Add-on | Aufgabe |
 |--------|---------|
 | `rezeptbuch` | Rezepte, Rohstoffe, Produktionsliste, Wiegeablauf, Oberfläche |
 | `rezeptbuch_waage` | Anbindung der Waagen (RS-232 über Netzwerk-Konverter) per MQTT |
+| `rezeptbuch_leser` | Liest Kennzeichnungspässe und BÄKO-Belege (PDF) und liefert JSON an `rezeptbuch`; schreibt nichts |
 
 ```
 ├── repository.yaml          Add-on-Quelle für Home Assistant
 ├── rezeptbuch/              Add-on 1
 ├── rezeptbuch_waage/        Add-on 2
+├── rezeptbuch_leser/        Add-on 3 (PDF-Leser)
+├── tools/kennzeichnungspass/ Leser am PC aufrufen
 ├── tools/waagen_simulator/  Testen ohne Waage
 ├── docs/                    Architektur und Bedienkonzept
 └── .github/workflows/       automatische Tests

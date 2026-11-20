@@ -1,0 +1,15 @@
+name: HA-Rezeptbuch Leser
+version: "0.1.0"
+slug: rezeptbuch_leser
+description: Liest Kennzeichnungspässe und BÄKO-Belege (PDF) und liefert die Angaben als JSON an das Rezeptbuch – schreibt nichts
+url: https://github.com/mrui1987-prog/ha-rezeptbuch
+arch:
+  - aarch64
+  - amd64
+init: false
+# Kein Ingress, kein offener Port: nur andere Add-ons im internen Netz erreichen
+# den Leser (Port 8100, docs/kennzeichnungspass-import.md 15.1, K04-13).
+options:
+  log_level: info
+schema:
+  log_level: list(debug|info|warning|error)

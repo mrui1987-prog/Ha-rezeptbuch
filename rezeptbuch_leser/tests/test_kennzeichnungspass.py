@@ -1,4 +1,4 @@
-"""Tests für den Kennzeichnungspass-Leser (Testleser VC04-e).
+"""Tests für den Kennzeichnungspass-Leser (VC04-e, seit 0.1.0 in Add-on 3).
 
 Reine Funktionen laufen immer. Die Tests an echten PDFs laufen nur, wenn KENNZEICHNUNGSPASS_PDF_DIR
 auf einen Ordner mit Pässen zeigt (die PDFs liegen nicht im Repo).
@@ -10,7 +10,7 @@ import sys
 import pytest
 
 pytest.importorskip("pdfplumber")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "leser"))
 
 import kennzeichnungspass as kp  # noqa: E402
 import zwischenstruktur as zs  # noqa: E402

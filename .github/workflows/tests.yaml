@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        addon: [rezeptbuch, rezeptbuch_waage]
+        addon: [rezeptbuch, rezeptbuch_waage, rezeptbuch_leser]
     defaults:
       run:
         working-directory: ${{ matrix.addon }}
@@ -21,6 +21,40 @@ jobs:
       - run: pip install pytest httpx pyyaml -r requirements.txt
       - run: python -m pytest -q
 
+  # Probebau Add-on 3 auf dem echten Alpine-Grundbild (pdfplumber auf musl, M04-23);
+  # der Bau führt den Selbsttest aus (Dockerfile), danach ein Aufruf über HTTP im Container.
+  build-leser:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Bauen
+        run: |
+          BASE=$(python3 -c "import yaml;print(yaml.safe_load(open('rezeptbuch_leser/build.yaml'))['build_from']['${{ matrix.arch }}'])")
+          PLATFORM=$([ "${{ matrix.arch }}" = aarch64 ] && echo linux/arm64 || echo linux/amd64)
+          echo "PLATFORM=$PLATFORM" >> "$GITHUB_ENV"
+          docker buildx build --platform "$PLATFORM" --build-arg BUILD_FROM="$BASE" --load -t leser:test rezeptbuch_leser
+      - name: Im Container lesen
+        run: |
+          docker run --rm --platform "$PLATFORM" --entrypoint python3 leser:test -c "
+          import json, threading, http.client
+          from http.server import ThreadingHTTPServer
+          from app import main as m
+          from app.testpdf import erzeuge_pdf
+          s = ThreadingHTTPServer(('127.0.0.1', 0), m.Handler)
+          threading.Thread(target=s.serve_forever, daemon=True).start()
+          c = http.client.HTTPConnection('127.0.0.1', s.server_address[1], timeout=60)
+          c.request('POST', '/v1/lesen/kennzeichnungspass', body=erzeuge_pdf(2, betreff='Produktspezifikation'))
+          d = json.loads(c.getresponse().read())
+          assert d['status'] == 'unlesbar' and d['daten']['schema'] == 2, d
+          print('Lesen im Container:', d['status'], d['addon_version'])
+          "
+
   tools-kennzeichnungspass:
     runs-on: ubuntu-latest
     steps:
@@ -28,8 +62,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest pdfplumber
-      - run: python -m pytest -q tools/kennzeichnungspass
+      - run: pip install pdfplumber
+      - name: Aufruf über tools/ (Mantel um Add-on 3)
+        run: |
+          cd rezeptbuch_leser && python3 -c "from app.testpdf import erzeuge_pdf;open('/tmp/t.pdf','wb').write(erzeuge_pdf(2,betreff='Produktspezifikation'))" && cd ..
+          python3 -I tools/kennzeichnungspass/kennzeichnungspass.py /tmp/t.pdf | python3 -c "import json,sys;assert json.load(sys.stdin)['schema']==2"
 
   tools-waagen-simulator:
     runs-on: ubuntu-latest
