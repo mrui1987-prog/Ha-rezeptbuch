@@ -20,6 +20,8 @@ Regeln (K05-2a bis K05-2d):
   leere Toleranzeinheit und leeres „archiviert“ lassen den bisherigen Wert stehen.
   Fehlt eine Spalte ganz, bleibt das Feld unverändert. Nummer und Herkunft ändern sich nie.
 * Neue Rohstoffe: leere Toleranz wird **0 %** (M05-13), Herkunft immer „eigen“.
+* Preis: Hat der Rohstoff eine aktive Bezugsquelle, ändert die Preisspalte deren Preis (M04-14);
+  der Bericht nennt das als Hinweis.
 * Spalte „archiviert“: ja → archivieren, nein → wiederherstellen (Namensprüfung R03-10).
   Rohstoffe, die nicht in der Datei stehen, bleiben unverändert.
 * Werden vorhandene Rohstoffe überschrieben, läuft der Import nur mit ``confirm_overwrite``.
@@ -56,6 +58,10 @@ _HEADER_LABELS = {
     "archiviert": "archived",
     "Herkunft": None,
     "geändert am": None,
+    # Info-Spalten aus dem Export seit Modul 04 Teil C1 – werden nicht ausgewertet (K04-3)
+    "Händler (aktiv)": None,
+    "Artikelnummer (aktiv)": None,
+    "datenlink-ID": None,
 }
 
 COLUMN_LABEL = {

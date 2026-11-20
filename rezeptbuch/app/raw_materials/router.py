@@ -13,7 +13,7 @@ from fastapi import APIRouter, Body, Depends, Response
 
 from ..auth.dependencies import require_admin
 from ..deps import get_db
-from . import service, stock
+from . import service, sources, stock
 from .export import build_csv
 
 router = APIRouter(prefix="/api/v1", tags=["raw-materials"])
@@ -48,7 +48,19 @@ def stock_receipt(raw_material_id: int, payload: dict = Body(...), db: sqlite3.C
     return service.get_raw_material(db, raw_material_id)
 
 
+@router.get("/raw-materials/{raw_material_id}/sources")
+def list_sources(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """Bezugsquellen (Modul 04, K04-4: ohne PIN lesbar)."""
+    return sources.list_sources(db, raw_material_id)
+
+
 # -- Ändern (mit Admin-Sitzung); feste Pfade vor den Pfaden mit Nummer -----------------
+
+@router.post("/admin/raw-materials/bulk-active-source", dependencies=admin)
+def bulk_active_source(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Massenpflege „als aktive Bezugsquelle setzen“ (M04-6); ``dry_run`` = Vorschau."""
+    return sources.bulk_active_source(db, payload)
+
 
 @router.get("/admin/raw-materials/next-number", dependencies=admin)
 def next_number(db: sqlite3.Connection = Depends(get_db)):
@@ -104,3 +116,26 @@ def restore(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
 def delete(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
     service.delete_raw_material(db, raw_material_id)
     return Response(status_code=204)
+
+
+# -- Bezugsquellen (Modul 04 Teil C1) ------------------------------------------------
+
+@router.post("/admin/raw-materials/{raw_material_id}/sources", status_code=201, dependencies=admin)
+def add_source(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return sources.add_source(db, raw_material_id, payload)
+
+
+@router.patch("/admin/raw-materials/{raw_material_id}/sources/{source_id}", dependencies=admin)
+def update_source(raw_material_id: int, source_id: int, payload: dict = Body(...),
+                  db: sqlite3.Connection = Depends(get_db)):
+    return sources.update_source(db, raw_material_id, source_id, payload)
+
+
+@router.post("/admin/raw-materials/{raw_material_id}/sources/{source_id}/activate", dependencies=admin)
+def activate_source(raw_material_id: int, source_id: int, db: sqlite3.Connection = Depends(get_db)):
+    return sources.activate_source(db, raw_material_id, source_id)
+
+
+@router.delete("/admin/raw-materials/{raw_material_id}/sources/{source_id}", dependencies=admin)
+def delete_source(raw_material_id: int, source_id: int, db: sqlite3.Connection = Depends(get_db)):
+    return sources.delete_source(db, raw_material_id, source_id)

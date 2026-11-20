@@ -2,7 +2,8 @@
 
 Semikolon als Trenner, UTF-8 mit BOM (Excel öffnet die Datei direkt richtig),
 Prozent mit Komma. Dasselbe Format dient für den Import (Modul 05). Seit 0.6.2 zwei Spalten
-am Ende: „Preis je kg €“ (z. B. „2,35“) und „Preis geändert am“ (VC03-a).
+am Ende: „Preis je kg €“ (z. B. „2,35“) und „Preis geändert am“ (VC03-a). Seit Modul 04 Teil C1 ist
+der Preis der gültige Preis (aktive Bezugsquelle, M04-14); drei Info-Spalten am Ende (K04-3).
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ HEADER = [
     "Preis je kg €", "Preis geändert am",
     # ab VC03-b am Ende (docs/bestand.md B8): kg mit Komma, leer = keine Bestandsführung / kein Meldewert
     "Bestand kg", "Meldewert kg",
+    # ab Modul 04 Teil C1 am Ende, nur zur Info – der Import wertet sie nicht aus (K04-3)
+    "Händler (aktiv)", "Artikelnummer (aktiv)", "datenlink-ID",
 ]
 
 TYPE_LABEL = {"standard": "Standard", "flour": "Mehl"}
-SOURCE_LABEL = {"own": "eigen", "baeko": "BÄKO"}
+SOURCE_LABEL = {"own": "eigen", "datenlink": "datenlink"}
 
 
 def _tolerance(row: dict) -> str:
@@ -54,5 +57,8 @@ def build_csv(rows: list[dict]) -> bytes:
             row["price_changed_at"] or "",
             kg_text(row["stock_g"]),
             kg_text(row["stock_alert_g"]),
+            (row.get("active_source") or {}).get("dealer_name") or "",
+            (row.get("active_source") or {}).get("article_no") or "",
+            row.get("datenlink_id") or "",
         ])
     return b"\xef\xbb\xbf" + out.getvalue().encode("utf-8")

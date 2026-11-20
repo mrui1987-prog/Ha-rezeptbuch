@@ -206,7 +206,7 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids
         _put(ws_rm, rm_row, [
             rm["number"], rm["name"], rm["display_name"], "Mehl" if rm["type"] == "flour" else "Standard",
             float(rm["tolerance"]) if percent else int(rm["tolerance"]), "%" if percent else "g",
-            rm["unit_size_g"], rm["unit_label"], None, None, "BÄKO" if rm["source"] == "baeko" else "eigen",
+            rm["unit_size_g"], rm["unit_label"], None, None, "datenlink" if rm["source"] == "datenlink" else "eigen",
             "ja" if rm["archived"] else "nein",
         ])
         ws_rm.cell(row=rm_row, column=5).value = float(rm["tolerance"]) if percent else int(rm["tolerance"])

@@ -48,6 +48,14 @@ Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CS
 - **Bestand kg** und **Meldewert kg** (seit 0.10.7, am Ende): ein geänderter Bestand wird als Inventur gebucht; leere Zelle beendet die Bestandsführung bzw. löscht den Meldewert; fehlt die Spalte, bleibt der Wert. Achtung: Eine ältere Exportdatei setzt den Bestand auf ihren alten Stand zurück.
 - Höchstens 5 MB und 5 000 Zeilen je Datei.
 
+## Händler und Bezugsquellen (seit 0.10.14)
+
+- Taste **„Händler“** in der Rohstoffliste: Händler anlegen, umbenennen, archivieren; löschen nur, solange er bei keinem Rohstoff steht.
+- Im Formular **„Bearbeiten“** eines Rohstoffs unten **„Bezugsquellen“**: Händler, Artikelnummer, Preis je kg, „g je Mengeneinheit“ (z. B. 1 L Milch = 1030 g; für den späteren Beleg-Import, nicht die Gebindegröße der Waage), Warengruppe, Bemerkung. Genau eine Bezugsquelle ist aktiv.
+- **Der Preis des Rohstoffs ist der Preis der aktiven Bezugsquelle.** Das Preisfeld oben ist dann grau; geändert wird an der Bezugsquelle. Die erste Bezugsquelle übernimmt den bisherigen Preis. Ohne Bezugsquelle wie bisher.
+- **Massenpflege:** Rohstoffe in der Liste anhaken, Händler wählen, „als aktive Bezugsquelle setzen …“. Die Vorschau zeigt, was sich ändert; gespeichert wird erst mit „Speichern“.
+- CSV-Export: drei Spalten am Ende („Händler (aktiv)“, „Artikelnummer (aktiv)“, „datenlink-ID“), der Import liest sie nicht. Die Preisspalte im Import ändert bei Rohstoffen mit aktiver Bezugsquelle deren Preis.
+
 ## Rohstoffbestand (seit 0.10.7)
 
 - Jeder Rohstoff kann einen **Bestand** und einen **Meldewert** (kg, bis 3 Nachkommastellen) haben. Taste **„Bestand“** in der Rohstoffliste: **„Zugang buchen“** (zählt dazu, auch ohne PIN über die Schnittstelle, später am Tablet), **„Bestand setzen“** (Inventur; leer = Bestandsführung beenden) und der Verlauf aller Buchungen. Meldewert im Formular „Bearbeiten“.

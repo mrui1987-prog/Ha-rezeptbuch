@@ -1,9 +1,10 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.10.13: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.10.14: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
 Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06),
-Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teile C1 und C2), Stationsoberfläche (Modul 10, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
+Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teile C1 und C2), Stationsoberfläche (Modul 10, Teil C1),
+Händler und Bezugsquellen mit Preis je Bezugsquelle (Modul 04, Teil C1). Beim Start wird die Datenbank geöffnet, geprüft und
 migriert; danach öffnet jede Anfrage eine eigene Verbindung (``deps.get_db``).
 """
 
@@ -19,6 +20,7 @@ from .auth.pin import ensure_default_pin
 from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
 from .calculation.router import router as calculation_router
+from .dealers.router import router as dealers_router
 from .display.router import router as display_router
 from .db import DatabaseError, default_db_path, init_database
 from .errors import ServiceError
@@ -94,6 +96,7 @@ async def database_busy_handler(request: Request, exc: sqlite3.OperationalError)
 
 app.include_router(auth_router)
 app.include_router(raw_materials_router)
+app.include_router(dealers_router)
 app.include_router(imports_router)
 app.include_router(exports_router)      # vor recipes_router: /admin/recipes/export.xlsx ist keine Rezept-ID
 app.include_router(recipes_router)

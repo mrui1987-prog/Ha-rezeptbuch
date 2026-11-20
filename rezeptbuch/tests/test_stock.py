@@ -128,9 +128,9 @@ def test_csv_export_and_import_stock(conn, rm):
     update_raw_material(conn, rm["mehl"], {"stock_alert_kg": "5"})
     lines = build_csv(list_raw_materials(conn)).decode("utf-8-sig").split("\r\n")
     header = lines[0].split(";")
-    assert header[-2:] == ["Bestand kg", "Meldewert kg"]
+    assert header[-5:-3] == ["Bestand kg", "Meldewert kg"]
     first = lines[1].split(";")
-    assert first[-2:] == ["12,5", "5"]
+    assert first[-5:-3] == ["12,5", "5"]
 
     head = "Nummer;Name;Toleranz;Bestand kg;Meldewert kg\r\n"
     nums = {k: get_raw_material(conn, v)["number"] for k, v in rm.items()}

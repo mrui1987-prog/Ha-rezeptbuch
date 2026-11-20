@@ -15,6 +15,7 @@ import sqlite3
 
 from ..db import transaction
 from ..errors import ConflictError, NotFoundError
+from . import sources as sources_mod
 from . import stock as stock_mod
 from .models import normalize_text, parse_price, tolerance_display, validate
 
@@ -23,10 +24,16 @@ SIMILARITY_THRESHOLD = 0.8
 
 _COLUMNS = ("number", "name", "display_name", "type", "tolerance_unit", "tolerance_value",
             "unit_size_g", "unit_label")
-_SELECT = ("SELECT id, number, name, display_name, type, tolerance_unit, tolerance_value, "
-           "unit_size_g, unit_label, source, archived, created_at, updated_at, price_cents_per_kg, price_changed_at, "
-           "stock_g, stock_alert_g "
-           "FROM raw_material")
+# Abgeleitete Tabelle mit der aktiven Bezugsquelle (Modul 04, K04-4); Bedingungen wie „id = ?“
+# und „archived = 0“ beziehen sich so weiter eindeutig auf den Rohstoff.
+_SELECT = ("SELECT * FROM (SELECT r.id, r.number, r.name, r.display_name, r.type, r.tolerance_unit, "
+           "r.tolerance_value, r.unit_size_g, r.unit_label, r.source, r.archived, r.created_at, r.updated_at, "
+           "r.price_cents_per_kg, r.price_changed_at, r.stock_g, r.stock_alert_g, r.datenlink_id, "
+           "s.id AS active_source_id, s.article_no AS active_article_no, d.id AS active_dealer_id, "
+           "d.name AS active_dealer_name "
+           "FROM raw_material r "
+           "LEFT JOIN raw_material_source s ON s.raw_material_id = r.id AND s.is_active = 1 "
+           "LEFT JOIN dealer d ON d.id = s.dealer_id)")
 
 _NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
@@ -57,6 +64,14 @@ def _to_dict(row: sqlite3.Row) -> dict:
         "stock_g": row["stock_g"],
         "stock_alert_g": row["stock_alert_g"],
         "stock_status": stock_mod.status(row["stock_g"], row["stock_alert_g"]),
+        # Modul 04: Herkunft own/datenlink, Pass-Zuordnung, aktive Bezugsquelle (Preis = deren Preis, M04-14)
+        "datenlink_id": row["datenlink_id"],
+        "active_source": None if row["active_source_id"] is None else {
+            "id": row["active_source_id"],
+            "dealer_id": row["active_dealer_id"],
+            "dealer_name": row["active_dealer_name"],
+            "article_no": row["active_article_no"],
+        },
     }
 
 
@@ -268,13 +283,23 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
     changes = {c: clean[c] for c in _COLUMNS if clean[c] != row[c]}
     given, price = _price(data, warnings)
     price_changed = given and price != row["price_cents_per_kg"]
+    if price_changed and row["active_source_id"] is not None:
+        # Mit aktiver Bezugsquelle gehört der Preis ihr (M04-14); der Rohstoff bekommt ihn gespiegelt
+        dealer = sources_mod.set_active_price_in_tx(conn, raw_material_id, price, source)
+        if warnings is not None:
+            warnings.append({"field": "price_per_kg", "code": "price_on_source",
+                             "detail": f"Preis an der aktiven Bezugsquelle „{dealer}“ geändert"})
+        price_changed = False
+        price_routed = (row["price_cents_per_kg"], price)
+    else:
+        price_routed = None
     if price_changed:
         changes["price_cents_per_kg"] = price
     alert_given, alert = _alert(data)
     if alert_given and alert != row["stock_alert_g"]:
         changes["stock_alert_g"] = alert
     if not changes:
-        return {}
+        return {"price_cents_per_kg": price_routed} if price_routed else {}
 
     use = usage(conn, raw_material_id)
     if "number" in changes:
@@ -305,7 +330,10 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
         f"UPDATE raw_material SET {assignments}, updated_at = {_NOW} "
         "WHERE id = ?", (*changes.values(), raw_material_id))
     _log(conn, "update", raw_material_id, {c: row[c] for c in changes}, changes, source)
-    return {c: (row[c], changes[c]) for c in changes}
+    result = {c: (row[c], changes[c]) for c in changes}
+    if price_routed:
+        result["price_cents_per_kg"] = price_routed
+    return result
 
 
 def archive_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = "admin",
@@ -335,6 +363,13 @@ def restore_in_tx(conn: sqlite3.Connection, raw_material_id: int, source: str = 
             f"Wiederherstellen nicht möglich: Der aktive Rohstoff „{same['name']}“ "
             f"(Nummer {same['number']}) hat denselben Namen. Bitte zuerst einen der beiden umbenennen.",
             field="name", code="name_taken")
+    if row["datenlink_id"] is not None:
+        twin = conn.execute("SELECT number, name FROM raw_material WHERE archived = 0 AND datenlink_id = ? "
+                            "AND id <> ?", (row["datenlink_id"], raw_material_id)).fetchone()
+        if twin is not None:
+            raise ConflictError(
+                f"Wiederherstellen nicht möglich: Der aktive Rohstoff „{twin['name']}“ (Nummer {twin['number']}) "
+                "hat denselben Kennzeichnungspass (datenlink-ID).", code="datenlink_taken")
     conn.execute("UPDATE raw_material SET archived = 0, "
                  "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (raw_material_id,))
     _log(conn, "restore", raw_material_id, {"archived": 1}, {"archived": 0}, source)

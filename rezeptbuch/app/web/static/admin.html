@@ -50,6 +50,8 @@
   .tabs { display: flex; gap: .3rem; margin: 0 0 .6rem; }
   .tabs a { font-size: 1rem; padding: .45rem .9rem; border: 1px solid #ccc; border-radius: 5px; background: #f4f4f4; color: #222; text-decoration: none; }
   .tabs a.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  tr.src-active td { background: #e8f5e9; }
+  td.sel, th.sel { width: 1.6rem; text-align: center; }
 </style>
 </head>
 <body>
@@ -100,9 +102,41 @@
       <label style="margin:0;font-weight:normal"><input id="only-alert" type="checkbox"> am/unter Meldewert</label>
       <button id="btn-export">CSV-Export</button>
       <button id="btn-import">CSV-Import</button>
+      <button id="btn-dealers">Händler</button>
       <button id="btn-logout">Abmelden</button>
     </div>
     <div id="list-msg" class="msg hidden" role="alert"></div>
+
+    <div id="dealer-panel" class="panel hidden">
+      <h2 style="font-size:1.1rem;margin:.2rem 0">Händler</h2>
+      <p class="small">Jeder Händler steht einmal in der Liste. Händler, die bei Rohstoffen eingetragen sind, werden
+        archiviert statt gelöscht; Umbenennen wirkt bei allen Rohstoffen.</p>
+      <div class="toolbar">
+        <input id="dealer-name" class="grow" maxlength="60" placeholder="Neuer Händler, z. B. BÄKO" aria-label="Name des Händlers">
+        <button type="button" id="dealer-add">Anlegen</button>
+        <label style="margin:0;font-weight:normal"><input id="dealer-archived" type="checkbox"> archivierte zeigen</label>
+        <button type="button" id="dealer-close">Schließen</button>
+      </div>
+      <div id="dealer-msg" class="msg error hidden" role="alert"></div>
+      <table><thead><tr><th>Name</th><th>bei Rohstoffen</th><th>Status</th><th>Aktionen</th></tr></thead>
+        <tbody id="dealer-rows"></tbody></table>
+    </div>
+
+    <div class="toolbar" id="bulk-bar">
+      <span class="small">Markierte Rohstoffe: <b id="bulk-count">0</b></span>
+      <select id="bulk-dealer" aria-label="Händler für die Massenpflege"></select>
+      <button type="button" id="bulk-preview">als aktive Bezugsquelle setzen …</button>
+      <button type="button" id="bulk-clear">Markierung aufheben</button>
+    </div>
+    <div id="bulk-panel" class="panel hidden">
+      <h2 style="font-size:1.1rem;margin:.2rem 0">Vorschau: aktive Bezugsquelle setzen</h2>
+      <p class="small" id="bulk-summary"></p>
+      <div style="overflow-x:auto"><table><thead><tr><th>Nr.</th><th>Name</th><th>Änderung</th><th>bisher aktiv</th><th>€/kg bisher</th><th>€/kg neu</th></tr></thead>
+        <tbody id="bulk-rows"></tbody></table></div>
+      <div id="bulk-msg" class="msg error hidden" role="alert"></div>
+      <div class="toolbar"><button type="button" id="bulk-save">Speichern</button>
+        <button type="button" id="bulk-cancel">Abbrechen</button></div>
+    </div>
 
     <div id="import-panel" class="panel hidden">
       <h2 style="font-size:1.1rem;margin:.2rem 0">Rohstoffe aus CSV importieren</h2>
@@ -143,6 +177,7 @@
           <div><label for="f-price">Preis je kg (€ netto, optional)</label>
                <input id="f-price" inputmode="decimal" style="width:100%" placeholder="z. B. 2,35">
                <div class="small" id="f-price-date"></div>
+               <div class="small hidden" id="f-price-source"></div>
                <div class="small">Bei Gebinde/Stück auf 1 kg umrechnen (z. B. Preis je Ei ÷ Stückgewicht × 1000).</div></div>
           <div><label for="f-alert">Meldewert in kg (optional)</label>
                <input id="f-alert" inputmode="decimal" style="width:100%" placeholder="z. B. 25">
@@ -155,11 +190,35 @@
         <button type="button" id="form-cancel">Abbrechen</button>
         <button type="button" id="form-archive" class="hidden">Archivieren</button>
       </form>
+
+      <div id="src-section" class="hidden">
+        <h3 style="font-size:1rem;margin:1rem 0 .3rem">Bezugsquellen</h3>
+        <p class="small">Genau eine Bezugsquelle ist aktiv; ihr Preis ist der Preis des Rohstoffs. Die erste Bezugsquelle
+          übernimmt den bisherigen Preis. „g je Mengeneinheit“ rechnet die Einheit auf dem Lieferbeleg in Gramm um
+          (z. B. 1 L Milch = 1030 g, 1 Beutel = 5000 g) – nicht zu verwechseln mit der Gebindegröße für die Waage.</p>
+        <div style="overflow-x:auto"><table><thead><tr><th>Händler</th><th>Artikelnr.</th><th>€/kg</th><th>g je Einheit</th><th>Warengruppe</th><th>Bemerkung</th><th>Aktionen</th></tr></thead>
+          <tbody id="src-rows"></tbody></table></div>
+        <p id="src-empty" class="small hidden">Noch keine Bezugsquelle.</p>
+        <h4 id="src-form-title" style="margin:.8rem 0 .2rem">Bezugsquelle hinzufügen</h4>
+        <div class="grid">
+          <div><label for="s-dealer">Händler</label><select id="s-dealer" style="width:100%"></select></div>
+          <div><label for="s-article">Artikelnummer beim Händler</label><input id="s-article" maxlength="40" style="width:100%"></div>
+          <div><label for="s-price">Preis je kg (€ netto)</label><input id="s-price" inputmode="decimal" style="width:100%" placeholder="leer = Preis übernehmen / offen"></div>
+          <div><label for="s-grams">g je Mengeneinheit</label>
+            <div style="display:flex;gap:.4rem"><input id="s-grams" inputmode="numeric" style="flex:1;min-width:0" placeholder="z. B. 1030">
+              <input id="s-unit" maxlength="10" style="width:5rem" placeholder="L" aria-label="Mengeneinheit"></div></div>
+          <div><label for="s-group">Warengruppe (optional)</label><input id="s-group" maxlength="20" style="width:100%" placeholder="z. B. 101"></div>
+          <div><label for="s-note">Bemerkung</label><input id="s-note" maxlength="200" style="width:100%" placeholder="z. B. nur im Winter"></div>
+        </div>
+        <div id="src-msg" class="msg error hidden" role="alert"></div>
+        <button type="button" id="src-save">Hinzufügen</button>
+        <button type="button" id="src-cancel" class="hidden">Abbrechen</button>
+      </div>
     </div>
 
     <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>Nr.</th><th>Name</th><th>Kurzname</th><th>Typ</th><th>Toleranz</th><th>Gebinde/Stück</th><th>€/kg</th><th>Bestand kg</th><th>Meldewert kg</th><th>Herkunft</th><th>Status</th><th>Aktionen</th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="sel-all" aria-label="alle markieren"></th><th>Nr.</th><th>Name</th><th>Kurzname</th><th>Typ</th><th>Toleranz</th><th>Gebinde/Stück</th><th>€/kg</th><th>Händler (aktiv)</th><th>Bestand kg</th><th>Meldewert kg</th><th>Herkunft</th><th>Status</th><th>Aktionen</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -331,6 +390,7 @@ $("login-form").addEventListener("submit", async (event) => {
     $("pin").value = "";
     if (pendingPage || NEXT_URL) { location.href = pendingPage || BASE + NEXT_URL; return; }
     showView("list");
+    await loadDealers();
     await loadList();
     await openFromRecipe();
   } catch (err) {
@@ -463,6 +523,15 @@ function renderRows(items) {
   items.forEach((item) => {
     const tr = document.createElement("tr");
     if (item.archived) tr.className = "archived";
+    const selTd = document.createElement("td");
+    selTd.className = "sel";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = selected.has(item.id);
+    box.setAttribute("aria-label", "markieren: " + item.name);
+    box.addEventListener("change", () => { if (box.checked) selected.add(item.id); else selected.delete(item.id); updateBulkBar(); });
+    selTd.appendChild(box);
+    tr.appendChild(selTd);
     cell(tr, String(item.number));
     cell(tr, item.name);
     cell(tr, item.display_name || "");
@@ -470,11 +539,12 @@ function renderRows(items) {
     cell(tr, toleranceText(item));
     cell(tr, item.unit_size_g ? item.unit_size_g + " g " + item.unit_label : "");
     cell(tr, priceText(item.price_cents_per_kg));
+    cell(tr, item.active_source ? item.active_source.dealer_name : "");
     const st = cell(tr, kgText(item.stock_g));
     if (item.stock_g !== null && item.stock_g < 0) st.classList.add("stock-neg");
     if (item.stock_status === "alert") st.classList.add("stock-alert");
     cell(tr, kgText(item.stock_alert_g));
-    cell(tr, item.source === "baeko" ? "BÄKO" : "eigen");
+    cell(tr, item.source === "datenlink" ? "datenlink" : "eigen");
     cell(tr, item.archived ? "archiviert" : "aktiv");
     const actions = document.createElement("td");
     actions.appendChild(actionButton("Bearbeiten", () => openForm(item)));
@@ -486,6 +556,8 @@ function renderRows(items) {
     body.appendChild(tr);
   });
   show("empty", items.length === 0);
+  lastItems = items;
+  updateBulkBar();
 }
 
 async function act(item, action, fromForm) {
@@ -672,6 +744,281 @@ $("import-run").addEventListener("click", async () => {
   }
 });
 
+// ---- Händler (Modul 04 Teil C1) -------------------------------------------------------
+
+let dealersCache = [];       // aktive Händler für die Auswahllisten
+
+async function loadDealers() {
+  try {
+    dealersCache = await api("dealers");
+  } catch (err) { dealersCache = []; }
+  fillDealerSelect($("bulk-dealer"), "Händler wählen …");
+}
+
+function fillDealerSelect(select, placeholder, exclude) {
+  const keep = select.value;
+  select.textContent = "";
+  const first = document.createElement("option");
+  first.value = ""; first.textContent = placeholder;
+  select.appendChild(first);
+  dealersCache.filter((d) => !(exclude && exclude.has(d.id))).forEach((d) => {
+    const o = document.createElement("option");
+    o.value = String(d.id); o.textContent = d.name;
+    select.appendChild(o);
+  });
+  select.value = keep;
+  if (select.value !== keep) select.value = "";
+}
+
+async function loadDealerTable() {
+  showMsg("dealer-msg", "");
+  let list;
+  try { list = await api("dealers" + ($("dealer-archived").checked ? "?include_archived=true" : "")); }
+  catch (err) { handleError(err, "dealer-msg"); return; }
+  const body = $("dealer-rows");
+  body.textContent = "";
+  list.forEach((d) => {
+    const tr = document.createElement("tr");
+    if (d.archived) tr.className = "archived";
+    cell(tr, d.name);
+    cell(tr, String(d.sources));
+    cell(tr, d.archived ? "archiviert" : "aktiv");
+    const actions = document.createElement("td");
+    actions.appendChild(actionButton("Umbenennen", () => renameDealer(d)));
+    actions.appendChild(actionButton(d.archived ? "Wiederherstellen" : "Archivieren", () => dealerAction(d, d.archived ? "restore" : "archive")));
+    if (!d.sources) actions.appendChild(actionButton("Löschen", () => dealerAction(d, "delete")));
+    tr.appendChild(actions);
+    body.appendChild(tr);
+  });
+  if (!list.length) { const tr = document.createElement("tr"); cell(tr, "Noch keine Händler.").colSpan = 4; body.appendChild(tr); }
+}
+
+let renaming = null;
+function renameDealer(d) {
+  renaming = d;
+  $("dealer-name").value = d.name;
+  $("dealer-add").textContent = "Umbenennen";
+  $("dealer-name").focus();
+}
+
+async function dealerAction(d, action) {
+  showMsg("dealer-msg", "");
+  if (action === "delete" && !(await askConfirm("Händler „" + d.name + "“ löschen?", "Löschen"))) return;
+  if (action === "archive" && !(await askConfirm("Händler „" + d.name + "“ archivieren? Er erscheint dann nicht mehr in der Auswahl für neue Bezugsquellen; bestehende bleiben.", "Archivieren"))) return;
+  try {
+    if (action === "delete") await api("admin/dealers/" + d.id, { method: "DELETE" });
+    else await api("admin/dealers/" + d.id + "/" + action, { method: "POST" });
+    await loadDealers();
+    await loadDealerTable();
+  } catch (err) { handleError(err, "dealer-msg"); }
+}
+
+$("dealer-add").addEventListener("click", async () => {
+  showMsg("dealer-msg", "");
+  const name = $("dealer-name").value.trim();
+  try {
+    if (renaming) await api("admin/dealers/" + renaming.id, { method: "PATCH", body: { name: name } });
+    else await api("admin/dealers", { method: "POST", body: { name: name } });
+    renaming = null;
+    $("dealer-add").textContent = "Anlegen";
+    $("dealer-name").value = "";
+    await loadDealers();
+    await loadDealerTable();
+    await loadList();
+  } catch (err) { handleError(err, "dealer-msg"); }
+});
+$("btn-dealers").addEventListener("click", async () => {
+  renaming = null; $("dealer-add").textContent = "Anlegen"; $("dealer-name").value = "";
+  show("dealer-panel", true);
+  await loadDealerTable();
+});
+$("dealer-close").addEventListener("click", () => show("dealer-panel", false));
+$("dealer-archived").addEventListener("change", loadDealerTable);
+
+// ---- Massenpflege „als aktive Bezugsquelle setzen“ (M04-6) -----------------------------
+
+const selected = new Set();  // markierte Rohstoff-IDs (bleiben beim Filtern erhalten)
+let lastItems = [];
+
+function updateBulkBar() {
+  $("bulk-count").textContent = String(selected.size);
+  $("bulk-preview").disabled = selected.size === 0;
+  $("sel-all").checked = lastItems.length > 0 && lastItems.every((i) => selected.has(i.id));
+}
+
+$("sel-all").addEventListener("change", () => {
+  lastItems.forEach((i) => { if ($("sel-all").checked) selected.add(i.id); else selected.delete(i.id); });
+  renderRows(lastItems);
+});
+$("bulk-clear").addEventListener("click", () => { selected.clear(); renderRows(lastItems); show("bulk-panel", false); });
+
+const BULK_ACTION = { created: "Bezugsquelle neu, aktiv", activated: "wird aktiv", unchanged: "schon aktiv" };
+
+async function runBulk(dryRun) {
+  showMsg("bulk-msg", "");
+  const dealerId = Number($("bulk-dealer").value);
+  if (!dealerId) { showMsg("list-msg", "Bitte einen Händler wählen."); return null; }
+  return api("admin/raw-materials/bulk-active-source",
+    { method: "POST", body: { raw_material_ids: Array.from(selected), dealer_id: dealerId, dry_run: dryRun } });
+}
+
+$("bulk-preview").addEventListener("click", async () => {
+  showMsg("list-msg", "");
+  try {
+    const res = await runBulk(true);
+    if (!res) return;
+    const body = $("bulk-rows");
+    body.textContent = "";
+    res.items.forEach((i) => {
+      const tr = document.createElement("tr");
+      cell(tr, String(i.number));
+      cell(tr, i.name + (i.archived ? " (archiviert)" : ""));
+      cell(tr, BULK_ACTION[i.action] || i.action);
+      cell(tr, i.old_dealer || "–");
+      cell(tr, priceText(i.old_price_cents_per_kg));
+      const p = cell(tr, priceText(i.new_price_cents_per_kg));
+      if (i.price_changes) p.className = "warn";
+      body.appendChild(tr);
+    });
+    $("bulk-summary").textContent = "Händler „" + $("bulk-dealer").selectedOptions[0].textContent + "“: "
+      + res.changed + " von " + res.items.length + " Rohstoffen ändern sich, bei " + res.price_changes
+      + " ändert sich der Preis. Noch nichts gespeichert.";
+    show("bulk-panel", true);
+  } catch (err) { handleError(err); }
+});
+$("bulk-cancel").addEventListener("click", () => show("bulk-panel", false));
+$("bulk-save").addEventListener("click", async () => {
+  try {
+    const res = await runBulk(false);
+    if (!res) return;
+    show("bulk-panel", false);
+    selected.clear();
+    await loadList();
+    showMsg("list-msg", "Aktive Bezugsquelle gesetzt: " + res.changed + " Rohstoff(e) geändert, " + res.price_changes + " Preisänderung(en).");
+    $("list-msg").className = "msg info";
+  } catch (err) { handleError(err, "bulk-msg"); }
+});
+
+// ---- Bezugsquellen am Rohstoff (M04-5, M04-14) ------------------------------------------
+
+let editingSource = null;    // null = neue Bezugsquelle
+
+function setPriceSource(item) {
+  const active = item && item.active_source;
+  $("f-price").readOnly = Boolean(active);
+  $("f-price").style.background = active ? "#eee" : "";
+  $("f-price-source").textContent = active ? "Preis der aktiven Bezugsquelle „" + active.dealer_name + "“ – unten bei den Bezugsquellen ändern." : "";
+  show("f-price-source", Boolean(active));
+}
+
+async function loadSources() {
+  showMsg("src-msg", "");
+  resetSourceForm();
+  let list = [];
+  try { list = await api("raw-materials/" + editingId + "/sources"); }
+  catch (err) { handleError(err, "src-msg"); }
+  const body = $("src-rows");
+  body.textContent = "";
+  list.forEach((s) => {
+    const tr = document.createElement("tr");
+    if (s.is_active) tr.className = "src-active";
+    cell(tr, s.dealer_name + (s.is_active ? " (aktiv)" : "") + (s.dealer_archived ? " – archiviert" : ""));
+    cell(tr, s.article_no || "");
+    cell(tr, priceText(s.price_cents_per_kg));
+    cell(tr, s.grams_per_unit ? s.grams_per_unit + " g" + (s.unit_code ? " je " + s.unit_code : "") : "");
+    cell(tr, s.commodity_group || "");
+    cell(tr, s.note || "");
+    const actions = document.createElement("td");
+    actions.appendChild(actionButton("Bearbeiten", () => editSource(s)));
+    if (!s.is_active) actions.appendChild(actionButton("Aktiv setzen", () => sourceAction(s, "activate")));
+    actions.appendChild(actionButton("Entfernen", () => sourceAction(s, "delete")));
+    tr.appendChild(actions);
+    body.appendChild(tr);
+  });
+  show("src-empty", list.length === 0);
+  fillDealerSelect($("s-dealer"), "Händler wählen …", new Set(list.map((s) => s.dealer_id)));
+  sourcesShown = list;
+}
+let sourcesShown = [];
+
+function resetSourceForm() {
+  editingSource = null;
+  ["s-article", "s-price", "s-grams", "s-unit", "s-group", "s-note"].forEach((id) => { $(id).value = ""; });
+  $("s-dealer").disabled = false;
+  $("src-form-title").textContent = "Bezugsquelle hinzufügen";
+  $("src-save").textContent = "Hinzufügen";
+  show("src-cancel", false);
+}
+
+function editSource(s) {
+  editingSource = s;
+  fillDealerSelect($("s-dealer"), s.dealer_name);
+  $("s-dealer").value = "";
+  $("s-dealer").disabled = true;
+  $("s-article").value = s.article_no || "";
+  $("s-price").value = priceText(s.price_cents_per_kg);
+  $("s-grams").value = s.grams_per_unit ? String(s.grams_per_unit) : "";
+  $("s-unit").value = s.unit_code || "";
+  $("s-group").value = s.commodity_group || "";
+  $("s-note").value = s.note || "";
+  $("src-form-title").textContent = "Bezugsquelle „" + s.dealer_name + "“ bearbeiten";
+  $("src-save").textContent = "Speichern";
+  show("src-cancel", true);
+}
+
+async function refreshAfterSource(answer) {
+  const item = await api("raw-materials/" + editingId);
+  editingItem = item;
+  $("f-price").value = priceText(item.price_cents_per_kg);
+  $("f-price-date").textContent = item.price_changed_at ? "Preis geändert am " + dateText(item.price_changed_at) : "";
+  setPriceSource(item);
+  await loadSources();
+  if (answer && answer.warnings && answer.warnings.length) {
+    showMsg("src-msg", answer.warnings.map((w) => w.detail).join(" "));
+    $("src-msg").className = "msg info";
+  }
+  loadList();
+}
+
+async function sourceAction(s, action) {
+  showMsg("src-msg", ""); $("src-msg").className = "msg error hidden";
+  if (action === "delete" && !(await askConfirm("Bezugsquelle „" + s.dealer_name + "“ entfernen?", "Entfernen"))) return;
+  try {
+    const path = "admin/raw-materials/" + editingId + "/sources/" + s.id;
+    const answer = action === "delete" ? await api(path, { method: "DELETE" })
+                                       : await api(path + "/activate", { method: "POST" });
+    await refreshAfterSource(answer);
+  } catch (err) { handleError(err, "src-msg"); }
+}
+
+$("src-save").addEventListener("click", async () => {
+  showMsg("src-msg", ""); $("src-msg").className = "msg error hidden";
+  const body = {
+    article_no: emptyToNull($("s-article").value),
+    grams_per_unit: emptyToNull($("s-grams").value),
+    unit_code: emptyToNull($("s-unit").value),
+    commodity_group: emptyToNull($("s-group").value),
+    note: emptyToNull($("s-note").value),
+  };
+  const price = emptyToNull($("s-price").value);
+  try {
+    let answer;
+    if (editingSource) {
+      body.price_per_kg = price;
+      answer = await api("admin/raw-materials/" + editingId + "/sources/" + editingSource.id, { method: "PATCH", body: body });
+    } else {
+      const dealerId = Number($("s-dealer").value);
+      if (!dealerId) { showMsg("src-msg", "Bitte einen Händler wählen (neue Händler über „Händler“ in der Werkzeugleiste)."); return; }
+      body.dealer_id = dealerId;
+      // leer bei der ersten Bezugsquelle = bisherigen Preis übernehmen (K04-1)
+      if (price !== null) body.price_per_kg = price;
+      answer = await api("admin/raw-materials/" + editingId + "/sources", { method: "POST", body: body });
+    }
+    await refreshAfterSource(answer);
+  } catch (err) { handleError(err, "src-msg"); }
+});
+$("src-cancel").addEventListener("click", () => { resetSourceForm(); fillDealerSelect($("s-dealer"), "Händler wählen …", new Set(sourcesShown.map((s) => s.dealer_id))); });
+
 // ---- Formular -------------------------------------------------------------------
 
 function closeForm() {
@@ -702,6 +1049,9 @@ async function openForm(item) {
   $("f-price").value = item ? priceText(item.price_cents_per_kg) : "";
   $("f-alert").value = item ? kgText(item.stock_alert_g) : "";
   $("f-price-date").textContent = item && item.price_changed_at ? "Preis geändert am " + dateText(item.price_changed_at) : "";
+  setPriceSource(item);
+  show("src-section", Boolean(item));
+  if (item) await loadSources();
   show("form-panel", true);
   if (item) {
     $("f-number").value = String(item.number);
@@ -746,9 +1096,10 @@ function formPayload() {
     tolerance: emptyToNull($("f-tol").value),
     unit_size_g: emptyToNull($("f-unit-size").value),
     unit_label: $("f-unit-label").value,
-    price_per_kg: emptyToNull($("f-price").value),
     stock_alert_kg: emptyToNull($("f-alert").value),
   };
+  // Mit aktiver Bezugsquelle gehört der Preis ihr (M04-14): Feld ist dann nur Anzeige und wird nicht geschickt
+  if (!$("f-price").readOnly) payload.price_per_kg = emptyToNull($("f-price").value);
   const number = emptyToNull($("f-number").value);
   if (number !== null) payload.number = number;
   return payload;
@@ -823,6 +1174,7 @@ async function start() {
   if (token && await checkSession()) {
     if (NEXT_URL) { location.href = BASE + NEXT_URL; return; }
     showView("list");
+    await loadDealers();
     await loadList();
     await openFromRecipe();
   } else if (!token) {

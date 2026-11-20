@@ -54,7 +54,7 @@ def test_archive_with_stock_zero_and_csv(client, auth, mehl):
     r = client.post(f"/api/v1/admin/raw-materials/{mehl}/archive", headers=auth, json={"stock_zero": True})
     assert r.status_code == 200 and r.json()["archived"] and r.json()["stock_g"] == 0
     csv = client.get("/api/v1/admin/raw-materials/export.csv", headers=auth).content.decode("utf-8-sig")
-    assert csv.split("\r\n")[0].endswith("Bestand kg;Meldewert kg")
+    assert csv.split("\r\n")[0].endswith("Bestand kg;Meldewert kg;Händler (aktiv);Artikelnummer (aktiv);datenlink-ID")
 
 
 def test_archive_without_body_still_works(client, auth, mehl):

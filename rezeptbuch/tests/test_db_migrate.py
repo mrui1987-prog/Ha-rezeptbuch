@@ -30,6 +30,9 @@ EXPECTED_TABLES = {
     "recipe_piece_weight", "production_order", "order_piece", "order_batch_size", "order_dough",
     "order_item_override", "batch", "batch_item", "weighing_event", "stock_movement",
     "setting", "change_log", "migration_log",
+    # Modul 04 (0009)
+    "dealer", "raw_material_source", "raw_material_label", "allergen", "raw_material_allergen",
+    "raw_material_nutrient",
 }
 
 

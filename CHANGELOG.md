@@ -1,5 +1,16 @@
 # Änderungen
 
+## 0.10.14 – Modul 04 Teil C1: Händler, Bezugsquellen, Preis je Bezugsquelle (in Entwicklung)
+
+- **Migration 0009** (mit Sicherungskopie vorher): Rohstofftabelle neu aufgebaut (Herkunft „eigen“/„datenlink“ statt „eigen“/„BÄKO“, Feld datenlink-ID für Teil C2; Inhalt unverändert), neue Tabellen Händler, Bezugsquellen und – schon für Teil C2 – Kennzeichnungspass, Allergene (feste Liste mit 26 Einträgen), Nährwerte (M04-11).
+- **Händler:** Taste „Händler“ in der Rohstoffliste – anlegen, umbenennen, archivieren, löschen (nur wenn nie verwendet). Jeder Name einmal, ohne Groß-/Kleinschreibung (M04-5, R04-11).
+- **Bezugsquellen** im Formular „Bearbeiten“: Händler, Artikelnummer, Preis je kg, „g je Mengeneinheit“ mit Einheit, Warengruppe, Bemerkung; genau eine aktiv, ein Händler einmal je Rohstoff (M04-5, K04-11, M04-24).
+- **Preis je Bezugsquelle (M04-14):** Der Preis des Rohstoffs ist der Preis der aktiven Bezugsquelle; das Preisfeld im Formular ist dann nur Anzeige. Die erste Bezugsquelle übernimmt den bisherigen Preis samt Datum (K04-1); „Preis geändert am“ ändert sich nur, wenn sich der gültige Preis ändert (K04-2). Ohne Bezugsquelle wie bisher.
+- **Massenpflege (M04-6):** Rohstoffe in der Liste markieren, Händler wählen, „als aktive Bezugsquelle setzen …“ → Vorschau mit Preisänderungen → Speichern. Fehlt der Händler, wird die Bezugsquelle angelegt.
+- **Liste:** neue Spalte „Händler (aktiv)“, Haken zum Markieren.
+- **CSV:** Export mit drei Info-Spalten am Ende („Händler (aktiv)“, „Artikelnummer (aktiv)“, „datenlink-ID“), Import wertet sie nicht aus (K04-3). Die Preisspalte ändert bei Rohstoffen mit aktiver Bezugsquelle deren Preis (Hinweis im Bericht).
+- **Schnittstelle:** `active_source` und `datenlink_id` an jedem Rohstoff; `GET /api/v1/dealers`, `GET /api/v1/raw-materials/{id}/sources` ohne PIN (K04-4); Pflege unter `/api/v1/admin/dealers…`, `/api/v1/admin/raw-materials/{id}/sources…`, `POST /api/v1/admin/raw-materials/bulk-active-source` (mit `dry_run`).
+
 ## 0.10.13 – Modul 09: Null doppelt, erst bei ruhiger Anzeige (in Entwicklung)
 
 - **Behälter wiegen / wechseln:** Die KERN piept auch, wenn sie `tare`/`zero` wegen unruhiger Anzeige verwirft (Michael 23:02) – das Piepen ist keine Bestätigung. Deshalb jetzt bei beiden Nullungen (leere Waage und nach dem Aufstellen des Behälters): `tare`, ½ s, `zero`, auf stabile Anzeige warten (höchstens 3 s), `zero` erneut. Bei leerer Waage danach wie bisher Bestätigung abwarten und bis zu zweimal wiederholen
