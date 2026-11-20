@@ -162,6 +162,13 @@ def zero_in_tx(conn, raw_material_id: int, *, note: str, source: str = "admin") 
 
 # -- Öffentliche Funktionen mit eigener Transaktion ---------------------------------
 
+QUICK_ENTRY = "quick_entry"      # Quelle der Schnellerfassung (VC03-d, docs/rohstoffverwaltung.md 6.1)
+
+
+def _quick(payload: dict) -> bool:
+    return payload.get("source") == QUICK_ENTRY
+
+
 def receipt(conn, raw_material_id: int, payload: dict) -> None:
     grams = parse_kg(payload.get("amount_kg"), "amount_kg", allow_empty=False, allow_negative=False)
     if grams == 0:
@@ -169,11 +176,11 @@ def receipt(conn, raw_material_id: int, payload: dict) -> None:
     station = payload.get("station")
     if station is not None and (isinstance(station, bool) or not isinstance(station, int)):
         raise ValidationError("Ungültige Station.", field="station")
+    source = "station" if station is not None else (QUICK_ENTRY if _quick(payload) else "admin")
     with transaction(conn):
         if station is not None and not conn.execute("SELECT 1 FROM station WHERE id = ?", (station,)).fetchone():
             raise ValidationError("Station unbekannt.", field="station")
-        receipt_in_tx(conn, raw_material_id, grams, note=payload.get("note"), station=station,
-                      source="station" if station is not None else "admin")
+        receipt_in_tx(conn, raw_material_id, grams, note=payload.get("note"), station=station, source=source)
 
 
 def inventory(conn, raw_material_id: int, payload: dict) -> None:
@@ -181,7 +188,8 @@ def inventory(conn, raw_material_id: int, payload: dict) -> None:
         raise ValidationError("Bitte den Bestand angeben (leer = Bestandsführung beenden).", field="stock_kg")
     grams = parse_kg(payload.get("stock_kg"), "stock_kg", allow_empty=True)
     with transaction(conn):
-        inventory_in_tx(conn, raw_material_id, grams, note=payload.get("note"))
+        inventory_in_tx(conn, raw_material_id, grams, note=payload.get("note"),
+                        source=QUICK_ENTRY if _quick(payload) else "admin")
 
 
 def movements(conn, raw_material_id: int, limit: int = 50) -> list[dict]:
@@ -190,6 +198,37 @@ def movements(conn, raw_material_id: int, limit: int = 50) -> list[dict]:
         "SELECT m.id, m.kind, m.delta_g, m.stock_after_g, m.batch_id, b.batch_no, m.station_id, m.source, "
         "m.note, m.created_at FROM stock_movement m LEFT JOIN batch b ON b.id = m.batch_id "
         "WHERE m.raw_material_id = ? ORDER BY m.id DESC LIMIT ?", (raw_material_id, limit)).fetchall()
+    return [dict(r, kind_text=KIND_TEXT[r["kind"]]) for r in rows]
+
+
+def movements_all(conn, *, date_from: str | None = None, date_to: str | None = None,
+                  raw_material_id: int | None = None, kind: str | None = None, limit: int = 500) -> list[dict]:
+    """Verlauf aller Rohstoffe (Unterreiter „Bestand“, docs/rohstoffverwaltung.md 6.3), neueste zuerst.
+
+    ``date_from``/``date_to``: Tage im Format JJJJ-MM-TT (UTC wie gespeichert), beide einschließlich.
+    """
+    where, params = [], []
+    for value, field, op in ((date_from, "from", ">="), (date_to, "to", "<")):
+        if value is None or value == "":
+            continue
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(value)):
+            raise ValidationError("Datum im Format JJJJ-MM-TT.", field=field)
+        where.append(f"m.created_at {op} " + ("?" if op == ">=" else "strftime('%Y-%m-%dT%H:%M:%SZ', date(?, '+1 day'))"))
+        params.append(value)
+    if raw_material_id is not None:
+        where.append("m.raw_material_id = ?")
+        params.append(raw_material_id)
+    if kind is not None and kind != "":
+        if kind not in KIND_TEXT:
+            raise ValidationError("Unbekannte Buchungsart.", field="kind")
+        where.append("m.kind = ?")
+        params.append(kind)
+    limit = max(1, min(int(limit), 2000))
+    sql = ("SELECT m.id, m.raw_material_id, rm.number, rm.name, m.kind, m.delta_g, m.stock_after_g, m.batch_id, "
+           "b.batch_no, m.station_id, m.source, m.note, m.created_at FROM stock_movement m "
+           "JOIN raw_material rm ON rm.id = m.raw_material_id LEFT JOIN batch b ON b.id = m.batch_id"
+           + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY m.id DESC LIMIT ?")
+    rows = conn.execute(sql, (*params, limit)).fetchall()
     return [dict(r, kind_text=KIND_TEXT[r["kind"]]) for r in rows]
 
 

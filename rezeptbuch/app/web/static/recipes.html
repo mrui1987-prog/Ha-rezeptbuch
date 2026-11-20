@@ -281,7 +281,29 @@
       <div class="toolbar"><button type="button" id="io-export">Export herunterladen</button> <button type="button" id="io-sample" class="secondary">Mustervorlage herunterladen</button></div>
       <div id="io-export-msg" class="msg hidden" role="alert"></div>
     </div>
-    <p class="small">Der CSV-Import und -Export nur der Rohstoffe liegt auf der Seite „Rohstoffe“.</p>
+    <div class="panel">
+      <h2>Rohstoffe aus CSV importieren</h2>
+      <p class="small">Format wie der CSV-Export (Semikolon, Kopfzeile). Zuordnung über die Nummer, ohne Nummer über
+        den Namen; sonst wird der Rohstoff neu angelegt. <b>Vorhandene Rohstoffe werden mit den Werten der Datei
+        überschrieben.</b> Leere Toleranz bleibt beim vorhandenen Rohstoff unverändert, ein neuer Rohstoff erhält 0 %.
+        Rohstoffe, die nicht in der Datei stehen, bleiben unverändert. Zuerst läuft immer ein Probelauf; gespeichert
+        wird erst mit „Importieren“.</p>
+      <input id="rm-file" type="file" accept=".csv,text/csv,text/plain">
+      <div class="toolbar">
+        <button type="button" id="rm-check">Probelauf</button>
+        <button type="button" id="rm-run" disabled>Importieren</button>
+      </div>
+      <div id="rm-msg" class="msg hidden" role="alert"></div>
+      <div id="rm-report"></div>
+    </div>
+    <div class="panel">
+      <h2>Rohstoffe exportieren (CSV)</h2>
+      <p class="small">Alle Rohstoffe mit Preis, Bestand, Meldewert und aktiver Bezugsquelle; öffnet direkt in Excel.
+        Nur einzelne Rohstoffe: in der Rohstoffliste wählen und „Auswahl exportieren“.</p>
+      <label class="inline"><input id="rm-archived" type="checkbox" checked> archivierte Rohstoffe mit exportieren</label>
+      <div class="toolbar"><button type="button" id="rm-export">Export herunterladen</button></div>
+      <div id="rm-export-msg" class="msg hidden" role="alert"></div>
+    </div>
   </section>
 
   <!-- Ansicht: Gruppen -->
@@ -1650,11 +1672,90 @@ $("io-sample").addEventListener("click", () => downloadFile(
   "admin/recipes/template.xlsx", "mustervorlage_rezepte.xlsx",
   "Mustervorlage erstellt. Die gelben Musterzeilen überspringt der Import; eigene Zeilen einfach darunter ergänzen."));
 
+// ---- Rohstoffe: CSV-Import und -Export (seit R1 hier, M03-20) ---------------------------------
+
+let rmFile = null;          // dieselbe Datei für Probelauf und Import
+let rmReport = null;
+
+function renderRmReport(report) {
+  rmReport = report;
+  const box = $("rm-report"); box.textContent = "";
+  box.appendChild(el("p", report.summary, report.ok ? "" : "warn"));
+  addList(box, "Fehler (Import nicht möglich)", report.errors, (e) => el("li", where(e) + e.message, "warn"));
+  addList(box, "Werden überschrieben (" + report.changes.length + ")", report.changes, (c) => {
+    const li = el("li");
+    li.appendChild(el("b", "Nr. " + c.number + " " + c.name + ": "));
+    li.appendChild(document.createTextNode(c.fields.map((f) => f.field + " " + f.old + " → " + f.new).join("; ")));
+    if (c.type_change_recipes) li.appendChild(el("span", " – Typwechsel betrifft " + c.type_change_recipes + " Rezept(e)", "warn"));
+    return li;
+  });
+  addList(box, "Neu (" + report.created.length + ")", report.created, (c) => el("li", "Nr. " + c.number + " " + c.name));
+  addList(box, "Toleranz 0 % – wird auf ±1 g genau gewogen, bitte prüfen (" + report.zero_percent.length + ")",
+    report.zero_percent, (z) => el("li", "Nr. " + z.number + " " + z.name + " (" + z.reason + ")"));
+  addList(box, "Hinweise", report.hints, (h) => el("li", where(h) + h.message));
+  $("rm-run").disabled = !(report.ok && !report.imported);
+}
+
+$("rm-file").addEventListener("change", () => {
+  rmFile = $("rm-file").files[0] || null; rmReport = null;
+  $("rm-report").textContent = ""; $("rm-run").disabled = true; showMsg("rm-msg", "");
+});
+$("rm-check").addEventListener("click", async () => {
+  showMsg("rm-msg", "");
+  if (!rmFile) { showMsg("rm-msg", "Bitte zuerst eine CSV-Datei wählen."); return; }
+  $("rm-check").disabled = true;
+  try { renderRmReport(await api("admin/import/raw-materials?mode=check", { method: "POST", file: rmFile })); }
+  catch (err) { $("rm-report").textContent = ""; handleError(err, "rm-msg"); }
+  finally { $("rm-check").disabled = false; }
+});
+$("rm-run").addEventListener("click", async () => {
+  if (!rmFile || !rmReport || !rmReport.ok) return;
+  const n = rmReport.counts.overwritten;
+  let path = "admin/import/raw-materials?mode=run";
+  if (n > 0) {
+    const text = n + (n === 1 ? " Rohstoff wird" : " Rohstoffe werden") + " mit den Werten der Datei überschrieben. Importieren?";
+    if (!(await ask(text, [{ label: "Importieren", value: true }]))) return;
+    path += "&confirm_overwrite=true";
+  }
+  $("rm-run").disabled = true;
+  try {
+    renderRmReport(await api(path, { method: "POST", file: rmFile }));
+    showMsg("rm-msg", "Import abgeschlossen.", "info");
+  } catch (err) {
+    if (err.data && err.data.report) renderRmReport(err.data.report);   // Server prüft erneut
+    handleError(err, "rm-msg");
+  }
+});
+$("rm-export").addEventListener("click", async () => {
+  showMsg("rm-export-msg", "");
+  try {
+    const res = await api("admin/raw-materials/export.csv" + ($("rm-archived").checked ? "" : "?include_archived=false"), { raw: true });
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement("a");
+    link.href = url; link.download = "rohstoffe.csv";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showMsg("rm-export-msg", "Export erstellt.", "info");
+  } catch (err) { handleError(err, "rm-export-msg"); }
+});
+
 // ---- Start -------------------------------------------------------------------------------
 
 async function start() {
   try { const info = await api("system/info"); show("probe", info.pin_is_default === true); } catch (e) { /* egal */ }
   if (!(await checkSession())) return;
+  // Reiter direkt öffnen: ?view=io (Import/Export, auch aus der Rohstoffverwaltung) bzw. ?view=groups (R1)
+  const view = new URLSearchParams(location.search).get("view");
+  if (view === "io" || view === "groups") {
+    try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ }
+    showView(view);
+    if (view === "groups") await loadGroups();
+    loadList();
+    return;
+  }
+  // Sprung aus der Rohstoffverwaltung „Rezepte mit diesem Rohstoff“: ?q=R:<Name> füllt die Suche (R1)
+  const q = new URLSearchParams(location.search).get("q");
+  if (q && q.length <= 120) { $("search").value = q; try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ } }
   showView("list");
   await loadList();
   // Rückkehr von der Rohstoffseite oder nach der Anmeldung: ?open=<Rezept-ID> (0.6.3)

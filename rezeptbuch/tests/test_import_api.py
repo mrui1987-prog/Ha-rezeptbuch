@@ -102,9 +102,10 @@ def test_b2_on_create_400(client, auth):
 
 
 def test_admin_page_has_import_and_filter(client):
+    """Seit R1 (M03-20) liegt der Rohstoff-CSV-Import im gemeinsamen Reiter Import/Export der Rezeptseite."""
     text = client.get("/admin/rohstoffe").text
-    assert "CSV-Import" in text and "nur Toleranz 0 %" in text
-    assert "0 % wird gewogen" in text
+    assert "Toleranz 0 %" in text and "0 % wird gewogen" in text
+    assert "Rohstoffe aus CSV importieren" in client.get("/admin/rezepte").text
 
 
 def test_version_matches_config(client):

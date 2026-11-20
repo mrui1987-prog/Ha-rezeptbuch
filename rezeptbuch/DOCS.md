@@ -35,12 +35,12 @@ Im Probebetrieb gilt die PIN **1234** (roter Hinweisbalken). Die PIN-Änderung f
 
 ## Rohstoffe importieren (CSV)
 
-Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CSV-Exports (Semikolon, Kopfzeile `Nummer;Name;Kurzname;Typ;Toleranz;Toleranzeinheit;Gebindegröße g;Gebindebezeichnung;Herkunft;archiviert;geändert am;Preis je kg €;Preis geändert am`; die beiden Preisspalten seit 0.6.2, ältere Dateien ohne sie gehen weiter). Gelesen werden „CSV UTF-8“ und „CSV (Trennzeichen-getrennt)“ aus Excel.
+Reiter **„Import/Export“** (seit 0.10.15 gemeinsam für Rezepte und Rohstoffe), Abschnitt „Rohstoffe aus CSV importieren“. Die Datei hat das Format des CSV-Exports (Semikolon, Kopfzeile `Nummer;Name;Kurzname;Typ;Toleranz;Toleranzeinheit;Gebindegröße g;Gebindebezeichnung;Herkunft;archiviert;geändert am;Preis je kg €;Preis geändert am`; die beiden Preisspalten seit 0.6.2, ältere Dateien ohne sie gehen weiter). Gelesen werden „CSV UTF-8“ und „CSV (Trennzeichen-getrennt)“ aus Excel.
 
 - Zuerst läuft immer ein **Probelauf**; er zeigt neue, überschriebene und unveränderte Rohstoffe, Fehler und Hinweise. Gespeichert wird erst mit **„Importieren“**, und nur wenn die Datei keinen Fehler enthält (alles oder nichts).
 - Zuordnung über die **Nummer**, ohne Nummer über den **Namen**; passt keiner, wird der Rohstoff neu angelegt.
 - **Vorhandene Rohstoffe werden überschrieben** (Bestätigung nötig). Leere Toleranz bleibt unverändert, leerer Kurzname und leeres Gebinde werden geleert, leerer Typ bleibt. Nummer und Herkunft ändern sich nie. „Herkunft“ und „geändert am“ werden nicht ausgewertet.
-- **Neue Rohstoffe ohne Toleranz erhalten 0 %.** 0 % wird gewogen (bei der Verwiegung mindestens ±1 g); nur **0 g** ist eine Handzugabe. Mit dem Filter „nur Toleranz 0 %“ lassen sich diese Rohstoffe später finden.
+- **Neue Rohstoffe ohne Toleranz erhalten 0 %.** 0 % wird gewogen (bei der Verwiegung mindestens ±1 g); nur **0 g** ist eine Handzugabe. Mit dem Filter „Toleranz 0 %“ in der Rohstoffliste lassen sich diese Rohstoffe später finden.
 - Spalte **„archiviert“**: ja = archivieren, nein = wiederherstellen. Rohstoffe, die nicht in der Datei stehen, bleiben unverändert.
 - Viele Rohstoffe bearbeiten: CSV-Export → in Excel ändern → als CSV speichern → CSV-Import.
 - Namen und Kurznamen dürfen nicht mit `=`, `+`, `-` oder `@` beginnen (Schutz vor Excel-Formeln).
@@ -50,19 +50,26 @@ Taste **„CSV-Import“** in der Rohstoffliste. Die Datei hat das Format des CS
 
 ## Händler und Bezugsquellen (seit 0.10.14)
 
-- Taste **„Händler“** in der Rohstoffliste: Händler anlegen, umbenennen, archivieren; löschen nur, solange er bei keinem Rohstoff steht.
-- Im Formular **„Bearbeiten“** eines Rohstoffs unten **„Bezugsquellen“**: Händler, Artikelnummer, Preis je kg, „g je Mengeneinheit“ (z. B. 1 L Milch = 1030 g; für den späteren Beleg-Import, nicht die Gebindegröße der Waage), Warengruppe, Bemerkung. Genau eine Bezugsquelle ist aktiv.
-- **Der Preis des Rohstoffs ist der Preis der aktiven Bezugsquelle.** Das Preisfeld oben ist dann grau; geändert wird an der Bezugsquelle. Die erste Bezugsquelle übernimmt den bisherigen Preis. Ohne Bezugsquelle wie bisher.
-- **Massenpflege:** Rohstoffe in der Liste anhaken, Händler wählen, „als aktive Bezugsquelle setzen …“. Die Vorschau zeigt, was sich ändert; gespeichert wird erst mit „Speichern“.
+- Unterreiter **„Händler“** der Rohstoffverwaltung: Händler anlegen, umbenennen, archivieren; löschen nur, solange er bei keinem Rohstoff steht.
+- Auf der Seite eines Rohstoffs Reiter **„Bezugsquellen“**: Händler, Artikelnummer, Preis je kg, „g je Mengeneinheit“ (z. B. 1 L Milch = 1030 g; für den späteren Beleg-Import, nicht die Gebindegröße der Waage), Warengruppe, Bemerkung. Genau eine Bezugsquelle ist aktiv.
+- **Der Preis des Rohstoffs ist der Preis der aktiven Bezugsquelle.** Das Preisfeld bei den Grunddaten ist dann grau; geändert wird an der Bezugsquelle. Die erste Bezugsquelle übernimmt den bisherigen Preis. Ohne Bezugsquelle wie bisher.
+- **Massenpflege:** Rohstoffe in der Liste anhaken, Aktion „Aktive Bezugsquelle setzen“ und Händler wählen. Die Vorschau zeigt, was sich ändert; gespeichert wird erst mit „Ausführen“.
 - CSV-Export: drei Spalten am Ende („Händler (aktiv)“, „Artikelnummer (aktiv)“, „datenlink-ID“), der Import liest sie nicht. Die Preisspalte im Import ändert bei Rohstoffen mit aktiver Bezugsquelle deren Preis.
+
+## Rohstoffverwaltung (seit 0.10.15)
+
+- Unterreiter **Liste · Bestand · Händler**. Tipp auf einen Rohstoff öffnet seine Seite (Grunddaten, Bestand, Bezugsquellen); ‹ › blättert durch die gefilterte Liste.
+- **Filter:** Status, Typ, Bestand, Händler, Toleranz 0 %, ohne Preis, in keinem Rezept verwendet. Sie bleiben beim Zurückkehren erhalten.
+- **Sammelaktionen:** Rohstoffe anhaken („alle wählen“ wählt die angezeigten), Aktion wählen, Vorschau, „Ausführen“. Archivieren/Wiederherstellen, Toleranz, Typ, Meldewert, Bestand (beenden / auf 0), aktive Bezugsquelle, Auswahl exportieren.
+- **Bestand erfassen:** Rohstoff suchen, Enter, Menge in kg, Enter – gebucht. Schalter **Zugang** (zählt dazu) oder **Gesamtbestand** (Inventur).
 
 ## Rohstoffbestand (seit 0.10.7)
 
-- Jeder Rohstoff kann einen **Bestand** und einen **Meldewert** (kg, bis 3 Nachkommastellen) haben. Taste **„Bestand“** in der Rohstoffliste: **„Zugang buchen“** (zählt dazu, auch ohne PIN über die Schnittstelle, später am Tablet), **„Bestand setzen“** (Inventur; leer = Bestandsführung beenden) und der Verlauf aller Buchungen. Meldewert im Formular „Bearbeiten“.
+- Jeder Rohstoff kann einen **Bestand** und einen **Meldewert** (kg, bis 3 Nachkommastellen) haben. Reiter **„Bestand“** auf der Seite eines Rohstoffs: **„Zugang buchen“** (zählt dazu, auch ohne PIN über die Schnittstelle, später am Tablet), **„Bestand setzen“** (Inventur; leer = Bestandsführung beenden) und der Verlauf aller Buchungen. Meldewert bei den Grunddaten. Viele Rohstoffe auf einmal: Unterreiter **„Bestand“ → „Bestand erfassen“** (seit 0.10.15).
 - Bestand leer = keine Bestandsführung (z. B. Wasser). 0 heißt „nichts da“. Der Bestand darf negativ werden (rot).
 - Beim Verwiegen wird abgezogen: gewogen das Ist, Gebinde Stück × Größe + Rest, Sollhandzugabe das Soll. Nichts bei „nach Bedarf“, übergangenen Zutaten, Unterrezept-Zeilen (deren Zutaten zieht der Unterrezept-Teig ab) und im Handbetrieb.
 - Reicht der Bestand für einen Teig nicht, fragt der Start „Folgende Zutaten werden über den Bestand hinaus ins Minus gebucht“ (OK/Abbrechen). Beim Abbrechen eines Teigs: „Gewogenes vom Bestand abgezogen lassen?“ – Nein bucht zurück.
-- Filter **„am/unter Meldewert“** in der Rohstoffliste (gelb markiert). Beim Archivieren und bei „Rohstoff austauschen“ kommt die Frage „Bestand auf Null setzen?“.
+- Filter **„am/unter Meldewert“** in der Rohstoffliste (gelb markiert), Meldeliste im Unterreiter „Bestand“. Beim Archivieren und bei „Rohstoff austauschen“ kommt die Frage „Bestand auf Null setzen?“.
 
 ## Rezepte
 

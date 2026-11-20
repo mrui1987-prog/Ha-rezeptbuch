@@ -14,7 +14,7 @@ import json
 import sqlite3
 
 from ..db import transaction
-from ..errors import ConflictError, NotFoundError
+from ..errors import ConflictError, NotFoundError, ValidationError
 from . import sources as sources_mod
 from . import stock as stock_mod
 from .models import normalize_text, parse_price, tolerance_display, validate
@@ -163,26 +163,79 @@ def get_raw_material(conn: sqlite3.Connection, raw_material_id: int) -> dict:
     return result
 
 
+STATUS_FILTERS = ("active", "archived", "all")
+STOCK_FILTERS = ("below_alert", "negative", "none", "attention")
+
+
 def list_raw_materials(conn: sqlite3.Connection, search: str | None = None,
                        include_archived: bool = False, zero_percent: bool = False,
-                       below_alert: bool = False) -> list[dict]:
+                       below_alert: bool = False, *, status: str | None = None, type_: str | None = None,
+                       stock: str | None = None, no_price: bool = False, unused: bool = False,
+                       dealer_id: int | None = None, no_source: bool = False,
+                       ids: list[int] | None = None) -> list[dict]:
     """Liste nach Nummer sortiert. Die Suche findet Teile von Nummer, Name und Kurzname
     ohne Rücksicht auf Groß-/Kleinschreibung.
 
     ``zero_percent``: nur Rohstoffe mit Toleranz 0 % (Filter aus M05-13b; diese werden
     bei der Verwiegung auf ±1 g genau gewogen und sollten geprüft werden).
     ``below_alert``: nur aktive Rohstoffe mit Bestandsführung am/unter dem Meldewert (VC03-b, B8).
+
+    Filter der Rohstoffverwaltung (M03-22, docs/rohstoffverwaltung.md 3), alle kombinierbar:
+    ``status`` active/archived/all (ersetzt ``include_archived``, wenn angegeben), ``type_`` standard/flour,
+    ``stock`` below_alert (am/unter Meldewert) / negative (im Minus) / none (ohne Bestandsführung) /
+    attention (am/unter Meldewert oder im Minus, Meldeliste 6.2), ``no_price``, ``unused`` (in keiner
+    aktuellen Version eines nicht archivierten Rezepts, K03-34), ``dealer_id`` (aktive Bezugsquelle bei
+    diesem Händler), ``no_source`` (ohne Bezugsquelle), ``ids`` (nur diese, Export der Auswahl).
     """
-    where = []
-    if not include_archived:
+    where: list[str] = []
+    params: list = []
+    if status is not None:
+        if status not in STATUS_FILTERS:
+            raise ValidationError("Unbekannter Status-Filter.", field="status")
+        if status == "active":
+            where.append("archived = 0")
+        elif status == "archived":
+            where.append("archived = 1")
+    elif not include_archived:
         where.append("archived = 0")
     if zero_percent:
         where.append("tolerance_unit = 'percent' AND tolerance_value = 0")
     if below_alert:
         where.append("archived = 0 AND stock_g IS NOT NULL AND stock_alert_g IS NOT NULL "
                      "AND stock_g <= stock_alert_g")
+    if type_ is not None:
+        if type_ not in ("standard", "flour"):
+            raise ValidationError("Unbekannter Typ-Filter.", field="type")
+        where.append("type = ?")
+        params.append(type_)
+    if stock is not None:
+        if stock not in STOCK_FILTERS:
+            raise ValidationError("Unbekannter Bestand-Filter.", field="stock")
+        where.append({
+            "below_alert": "stock_g IS NOT NULL AND stock_alert_g IS NOT NULL AND stock_g <= stock_alert_g",
+            "negative": "stock_g IS NOT NULL AND stock_g < 0",
+            "none": "stock_g IS NULL",
+            "attention": "stock_g IS NOT NULL AND (stock_g < 0 OR (stock_alert_g IS NOT NULL "
+                         "AND stock_g <= stock_alert_g))",
+        }[stock])
+    if no_price:
+        where.append("price_cents_per_kg IS NULL")
+    if unused:
+        where.append("id NOT IN (SELECT i.raw_material_id FROM recipe_item i JOIN recipe r "
+                     "ON r.current_version_id = i.recipe_version_id WHERE r.archived = 0 "
+                     "AND i.raw_material_id IS NOT NULL)")
+    if dealer_id is not None:
+        where.append("active_dealer_id = ?")
+        params.append(dealer_id)
+    if no_source:
+        where.append("id NOT IN (SELECT raw_material_id FROM raw_material_source)")
+    if ids is not None:
+        if not ids:
+            return []
+        where.append("id IN (" + ",".join("?" * len(ids)) + ")")
+        params.extend(ids)
     sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY number"
-    rows = [_to_dict(r) for r in conn.execute(sql)]
+    rows = [_to_dict(r) for r in conn.execute(sql, params)]
     if search and search.strip():
         needle = normalize_text(search).casefold()
         rows = [

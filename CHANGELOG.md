@@ -1,5 +1,17 @@
 # Änderungen
 
+## 0.10.15 – Modul 03: Rohstoffverwaltung (Teil R1, in Entwicklung)
+
+Umbau der Rohstoffseite nach docs/rohstoffverwaltung.md (Konzept freigegeben 20.11.2026, 13:20; M03-19 bis M03-23, K03-33 bis K03-41). Keine Migration.
+
+- **Bereich „Rohstoffverwaltung“** mit Unterreitern **Liste · Bestand · Händler** (auf dem Handy als Auswahlliste); obere Reiter jetzt auch „Gruppen“ und „Import/Export“
+- **Rohstoff als eigene Seite** (`/admin/rohstoffe/<Nummer>`, neu: `/admin/rohstoffe/neu`) mit den Reitern **Grunddaten · Bestand · Bezugsquellen**; ‹ › blättert durch die gefilterte Liste, „← Zurück zur Liste“, Rückfrage bei ungespeicherten Änderungen; Archivieren/Wiederherstellen, Löschen (nur nie verwendet) und „Rezepte mit diesem Rohstoff“ auf der Seite. Tipp auf eine Zeile der Liste öffnet die Seite
+- **Filter** (kombinierbar, bleiben beim Zurückkehren erhalten): Status, Typ, Bestand (am/unter Meldewert, im Minus, ohne Bestandsführung), Händler bzw. „ohne Bezugsquelle“, Toleranz 0 %, ohne Preis, in keinem Rezept verwendet (= keine aktuelle Version eines nicht archivierten Rezepts)
+- **Sammelaktionen**: Haken je Zeile, „alle wählen“ wählt die angezeigten; Archivieren/Wiederherstellen, Toleranz setzen, Typ setzen, Meldewert setzen, Bestand (Führung beenden / auf 0), aktive Bezugsquelle setzen, Auswahl exportieren (CSV). Vorschau, dann eine Bestätigung; nicht Erlaubtes wird übersprungen und genannt. Beim Archivieren mit Bestand Liste „Bestand auf 0“, alle vorgewählt, einzeln abwählbar (K03-36)
+- **Unterreiter Bestand**: **Bestand erfassen** (Suche → Enter → kg → Enter bucht sofort; Schalter Zugang/Gesamtbestand; Anzeige „gebucht … · Meldewert …“ und Vorschau „neu: …“; ohne Bestandsführung startet „Gesamtbestand“ die Führung, „Zugang“ fragt „ab 0 starten?“), **Meldeliste** und **Verlauf aller Rohstoffe** mit Filtern
+- **Import/Export gemeinsam** im Reiter „Import/Export“ der Rezeptseite: dort jetzt auch Rohstoff-CSV-Import und -Export; die Tasten auf der Rohstoffseite entfallen
+- **Schnittstelle:** Filter `status`, `type`, `stock`, `no_price`, `unused`, `dealer_id`, `no_source` an `GET /api/v1/raw-materials`; `POST /api/v1/admin/raw-materials/bulk` (`preview`/`confirm`, `stock_zero_ids`); `GET /api/v1/admin/stock/movements`; `GET …/export.csv?ids=…`; Buchungen der Schnellerfassung mit Quelle `quick_entry`
+
 ## 0.10.14 – Modul 04 Teil C1: Händler, Bezugsquellen, Preis je Bezugsquelle (in Entwicklung)
 
 - **Migration 0009** (mit Sicherungskopie vorher): Rohstofftabelle neu aufgebaut (Herkunft „eigen“/„datenlink“ statt „eigen“/„BÄKO“, Feld datenlink-ID für Teil C2; Inhalt unverändert), neue Tabellen Händler, Bezugsquellen und – schon für Teil C2 – Kennzeichnungspass, Allergene (feste Liste mit 26 Einträgen), Nährwerte (M04-11).

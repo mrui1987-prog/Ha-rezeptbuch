@@ -13,7 +13,8 @@ from fastapi import APIRouter, Body, Depends, Response
 
 from ..auth.dependencies import require_admin
 from ..deps import get_db
-from . import service, sources, stock
+from ..errors import ValidationError
+from . import bulk, service, sources, stock
 from .export import build_csv
 
 router = APIRouter(prefix="/api/v1", tags=["raw-materials"])
@@ -22,12 +23,27 @@ admin = [Depends(require_admin)]
 
 # -- Lesen (ohne PIN) -------------------------------------------------------------
 
+def _ids(text: str | None) -> list[int] | None:
+    """„1,2,3“ → [1, 2, 3] (Export der Auswahl); leer → None."""
+    if text is None:
+        return None
+    parts = [p for p in text.split(",") if p.strip()]
+    if not all(p.strip().isdigit() for p in parts):
+        raise ValidationError("Ungültige Auswahl.", field="ids")
+    return [int(p) for p in parts]
+
+
 @router.get("/raw-materials")
 def list_raw_materials(search: str | None = None, include_archived: bool = False,
                        zero_percent: bool = False, below_alert: bool = False,
-                       db: sqlite3.Connection = Depends(get_db)):
+                       status: str | None = None, type: str | None = None, stock: str | None = None,
+                       no_price: bool = False, unused: bool = False, dealer_id: int | None = None,
+                       no_source: bool = False, db: sqlite3.Connection = Depends(get_db)):
+    """Liste mit den Filtern der Rohstoffverwaltung (M03-22); ohne PIN lesbar (R03-16, M03-13)."""
     return service.list_raw_materials(db, search=search, include_archived=include_archived,
-                                      zero_percent=zero_percent, below_alert=below_alert)
+                                      zero_percent=zero_percent, below_alert=below_alert,
+                                      status=status, type_=type, stock=stock, no_price=no_price,
+                                      unused=unused, dealer_id=dealer_id, no_source=no_source)
 
 
 @router.get("/raw-materials/{raw_material_id}")
@@ -62,6 +78,21 @@ def bulk_active_source(payload: dict = Body(...), db: sqlite3.Connection = Depen
     return sources.bulk_active_source(db, payload)
 
 
+@router.post("/admin/raw-materials/bulk", dependencies=admin)
+def bulk_action(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Sammelaktionen der Rohstoffliste (M03-21): ``preview`` = Vorschau, Ausführen mit ``confirm``."""
+    return bulk.run(db, payload)
+
+
+@router.get("/admin/stock/movements", dependencies=admin)
+def all_stock_movements(date_from: str | None = None, date_to: str | None = None,
+                        raw_material_id: int | None = None, kind: str | None = None, limit: int = 500,
+                        db: sqlite3.Connection = Depends(get_db)):
+    """Buchungsverlauf aller Rohstoffe (Unterreiter „Bestand“, docs/rohstoffverwaltung.md 6.3)."""
+    return stock.movements_all(db, date_from=date_from, date_to=date_to, raw_material_id=raw_material_id,
+                               kind=kind, limit=limit)
+
+
 @router.get("/admin/raw-materials/next-number", dependencies=admin)
 def next_number(db: sqlite3.Connection = Depends(get_db)):
     return {"number": service.next_number(db)}
@@ -73,8 +104,11 @@ def similar(name: str = "", exclude_id: int | None = None, db: sqlite3.Connectio
 
 
 @router.get("/admin/raw-materials/export.csv", dependencies=admin)
-def export_csv(db: sqlite3.Connection = Depends(get_db)):
-    data = build_csv(service.list_raw_materials(db, include_archived=True))
+def export_csv(ids: str | None = None, include_archived: bool = True, db: sqlite3.Connection = Depends(get_db)):
+    """CSV-Export; ``ids`` = nur die gewählten (Sammelaktion 7, K03-37), sonst alle (mit archivierten)."""
+    chosen = _ids(ids)
+    data = build_csv(service.list_raw_materials(db, include_archived=include_archived or chosen is not None,
+                                                ids=chosen))
     return Response(
         content=data,
         media_type="text/csv; charset=utf-8",

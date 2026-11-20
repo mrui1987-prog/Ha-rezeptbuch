@@ -33,7 +33,10 @@ router = APIRouter(include_in_schema=False)
 @router.get("/admin", response_class=HTMLResponse)
 @router.get("/admin/login", response_class=HTMLResponse)
 @router.get("/admin/rohstoffe", response_class=HTMLResponse)
-def admin_page() -> HTMLResponse:
+@router.get("/admin/rohstoffe/{rest}", response_class=HTMLResponse)
+def admin_page(rest: str | None = None) -> HTMLResponse:
+    """Rohstoffverwaltung (Modul 03, docs/rohstoffverwaltung.md): Liste, ``/admin/rohstoffe/<Nummer>`` bzw.
+    ``/neu`` (Rohstoff als eigene Seite), ``/bestand``, ``/haendler`` – eine Seite, die Ansicht wählt das Skript."""
     return HTMLResponse(PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
