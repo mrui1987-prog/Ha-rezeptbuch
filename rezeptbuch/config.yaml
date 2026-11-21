@@ -1,5 +1,5 @@
 name: HA-Rezeptbuch
-version: "0.10.19"
+version: "0.10.20"
 slug: rezeptbuch
 description: Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien
 url: https://github.com/mrui1987-prog/ha-rezeptbuch

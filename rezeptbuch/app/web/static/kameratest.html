@@ -85,7 +85,9 @@
   // ZXing (Apache-2.0) nur als Ersatz, wenn der Browser keinen eingebauten BarcodeDetector hat (z. B. iPhone).
   // Wird zur Laufzeit aus dem Netz geladen – für die Prüfung reicht das; für den Betrieb würde die Bibliothek ins Add-on gepackt.
   const ZXING_URL = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";
-  const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code", "data_matrix"];
+  // Nur Strichcodes, die auf Rohstoffen vorkommen. DataMatrix/PDF417/Aztec bewusst nicht:
+  // ein Post-DataMatrix brachte die HA-App auf dem Galaxy Tab A (Android 8.1) zum Absturz (21.11., 19:15).
+  const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
 
   const $ = (id) => document.getElementById(id);
   const video = $("video");
@@ -110,7 +112,12 @@
     row.lastChild.textContent = String(value);
     row.lastChild.className = cls || "";
   }
+  let lastCode = "", lastAt = 0;
   function found(text, format, way) {
+    text = String(text).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 200);
+    const now = Date.now();
+    if (text === lastCode && now - lastAt < 3000) { lastAt = now; return; } // gleicher Code: nur einmal je 3 s
+    lastCode = text; lastAt = now;
     $("result").textContent = text;
     $("result").className = "result ok";
     $("resultInfo").textContent = (format || "?") + " · " + way + " · " + new Date().toLocaleTimeString("de-DE");
@@ -262,7 +269,7 @@
         hints.set(ZX.DecodeHintType.TRY_HARDER, true);
         const F = ZX.BarcodeFormat;
         hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS,
-          [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX]);
+          [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE]);
         const reader = new ZX.MultiFormatReader();
         reader.setHints(hints);
         // Abwechselnd: Mittelstreifen (Zielrahmen, wie die Markierung im Bild) und ganzes Bild
@@ -337,6 +344,8 @@
       // Ein Strichcode auf einem 12-MP-Foto ist oft nur ein kleiner Teil des Bildes.
       const hints = new Map();
       hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+      const F = ZX.BarcodeFormat;
+      hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE]);
       const reader = new ZX.MultiFormatReader();
       reader.setHints(hints);
       const W = img.naturalWidth, H = img.naturalHeight;

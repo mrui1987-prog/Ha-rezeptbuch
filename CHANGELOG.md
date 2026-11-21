@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.20 – Kameratest: Absturz durch DataMatrix vermeiden (in Entwicklung)
+
+Befund 19:15 (Galaxy Tab A, HA-App, https): Live-Scan mit eingebautem Leser funktioniert (EAN-13, UPC-A, CODE_128); ein DataMatrix-Code der Post bringt die App zum Absturz.
+
+- Gesucht werden nur noch EAN-13/-8, UPC-A/-E, Code 128, Code 39, ITF und QR (live und Foto); DataMatrix, PDF417 und Aztec nicht mehr
+- Gleicher Code wird höchstens einmal je 3 s gemeldet; Steuerzeichen werden aus dem Ergebnis entfernt
+
 ## 0.10.19 – Kameratest: Live-Erkennung verbessert (in Entwicklung)
 
 Befund 17:25 (iPhone, HA-App über https): Live-Kamera läuft, aber nur 640 × 480 und kein Treffer; Foto erkennt EAN-13.
