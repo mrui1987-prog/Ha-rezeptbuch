@@ -248,3 +248,144 @@ def test_recipe_planning(conn):
             recipe_service.set_planning(conn, rid, {"weigh_surcharge": bad})
     with pytest.raises(ValidationError):
         recipe_service.set_planning(conn, rid, {"preproduce": "ja"})
+
+
+# -- H1: P-B-Tabellen in Migration 0010 (Michael 21.11.2026, 07:08) ---------------------
+
+def test_upgrade_keeps_stock_movements(tmp_path):
+    import shutil
+
+    from app.db import MIGRATIONS_DIR, init_database
+
+    old_dir = tmp_path / "bis9"
+    old_dir.mkdir()
+    for f in MIGRATIONS_DIR.glob("*.sql"):
+        if int(f.name[:4]) <= 9:
+            shutil.copy(f, old_dir / f.name)
+    db = tmp_path / "alt.db"
+    conn = init_database(db, migrations_dir=old_dir)
+    rm = add_raw_material(conn, 7, "Butter")
+    conn.execute("INSERT INTO stock_movement (raw_material_id, kind, delta_g, stock_after_g, note) "
+                 "VALUES (?, 'receipt', 5000, 5000, 'alt')", (rm,))
+    conn.close()
+    conn = init_database(db)
+    rows = [tuple(r) for r in conn.execute("SELECT raw_material_id, kind, delta_g, note FROM stock_movement")]
+    assert rows == [(rm, "receipt", 5000, "alt")]
+    conn.execute("INSERT INTO stock_movement (raw_material_id, kind, delta_g, stock_after_g) "
+                 "VALUES (?, 'planner', -200, 4800)", (rm,))
+    conn.execute("INSERT INTO stock_movement (raw_material_id, kind, delta_g, stock_after_g) "
+                 "VALUES (?, 'planner_return', 200, 5000)", (rm,))
+    with raises_db_error():
+        conn.execute("INSERT INTO stock_movement (raw_material_id, kind) VALUES (?, 'unbekannt')", (rm,))
+    idx = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'stock_movement'")}
+    assert {"idx_stock_movement_raw_material", "idx_stock_movement_batch"} <= idx
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    conn.close()
+
+
+def test_plan_tables_checks(conn):
+    aid = conn.execute("INSERT INTO sales_article (register_no, name) VALUES (5, 'X')").lastrowid
+    pid = conn.execute("INSERT INTO sales_plan (plan_date) VALUES ('2026-11-27')").lastrowid
+    conn.execute("INSERT INTO sales_plan_line (plan_id, article_id, order_no, pieces) VALUES (?, ?, 1, 20)", (pid, aid))
+    conn.execute("INSERT INTO sales_plan_line (plan_id, article_id, order_no, wholes) VALUES (?, ?, 2, 2)", (pid, aid))
+    with raises_db_error():   # ohne Menge
+        conn.execute("INSERT INTO sales_plan_line (plan_id, article_id, order_no) VALUES (?, ?, 3)", (pid, aid))
+    with raises_db_error():   # gleicher Artikel, gleicher Auftrag
+        conn.execute("INSERT INTO sales_plan_line (plan_id, article_id, order_no, pieces) VALUES (?, ?, 1, 5)", (pid, aid))
+    with raises_db_error():   # kein Datum
+        conn.execute("INSERT INTO sales_plan (plan_date) VALUES ('morgen')")
+    with raises_db_error():
+        conn.execute("INSERT INTO plan_run (dates, status) VALUES ('[]', 'irgendwas')")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(production_order)")}
+    assert {"surcharge_tenths", "surcharge_g", "carryover_of_order_id"} <= cols
+
+
+# -- H2: Planungsfelder in Rezept-Export und Vorlagen-Import --------------------------
+
+def _planning_recipes(conn):
+    a = recipe_service.create_recipe(conn, {"name": "Kirschfüllung"})
+    b = recipe_service.create_recipe(conn, {"name": "Hefeteig"})
+    recipe_service.set_planning(conn, a["id"], {"preproduce": True, "weigh_surcharge": "1,2"})
+    recipe_service.set_planning(conn, b["id"], {"weigh_surcharge": "2"})
+    return a["id"], b["id"]
+
+
+def test_export_has_planning_columns(conn):
+    from app.exports import build_workbook
+
+    _planning_recipes(conn)
+    ws = load_workbook(io.BytesIO(build_workbook(conn)))["Rezepte"]
+    rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    assert rows[0][-2].startswith("Darf vorproduziert werden") and rows[0][-1].startswith("Abwiegezuschlag")
+    by_name = {r[2]: r[-2:] for r in rows[1:]}
+    assert by_name == {"Kirschfüllung": ["ja", "1,2"], "Hefeteig": ["nein", "2"]}
+
+
+def test_planning_roundtrip_and_update(conn, tmp_path):
+    from app.db import init_database
+    from app.exports import build_workbook
+    from app.imports.recipe_template import import_recipe_template
+
+    a, b = _planning_recipes(conn)
+    data = build_workbook(conn)
+    target = init_database(tmp_path / "leer.db")
+    assert import_recipe_template(target, data, mode="run")["ok"]
+    got = {r["name"]: (r["preproduce"], r["weigh_surcharge_tenths"])
+           for r in (recipe_service.get_recipe(target, x["id"])
+                     for x in recipe_service.list_recipes(target, include_locked=True))}
+    assert got == {"Kirschfüllung": (True, 12), "Hefeteig": (False, 20)}
+    target.close()
+
+    # gleiche Datei in dieselbe Datenbank: nichts geändert
+    report = import_recipe_template(conn, data, mode="run")
+    assert report["ok"] and not any("Planung" in h["message"] for h in report["hints"])
+
+    # Datei mit geänderten Werten: Planung geändert, ohne neue Version
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb["Rezepte"]
+    for row in ws.iter_rows(min_row=2):
+        if row[2].value == "Hefeteig":
+            row[-2].value, row[-1].value = "ja", 0.5
+        if row[2].value == "Kirschfüllung":
+            row[-2].value, row[-1].value = None, None            # leer = unverändert
+    out = io.BytesIO()
+    wb.save(out)
+    version_before = recipe_service.get_recipe(conn, b)["version_no"]
+    report = import_recipe_template(conn, out.getvalue(), mode="run")
+    assert report["ok"] and any("Planung" in h["message"] for h in report["hints"])
+    hb = recipe_service.get_recipe(conn, b)
+    assert (hb["preproduce"], hb["weigh_surcharge_tenths"], hb["version_no"]) == (True, 5, version_before)
+    ha = recipe_service.get_recipe(conn, a)
+    assert (ha["preproduce"], ha["weigh_surcharge_tenths"]) == (True, 12)
+
+
+def test_planning_import_errors(conn):
+    from app.exports import build_workbook
+    from app.imports.recipe_template import import_recipe_template
+
+    _planning_recipes(conn)
+    wb = load_workbook(io.BytesIO(build_workbook(conn)))
+    ws = wb["Rezepte"]
+    ws.cell(row=2, column=ws.max_column - 1).value = "vielleicht"
+    ws.cell(row=3, column=ws.max_column).value = "1,25"
+    out = io.BytesIO()
+    wb.save(out)
+    report = import_recipe_template(conn, out.getvalue(), mode="check")
+    assert not report["ok"]
+    texts = " ".join(e["message"] for e in report["errors"])
+    assert "„ja“ oder „nein“" in texts and "Nachkommastelle" in texts
+
+
+def test_old_file_without_planning_columns_keeps_values(conn):
+    from app.exports import build_workbook
+    from app.imports.recipe_template import import_recipe_template
+
+    a, _ = _planning_recipes(conn)
+    wb = load_workbook(io.BytesIO(build_workbook(conn)))
+    ws = wb["Rezepte"]
+    ws.delete_cols(ws.max_column - 1, 2)
+    out = io.BytesIO()
+    wb.save(out)
+    assert import_recipe_template(conn, out.getvalue(), mode="run")["ok"]
+    r = recipe_service.get_recipe(conn, a)
+    assert (r["preproduce"], r["weigh_surcharge_tenths"]) == (True, 12)

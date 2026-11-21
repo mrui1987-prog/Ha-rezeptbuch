@@ -1,6 +1,6 @@
 # Konzept Produktionsplaner mit Verkaufsartikeln (Modul 10, Teil von C2)
 
-Stand: 21.11.2026, 00:40 (Claude) – **Konzept am 21.11.2026, 00:21 von Michael freigegeben („gebe ich frei“).** K10-P5 bis K10-P14 entschieden (Sprachchat bis 16:22), K10-P15 bis K10-P22 (Textchat 20.11.2026, 23:11–23:31), K10-P21 präzisiert und K10-P23 (21.11.2026, 00:03/00:07). **Teil P-A umgesetzt als 0.10.16 (Zweig `planer-pa`, Abschnitt 16).**
+Stand: 21.11.2026, 07:20 (Claude) – **Konzept am 21.11.2026, 00:21 von Michael freigegeben („gebe ich frei“).** K10-P5 bis K10-P14 entschieden (Sprachchat bis 16:22), K10-P15 bis K10-P22 (Textchat 20.11.2026, 23:11–23:31), K10-P21 präzisiert und K10-P23 (21.11.2026, 00:03/00:07). **Teil P-A umgesetzt als 0.10.16 (Zweig `planer-pa`, Abschnitt 16); H1 und H2 am 07:08 nachgezogen (Michael).**
 Grundlage: docs/modulstatus-10.md Abschnitt 6 (M10-18 bis M10-23, K10-P1 bis K10-P23), docs/berechnung.md 17 (Bedarf, Obergrenze, Teige, `plan_doughs`, Bezugsart „kombiniert“), docs/datenmodell.md 4.2/4.3, docs/bestand.md (Bestand am Rohstoff).
 
 ## 1. Zweck
@@ -22,7 +22,7 @@ Wer plant (an der Station oder im Admin), trägt pro Tag ein, was verkauft werde
 | **Plan** | Eingaben eines Tages (Artikel × Menge × Auftragsnummer) |
 | **Planlauf** | ein „Jetzt planen“ über einen oder mehrere Tage, mit Vorschau und angelegten Aufträgen |
 
-## 3. Datenmodell (P-A: Migration 0010; P-B: nächste freie Nummer, Abschnitt 16 H1)
+## 3. Datenmodell (Migration 0010 für P-A und P-B, Abschnitt 16 H1)
 
 **`sales_article`** – Verkaufsartikel
 
@@ -249,8 +249,8 @@ Zweig `planer-pa` von `main` (abd664b), Commit cd0f581, Testlauf 44838127498 gr�
 **Schnittstelle (umgesetzt):** ohne PIN `GET /api/v1/articles` (`q`, `group`, `status` active/missing/all, `without_lines`, `not_planned`), `GET /api/v1/articles/groups`, `GET /api/v1/articles/{id}`; mit PIN `POST /api/v1/admin/articles/import?mode=check|run&groups=1,2,…`, `GET /api/v1/admin/articles/export.xlsx`, `POST /api/v1/admin/articles/bulk` (`plan_disable`, `plan_enable`, `pieces_per_whole`), `PATCH /api/v1/admin/articles/{id}`, `PUT /api/v1/admin/articles/{id}/lines`, `POST /api/v1/admin/articles/{id}/copy-lines`.
 
 **Hinweise Claude:**
-- **H1 – Vorschlag Claude – offen:** Migration 0010 enthält nur die Tabellen von P-A und die beiden Rezeptfelder. Pläne, Planläufe, `order_article_source`, `plan_stock_booking`, Anzeigefelder am Auftrag und die Einstellung kommen mit P-B in einer **eigenen Migration (nächste freie Nummer)** statt in einer gemeinsamen (Abschnitt 3 ging von einer aus). Grund: P-B-Tabellen lassen sich erst mit dem Rechenkern sauber festlegen.
-- **H2 – Vorschlag Claude – offen:** Die Spalten für „darf vorproduziert werden“ und „Abwiegezuschlag“ in Rezept-Export/Importvorlage (Abschnitt 3) sind **noch nicht gebaut**; Vorschlag: mit P-B nachziehen. Bis dahin Pflege nur im Kasten „Planung“.
+- **H1 – entschieden 21.11.2026, 07:08 (Michael: „h1 und 2 ziehen wir jetzt noch nach“): eine Migration wie in Abschnitt 3.** Migration 0010 enthält jetzt auch `sales_plan`, `sales_plan_line`, `plan_run`, `plan_run_order`, `order_article_source` (zusätzlich Spalte `carryover` = Artikel des Ursprungsauftrags), `production_order.surcharge_tenths`/`surcharge_g`/`carryover_of_order_id`, `plan_stock_booking` und die Buchungsarten `planner` („Planer“) / `planner_return` („Planer zurück“) in `stock_movement` (Tabelle dafür neu aufgebaut, Inhalt unverändert, Test mit Aktualisierung von Stand 9). Einstellung `planner_in_preselection`: ohne Eintrag gilt 1. Werden beim Rechenkern (P-B) noch Spalten gebraucht, kommen sie mit der nächsten freien Nummer.
+- **H2 – entschieden 07:08 (Michael), umgesetzt:** Rezept-Export, Vorlagen-Import und Mustervorlage mit den Spalten „Darf vorproduziert werden (ja/nein)“ und „Abwiegezuschlag % (z. B. 1,2; leer = keiner)“ am Ende des Blatts „Rezepte“. Leer oder Spalte fehlt = unverändert (neues Rezept: nein/kein Zuschlag); falsche Werte sind Fehler im Probelauf; eine Änderung erscheint als Hinweis, ohne neue Version.
 - H3: Pfade weichen vom Entwurf (Abschnitt 13) ab: Pflege unter `/api/v1/admin/articles…` (wie die übrigen Admin-Schnittstellen), Import mit `mode=check|run` statt `dry_run` (wie der Rezeptimport).
 - H4: Ein Stückgewicht, das in einer Stückliste steht, lässt sich in der Rezeptbearbeitung nicht löschen (Fehler `piece_weight_in_articles`).
 - H5: Archivierte Rezepte/Rohstoffe dürfen in einer Stückliste stehen bleiben (Hinweis ⚠), aber nicht neu eingetragen werden.
@@ -267,4 +267,6 @@ Zweig `planer-pa` von `main` (abd664b), Commit cd0f581, Testlauf 44838127498 gr�
 (g) Stückliste: Rezept mit Gramm, Rezept mit Stückgewicht, Rohstoff mit Gramm und mit Stück; ↑↓ und ✕; Summe; speichern; Rückfrage beim Verlassen ohne Speichern;
 (h) „Kopieren von Artikel-Nr.“;
 (i) Rezept → Kasten „Planung“: Haken und „1,2“ speichern, falsche Werte (21, 1,25) werden abgelehnt;
-(j) Stückgewicht löschen, das in einer Stückliste steht → Fehlermeldung; Export Verkaufsartikel öffnen (Blätter Artikel, Stückliste).
+(j) Stückgewicht löschen, das in einer Stückliste steht → Fehlermeldung; Export Verkaufsartikel öffnen (Blätter Artikel, Stückliste);
+(k) Rezepte exportieren: am Ende des Blatts „Rezepte“ die Spalten „Darf vorproduziert werden“ und „Abwiegezuschlag %“; Wert ändern, Probelauf zeigt Hinweis „Planung … geändert“, Import übernimmt ohne neue Version; „vielleicht“ bzw. „1,25“ werden abgelehnt;
+(l) Bestand → Verlauf: Filter „Art“ hat „Planer“ und „Planer zurück“; alte Buchungen nach dem Einspielen unverändert da.

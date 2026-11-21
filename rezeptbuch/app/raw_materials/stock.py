@@ -16,7 +16,7 @@ from ..errors import NotFoundError, ValidationError
 
 MAX_KG = Decimal("1000000")          # Plausibilitätsgrenze je Eingabe (1 000 t)
 KIND_TEXT = {"receipt": "Zugang", "inventory": "Bestand gesetzt", "consumption": "Verwiegung",
-             "reversal": "Rückbuchung"}
+             "reversal": "Rückbuchung", "planner": "Planer", "planner_return": "Planer zurück"}
 
 _NUMBER = re.compile(r"^[+-]?\d+([.,]\d+)?$")
 

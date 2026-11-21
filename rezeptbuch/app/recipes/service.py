@@ -1268,19 +1268,26 @@ def set_planning(conn: sqlite3.Connection, recipe_id: int, data, *, source: str 
     if not isinstance(data, dict):
         raise ValidationError("Ungültige Anfrage.")
     with transaction(conn):
-        row = _fetch(conn, recipe_id)
-        preproduce = bool(row["preproduce"])
-        surcharge = row["weigh_surcharge_tenths"]
-        if "preproduce" in data:
-            if not isinstance(data["preproduce"], bool):
-                raise ValidationError("„darf vorproduziert werden“: ja oder nein.", field="preproduce")
-            preproduce = data["preproduce"]
-        if "weigh_surcharge" in data:
-            surcharge = parse_surcharge(data["weigh_surcharge"])
-        old = {"preproduce": bool(row["preproduce"]), "weigh_surcharge_tenths": row["weigh_surcharge_tenths"]}
-        new = {"preproduce": preproduce, "weigh_surcharge_tenths": surcharge}
-        if old != new:
-            conn.execute("UPDATE recipe SET preproduce = ?, weigh_surcharge_tenths = ? WHERE id = ?",
-                         (int(preproduce), surcharge, recipe_id))
-            _log(conn, "update", recipe_id, {"planning": old}, {"planning": new}, source)
+        set_planning_in_tx(conn, recipe_id, data, source=source)
     return get_recipe(conn, recipe_id)
+
+
+def set_planning_in_tx(conn: sqlite3.Connection, recipe_id: int, data: dict, *, source: str = "admin") -> bool:
+    """Wie ``set_planning``, innerhalb einer laufenden Transaktion (auch für den Vorlagen-Import); True = geändert."""
+    row = _fetch(conn, recipe_id)
+    preproduce = bool(row["preproduce"])
+    surcharge = row["weigh_surcharge_tenths"]
+    if "preproduce" in data:
+        if not isinstance(data["preproduce"], bool):
+            raise ValidationError("„darf vorproduziert werden“: ja oder nein.", field="preproduce")
+        preproduce = data["preproduce"]
+    if "weigh_surcharge" in data:
+        surcharge = parse_surcharge(data["weigh_surcharge"])
+    old = {"preproduce": bool(row["preproduce"]), "weigh_surcharge_tenths": row["weigh_surcharge_tenths"]}
+    new = {"preproduce": preproduce, "weigh_surcharge_tenths": surcharge}
+    if old == new:
+        return False
+    conn.execute("UPDATE recipe SET preproduce = ?, weigh_surcharge_tenths = ? WHERE id = ?",
+                 (int(preproduce), surcharge, recipe_id))
+    _log(conn, "update", recipe_id, {"planning": old}, {"planning": new}, source)
+    return True

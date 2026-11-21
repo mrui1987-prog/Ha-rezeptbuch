@@ -34,7 +34,8 @@ EXPECTED_TABLES = {
     "dealer", "raw_material_source", "raw_material_label", "allergen", "raw_material_allergen",
     "raw_material_nutrient",
     # Modul 10, Planer Teil P-A (0010)
-    "sales_article", "sales_article_line",
+    "sales_article", "sales_article_line", "sales_plan", "sales_plan_line", "plan_run", "plan_run_order",
+    "order_article_source", "plan_stock_booking",
 }
 
 
