@@ -1,7 +1,7 @@
 # Modul 04 – PDF-Import Kennzeichnungspass, Händler und Bezugsquellen (Schritt B: Konzept)
 
 Status: **Konzept erstellt am 19.11.2026, 11:15 (M04-19), K04-1 bis K04-11 am 19.11.2026, 11:14 entschieden, Konzept am 19.11.2026, 11:32 freigegeben (M04-21).** Teil C1 umgesetzt als 0.10.14 (in `main`).
-**Teil C2 überarbeitet am 21.11.2026, 00:55 (Auftrag Michael 00:40) wegen M04-23: Die Leser laufen im eigenen Add-on 3 `rezeptbuch_leser`; Add-on 1 ruft es auf und macht Zuordnung, Probelauf und Speichern. Geändert: Abschnitte 2, 6, 8, 10, 11, 12, neu 15 (Add-on 3 und JSON-Vertrag) und 16 (Fragen K04-12 bis K04-18, **am 21.11.2026, 08:01 wie vorgeschlagen entschieden**, M04-26). Die Überarbeitung als Ganzes ist noch nicht freigegeben.** Abschnitte 1, 3, 4, 5, 7, 9 und 13 unverändert.
+**Teil C2 überarbeitet am 21.11.2026, 00:55 (Auftrag Michael 00:40) wegen M04-23: Die Leser laufen im eigenen Add-on 3 `rezeptbuch_leser`; Add-on 1 ruft es auf und macht Zuordnung, Probelauf und Speichern. Geändert: Abschnitte 2, 6, 8, 10, 11, 12, neu 15 (Add-on 3 und JSON-Vertrag) und 16 (Fragen K04-12 bis K04-18, **am 21.11.2026, 08:01 wie vorgeschlagen entschieden**, M04-26). **Überarbeitung am 21.11.2026, 08:43 freigegeben (M04-27).** Abschnitte 1, 3, 4, 5, 7, 9 und 13 unverändert.
 Grundlage: Entscheidungen M04-1 bis M04-24 (docs/modulstatus-04.md), docs/datenmodell.md, docs/rohstoffe.md (Abschnitt 15 Preis je kg), docs/rezepte.md 6.1, docs/bestand.md 8 (BÄKO-Belege, VC03-c), Leser Kennzeichnungspass (Schema 2, freigegeben 18.11.2026, 13:39).
 
 **Leitlinie Michael (21.11.2026, 00:40):** Wenn sich noch etwas ändert, dann eher an der Datenbank, in die eingespielt wird, als an den PDFs. Darum ist der Vertrag zwischen Leser und Add-on 1 (Abschnitt 15) so gebaut, dass er die PDFs vollständig und unverfälscht beschreibt und **keine Datenbankbegriffe** enthält. Die Übersetzung in Tabellen macht allein Add-on 1 und kann sich ändern, ohne dass der Leser angefasst wird.
@@ -372,6 +372,7 @@ Alle sieben Fragen wie vorgeschlagen entschieden.
 | 19.11.2026, 11:15 | Konzept erstellt (Schritt B, M04-19). Fragen K04-1 bis K04-11 offen. Liegt nur im Projektwissen; ins Repo mit der Umsetzung. |
 | 19.11.2026, 11:14 (eingetragen 11:25) | **K04-1 bis K04-11 wie vorgeschlagen entschieden** (Michael). Inhalt unverändert. |
 | 19.11.2026, 11:32 | **Konzept freigegeben** (Michael: „Ich gebe es frei“, M04-21). Umsetzung nach Freigabe Modul 06. |
+| 21.11.2026, 08:43 | **Überarbeitung C2 freigegeben** (Michael: „genau c2 frei“, M04-27). Add-on 3 `rezeptbuch_leser` 0.1.0 geht nach `main` und in HA; danach C2-I (Import in Add-on 1). |
 | 21.11.2026, 08:01 | **K04-12 bis K04-18 wie vorgeschlagen entschieden** (Michael: „Alle okay“, M04-26). Freigabe der Überarbeitung und Übernahme von Add-on 3 in `main` weiter offen (Michael 08:01: „Nur K04-12–18“). |
 | 21.11.2026, 07:45 | **Abschnitt 15.4 nach dem Bau des Beleglesers auf die tatsächlichen Felder gebracht** (Michael hat 6 echte Belege + Kundeninventur geliefert, 07:12). Freigabe weiter offen. |
 | 21.11.2026, 00:55 | **Teil C2 überarbeitet** (Auftrag Michael 00:40, wegen M04-23): Leser in Add-on 3, JSON-Vertrag, Ablauf mit Aufruf von Add-on 3, Tests, Teile C2-L/C2-I, Auswirkungen; Abschnitte 15 und 16 neu (K04-12 bis K04-18 offen). **Freigabe der Überarbeitung offen.** Jetzt auch im Repo (Zweig von Add-on 3). |

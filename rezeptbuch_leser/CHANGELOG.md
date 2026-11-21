@@ -1,6 +1,6 @@
 # Änderungen – HA-Rezeptbuch Leser
 
-## 0.1.0 – Modul 04 Teil C2-L (Add-on 3, M04-23) – nicht freigegeben
+## 0.1.0 – Modul 04 Teil C2-L (Add-on 3, M04-23) – freigegeben 21.11.2026 (M04-27)
 
 - Neues Add-on: PDF rein, JSON raus (Vertrag Fassung 1), schreibt nichts
 - **Kennzeichnungspass-Leser** aus `tools/kennzeichnungspass/` übernommen, Leser-Code unverändert (freigegeben 18.11.2026); `tools/kennzeichnungspass/` ruft ihn nur noch auf
