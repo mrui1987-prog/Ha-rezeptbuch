@@ -1,7 +1,7 @@
 """Liefert die Seiten des Admin-Bereichs: PIN-Eingabe und Rohstoffliste (``admin.html``),
 Rezepte und Gruppen (``recipes.html``, Modul 05), Prüfseite „Berechnung“ (``calc.html``, Modul 06),
 Prüfseite „Waagen“ (``scales.html``, Modul 08), Prüfseite „Ablauf“ (``production.html``, Modul 09), Planer (``planner.html``, Modul 10),
-Startseite und Stationsoberfläche (``start.html``, ``station.html``, Modul 10).
+Startseite und Stationsoberfläche (``start.html``, ``station.html``, Modul 10), Prüfseite Kamera (``kameratest.html``).
 
 Die Admin-Seiten sind je eine in sich geschlossene HTML-Datei (Stil und Skript eingebettet).
 Die Stationsoberfläche nutzt zusätzlich die gemeinsamen Dateien ``ui/common.css`` und
@@ -24,6 +24,7 @@ PRODUCTION_PAGE = Path(__file__).parent / "static" / "production.html"
 PLANNER_PAGE = Path(__file__).parent / "static" / "planner.html"
 START_PAGE = Path(__file__).parent / "static" / "start.html"
 STATION_PAGE = Path(__file__).parent / "static" / "station.html"
+CAMERA_TEST_PAGE = Path(__file__).parent / "static" / "kameratest.html"
 UI_DIR = Path(__file__).parent / "static" / "ui"
 UI_FILES = {"common.css": "text/css; charset=utf-8", "common.js": "text/javascript; charset=utf-8"}
 STATIONS = (1, 2)
@@ -79,6 +80,12 @@ def station_page(station: int) -> HTMLResponse:
     if station not in STATIONS:
         return HTMLResponse("Diese Station gibt es nicht.", status_code=404)
     return HTMLResponse(STATION_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/kameratest", response_class=HTMLResponse)
+def camera_test_page() -> HTMLResponse:
+    """Prüfseite Kamera/Strichcode (21.11.2026, Vorarbeit Strichcode-Erfassung): ohne PIN, speichert nichts."""
+    return HTMLResponse(CAMERA_TEST_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/ui/{name}")

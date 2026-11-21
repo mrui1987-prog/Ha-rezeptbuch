@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.17 – Prüfseite Kamera/Strichcode (in Entwicklung)
+
+Vorarbeit für die Strichcode-Erfassung (Inventur, Bestand, Wareneingang; Wunsch Michael 21.11.2026). Reine Prüfseite, speichert und bucht nichts, keine Migration.
+
+- **`/kameratest`** (ohne PIN, Link „Kameratest (Strichcode)“ auf der Startseite): **Weg 1 Live-Kamera** in der Seite, **Weg 2 Foto aufnehmen** über die Gerätekamera; Lesen mit dem eingebauten `BarcodeDetector`, sonst mit ZXing (zur Laufzeit aus dem Netz geladen)
+- Zeigt, was auf dem Gerät geht: sichere Verbindung, eingebettete Seite, Kamera-Schnittstelle und -Berechtigung, Seitenrichtlinie, Formate, Fehlermeldungen; „Ergebnis kopieren“ für die Rückmeldung
+
 ## 0.10.16 – Modul 10 C2: Planer Teil P-A – Verkaufsartikel und Stückliste (in Entwicklung)
 
 Nach docs/planer.md (Konzept freigegeben 21.11.2026, 00:21; K10-P1 bis K10-P23). Der Tagesplan selbst („Planen“) folgt mit Teil P-B.

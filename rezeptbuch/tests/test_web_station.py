@@ -82,3 +82,12 @@ def test_compact_buttons_0_10_10():
     text = (STATIC / "station.html").read_text(encoding="utf-8")
     for needle in ('id="c-tara"', 'id="c-cont"', 'id="c-change"', 'id="c-skip"', 'id="c-ack"', 'id="c-exit"', "function skipCurrent"):
         assert needle in text, needle
+
+
+def test_camera_test_page():
+    """Prüfseite Kamera (0.10.17): ohne PIN erreichbar, nicht zwischengespeichert, beide Wege, Link auf der Startseite."""
+    res = client.get("/kameratest")
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "no-store"
+    assert 'id="start"' in res.text and 'capture="environment"' in res.text
+    assert 'href="kameratest"' in client.get("/").text

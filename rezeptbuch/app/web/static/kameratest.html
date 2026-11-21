@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kameratest – HA-Rezeptbuch</title>
+<style>
+  /* Kameratest (21.11.2026): Prüft, ob Strichcodes per Kamera gelesen werden können –
+     im Browser, in der HA-Companion-App (Ingress, eingebettete Seite) und im Fully Kiosk Browser.
+     Reine Prüfseite: speichert nichts, bucht nichts. */
+  :root { --bg:#eef0f2; --panel:#fff; --line:#c9ced4; --text:#1d232a; --muted:#5d6874;
+          --accent:#1f5fbf; --ok:#2e9d3a; --bad:#d32f2f; --warn:#ef8a00; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text);
+         font-family:"Roboto","Segoe UI",system-ui,sans-serif; font-size:18px; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  h2 { font-size:19px; margin:0 0 10px; }
+  p.hint { color:var(--muted); margin:0 0 14px; font-size:15px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  button, label.btn { display:inline-flex; align-items:center; justify-content:center; min-height:60px; min-width:60px;
+         padding:0 20px; margin:0 8px 8px 0; font:inherit; font-weight:700; border-radius:10px;
+         border:2px solid var(--line); background:#f7f8f9; color:var(--text); cursor:pointer; touch-action:manipulation; }
+  button.primary, label.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.45; }
+  input[type=file] { display:none; }
+  #video { width:100%; max-height:55vh; background:#000; border-radius:10px; display:block; object-fit:cover; }
+  .result { font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; word-break:break-all; min-height:36px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:15px; }
+  td { border-top:1px solid var(--line); padding:6px 4px; vertical-align:top; }
+  td:first-child { color:var(--muted); width:42%; }
+  #log { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; white-space:pre-wrap; max-height:30vh; overflow:auto;
+         background:#f4f5f6; border-radius:8px; padding:8px; margin:0; }
+  select { font:inherit; min-height:48px; margin:0 8px 8px 0; }
+  a { color:var(--accent); }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<h1>Kameratest Strichcode</h1>
+<p class="hint">Prüfseite – speichert und bucht nichts. Bitte auf jedem Gerät (iPhone-App, Tablet/Fully Kiosk) beide Wege
+  ausprobieren und am Ende „Ergebnis kopieren“ drücken bzw. ein Bildschirmfoto machen.</p>
+
+<section>
+  <h2>Weg 1: Live-Kamera</h2>
+  <p class="hint">Kamera läuft in der Seite, Code wird laufend gesucht.</p>
+  <button type="button" class="primary" id="start">Kamera starten</button>
+  <button type="button" id="stop" disabled>Stopp</button>
+  <select id="cams" class="hidden" aria-label="Kamera wählen"></select>
+  <video id="video" playsinline muted autoplay></video>
+</section>
+
+<section>
+  <h2>Weg 2: Foto aufnehmen</h2>
+  <p class="hint">Öffnet die normale Kamera des Geräts; danach wird der Code im Foto gesucht.
+    Funktioniert oft auch dort, wo Weg 1 gesperrt ist.</p>
+  <label class="btn primary" for="photo">Foto aufnehmen</label>
+  <input type="file" id="photo" accept="image/*" capture="environment">
+</section>
+
+<section>
+  <h2>Erkannt</h2>
+  <div class="result" id="result">–</div>
+  <div id="resultInfo" class="hint"></div>
+</section>
+
+<section>
+  <h2>Gerät und Umgebung</h2>
+  <table id="env"></table>
+  <p style="margin-top:12px">
+    <button type="button" id="copy">Ergebnis kopieren</button>
+    <a id="newwin" href="#" target="_blank" rel="noopener">In eigenem Fenster öffnen</a>
+  </p>
+  <pre id="log"></pre>
+</section>
+
+<script>
+"use strict";
+(function () {
+  // ZXing (Apache-2.0) nur als Ersatz, wenn der Browser keinen eingebauten BarcodeDetector hat (z. B. iPhone).
+  // Wird zur Laufzeit aus dem Netz geladen – für die Prüfung reicht das; für den Betrieb würde die Bibliothek ins Add-on gepackt.
+  const ZXING_URL = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";
+  const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code", "data_matrix"];
+
+  const $ = (id) => document.getElementById(id);
+  const video = $("video");
+  const facts = {};
+  let stream = null, timer = null, detector = null;
+
+  function log(msg) {
+    const t = new Date().toLocaleTimeString("de-DE");
+    $("log").textContent += "[" + t + "] " + msg + "\n";
+    $("log").scrollTop = $("log").scrollHeight;
+  }
+  function fact(key, value, cls) {
+    facts[key] = value;
+    let row = document.querySelector('tr[data-k="' + key + '"]');
+    if (!row) {
+      row = document.createElement("tr");
+      row.dataset.k = key;
+      row.innerHTML = "<td></td><td></td>";
+      row.firstChild.textContent = key;
+      $("env").appendChild(row);
+    }
+    row.lastChild.textContent = String(value);
+    row.lastChild.className = cls || "";
+  }
+  function found(text, format, way) {
+    $("result").textContent = text;
+    $("result").className = "result ok";
+    $("resultInfo").textContent = (format || "?") + " · " + way + " · " + new Date().toLocaleTimeString("de-DE");
+    fact("Zuletzt erkannt", text + " (" + (format || "?") + ", " + way + ")", "ok");
+    log("ERKANNT " + way + ": " + text + " [" + (format || "?") + "]");
+    if (navigator.vibrate) { try { navigator.vibrate(80); } catch (e) { /* egal */ } }
+  }
+  function fail(way, err) {
+    const text = (err && (err.name ? err.name + ": " : "") + (err.message || err)) || "unbekannt";
+    fact("Fehler " + way, text, "bad");
+    log("FEHLER " + way + ": " + text);
+  }
+
+  // ---------- Umgebung ----------
+  let inFrame = true;
+  try { inFrame = window.self !== window.top; } catch (e) { inFrame = true; }
+  fact("Gerät/Browser", navigator.userAgent);
+  fact("Sichere Verbindung (https)", window.isSecureContext ? "ja" : "nein", window.isSecureContext ? "ok" : "bad");
+  fact("In eingebetteter Seite (iframe)", inFrame ? "ja" : "nein");
+  fact("Kamera-Schnittstelle vorhanden", (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? "ja" : "nein",
+       (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? "ok" : "bad");
+  const fp = document.permissionsPolicy || document.featurePolicy;
+  if (fp && fp.allowsFeature) {
+    const allowed = fp.allowsFeature("camera");
+    fact("Kamera laut Seitenrichtlinie erlaubt", allowed ? "ja" : "nein", allowed ? "ok" : "bad");
+  } else {
+    fact("Kamera laut Seitenrichtlinie erlaubt", "nicht abfragbar");
+  }
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: "camera" })
+      .then((p) => { fact("Kamera-Berechtigung", p.state); p.onchange = () => fact("Kamera-Berechtigung", p.state); })
+      .catch(() => fact("Kamera-Berechtigung", "nicht abfragbar"));
+  }
+  const hasDetector = "BarcodeDetector" in window;
+  fact("Eingebauter Strichcode-Leser", hasDetector ? "ja" : "nein (Ersatz ZXing)");
+  if (hasDetector && BarcodeDetector.getSupportedFormats) {
+    BarcodeDetector.getSupportedFormats().then((f) => {
+      fact("Formate eingebaut", f.join(", ") || "keine");
+      const use = FORMATS.filter((x) => f.includes(x));
+      if (use.length) detector = new BarcodeDetector({ formats: use });
+    }).catch((e) => fail("Formate", e));
+  }
+  $("newwin").href = location.href;
+
+  // ---------- ZXing bei Bedarf laden ----------
+  let zxLoad = null;
+  function loadZxing() {
+    if (window.ZXing) return Promise.resolve(window.ZXing);
+    if (zxLoad) return zxLoad;
+    zxLoad = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = ZXING_URL;
+      s.onload = () => { fact("ZXing geladen", "ja", "ok"); log("ZXing geladen"); resolve(window.ZXing); };
+      s.onerror = () => { fact("ZXing geladen", "nein (kein Internet?)", "bad"); reject(new Error("ZXing nicht ladbar")); };
+      document.head.appendChild(s);
+    });
+    return zxLoad;
+  }
+  function zxFormat(r) {
+    try { return window.ZXing.BarcodeFormat[r.getBarcodeFormat()]; } catch (e) { return "?"; }
+  }
+
+  // ---------- Weg 1: Live ----------
+  async function listCams() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+    fact("Kameras gefunden", devs.length);
+    const sel = $("cams");
+    if (devs.length > 1) {
+      const current = sel.value;
+      sel.innerHTML = "";
+      devs.forEach((d, i) => {
+        const o = document.createElement("option");
+        o.value = d.deviceId; o.textContent = d.label || ("Kamera " + (i + 1));
+        sel.appendChild(o);
+      });
+      if (current) sel.value = current;
+      sel.classList.remove("hidden");
+    }
+  }
+
+  async function start() {
+    stop();
+    $("start").disabled = true;
+    log("Kamera wird gestartet …");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      fail("Live", new Error("Keine Kamera-Schnittstelle (unsichere Verbindung oder App sperrt)"));
+      $("start").disabled = false;
+      return;
+    }
+    const devId = $("cams").value;
+    const constraints = { audio: false, video: devId ? { deviceId: { exact: devId } }
+      : { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      fail("Live", e);
+      $("start").disabled = false;
+      return;
+    }
+    fact("Live-Kamera", "läuft", "ok");
+    const track = stream.getVideoTracks()[0];
+    if (track && track.getSettings) {
+      const s = track.getSettings();
+      fact("Bildgröße", (s.width || "?") + " × " + (s.height || "?"));
+    }
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) { log("video.play: " + e); }
+    $("stop").disabled = false;
+    listCams().catch(() => {});
+
+    if (detector) {
+      fact("Leseweg live", "eingebaut (BarcodeDetector)");
+      const tick = async () => {
+        if (!stream) return;
+        try {
+          if (video.readyState >= 2) {
+            const codes = await detector.detect(video);
+            if (codes.length) found(codes[0].rawValue, codes[0].format, "live, eingebaut");
+          }
+        } catch (e) { log("detect: " + e); }
+        timer = setTimeout(tick, 250);
+      };
+      tick();
+    } else {
+      fact("Leseweg live", "ZXing");
+      try {
+        const ZX = await loadZxing();
+        // Laufendes Lesen aus dem vorhandenen Videobild über eine Zeichenfläche
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const hints = new Map();
+        hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+        const reader = new ZX.MultiFormatReader();
+        reader.setHints(hints);
+        const tick = () => {
+          if (!stream) return;
+          if (video.readyState >= 2 && video.videoWidth) {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            try {
+              const lum = new ZX.HTMLCanvasElementLuminanceSource(canvas);
+              const bmp = new ZX.BinaryBitmap(new ZX.HybridBinarizer(lum));
+              const r = reader.decode(bmp);
+              if (r) found(r.getText(), zxFormat(r), "live, ZXing");
+            } catch (e) { /* kein Code im Bild */ }
+          }
+          timer = setTimeout(tick, 300);
+        };
+        tick();
+      } catch (e) {
+        fail("Live", e);
+      }
+    }
+  }
+
+  function stop() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; log("Kamera gestoppt"); }
+    video.srcObject = null;
+    $("start").disabled = false;
+    $("stop").disabled = true;
+  }
+
+  // ---------- Weg 2: Foto ----------
+  async function photo(file) {
+    if (!file) return;
+    log("Foto erhalten: " + file.type + ", " + Math.round(file.size / 1024) + " kB");
+    fact("Foto aufnehmen", "Foto erhalten", "ok");
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("Bild nicht lesbar")); img.src = url; });
+      if (detector) {
+        const codes = await detector.detect(img);
+        if (codes.length) { found(codes[0].rawValue, codes[0].format, "Foto, eingebaut"); return; }
+        log("eingebaut: kein Code im Foto, versuche ZXing");
+      }
+      const ZX = await loadZxing();
+      // Große Fotos verkleinern, das hilft ZXing
+      const max = 1600, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      const hints = new Map();
+      hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+      const reader = new ZX.MultiFormatReader();
+      reader.setHints(hints);
+      try {
+        const r = reader.decode(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.HTMLCanvasElementLuminanceSource(c))));
+        found(r.getText(), zxFormat(r), "Foto, ZXing");
+      } catch (e) {
+        $("result").textContent = "kein Code im Foto";
+        $("result").className = "result warn";
+        log("Foto: kein Code gefunden – näher ran, scharf, gerade halten");
+      }
+    } catch (e) {
+      fail("Foto", e);
+    } finally {
+      URL.revokeObjectURL(url);
+      $("photo").value = "";
+    }
+  }
+
+  // ---------- Ergebnis kopieren ----------
+  function report() {
+    return Object.keys(facts).map((k) => k + ": " + facts[k]).join("\n") + "\n---\n" + $("log").textContent;
+  }
+  $("copy").addEventListener("click", async () => {
+    const text = report();
+    try { await navigator.clipboard.writeText(text); log("Ergebnis in die Zwischenablage kopiert"); }
+    catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); log("Ergebnis kopiert (Ersatzweg)"); }
+      catch (e2) { log("Kopieren nicht möglich – bitte Bildschirmfoto"); }
+      ta.remove();
+    }
+  });
+
+  $("start").addEventListener("click", start);
+  $("stop").addEventListener("click", stop);
+  $("cams").addEventListener("change", () => { if (stream) start(); });
+  $("photo").addEventListener("change", (e) => photo(e.target.files && e.target.files[0]));
+  window.addEventListener("pagehide", stop);
+  log("Seite geladen");
+})();
+</script>
+</body>
+</html>
