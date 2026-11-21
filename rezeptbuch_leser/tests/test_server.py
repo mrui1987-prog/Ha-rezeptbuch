@@ -33,12 +33,12 @@ def _anfrage(port, methode, pfad, koerper=None, kopf=None):
 
 def test_gesundheit(server):
     code, d = _anfrage(server, "GET", "/v1/gesundheit")
-    assert code == 200 and d["leser"] == {"kennzeichnungspass": 2}
+    assert code == 200 and d["leser"] == {"kennzeichnungspass": 2, "baeko_beleg": 1}
 
 
 def test_unbekannte_pfade(server):
     assert _anfrage(server, "GET", "/")[0] == 404
-    assert _anfrage(server, "POST", "/v1/lesen/baeko-beleg", b"%PDF-1.4")[0] == 404
+    assert _anfrage(server, "POST", "/v1/lesen/gibts-nicht", b"%PDF-1.4")[0] == 404
     assert _anfrage(server, "POST", "/v1/gibtsnicht", b"x")[0] == 404
 
 
@@ -92,3 +92,10 @@ def test_zweiseitiger_pass_ohne_inhalt_unlesbar_mit_dateiname(server):
     code, d = _anfrage(server, "POST", "/v1/lesen/kennzeichnungspass", pdf, {"X-Dateiname": "pass.pdf"})
     assert code == 200 and d["status"] == "unlesbar" and d["warnungen"]
     assert d["daten"]["schema"] == 2 and d["daten"]["quelle"]["datei"] == "pass.pdf"
+
+
+def test_beleg_ueber_http(server):
+    from app.testpdf import beispiel_rechnung
+    code, d = _anfrage(server, "POST", "/v1/lesen/baeko-beleg", beispiel_rechnung(), {"X-Dateiname": "re.pdf"})
+    assert code == 200 and d["status"] == "ok" and d["leser"] == "baeko_beleg" and d["leser_schema"] == 1
+    assert d["daten"]["belegnummer"] == "RE0000001" and d["daten"]["datei"] == "re.pdf"

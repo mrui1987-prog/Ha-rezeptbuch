@@ -12,28 +12,33 @@ import tempfile
 import traceback
 from pathlib import Path
 
-from .vertrag import FALSCHES_DOKUMENT, FEHLER, LESER, UNLESBAR
+from .vertrag import FALSCHES_DOKUMENT, FEHLER, LESER, OK, UNLESBAR
 
 
 def lese(leser: str, pfad: str, dateiname: str | None = None) -> dict:
     if leser == "kennzeichnungspass":
         from .pass_mantel import lese_kennzeichnungspass
         return lese_kennzeichnungspass(pfad, dateiname)
+    if leser == "baeko_beleg":
+        from .beleg_mantel import lese_baeko_beleg
+        return lese_baeko_beleg(pfad, dateiname)
     return {"status": FEHLER, "meldung": f"Unbekannter Leser {leser!r}"}
 
 
 def selbsttest() -> int:
     import pdfplumber
-    from .testpdf import erzeuge_pdf
+    from .testpdf import beispiel_rechnung, erzeuge_pdf
     erwartet = [
-        (erzeuge_pdf(1), FALSCHES_DOKUMENT),
-        (erzeuge_pdf(1, betreff="Produktspezifikation"), UNLESBAR),
+        ("kennzeichnungspass", erzeuge_pdf(1), FALSCHES_DOKUMENT),
+        ("kennzeichnungspass", erzeuge_pdf(1, betreff="Produktspezifikation"), UNLESBAR),
+        ("baeko_beleg", erzeuge_pdf(1), FALSCHES_DOKUMENT),
+        ("baeko_beleg", beispiel_rechnung(), OK),
     ]
     with tempfile.TemporaryDirectory() as tmp:
-        for nr, (inhalt, status) in enumerate(erwartet):
+        for nr, (leser, inhalt, status) in enumerate(erwartet):
             pfad = Path(tmp) / f"t{nr}.pdf"
             pfad.write_bytes(inhalt)
-            ergebnis = lese("kennzeichnungspass", str(pfad))
+            ergebnis = lese(leser, str(pfad))
             if ergebnis["status"] != status:
                 print(f"Selbsttest fehlgeschlagen: {status} erwartet, {ergebnis}", file=sys.stderr)
                 return 1

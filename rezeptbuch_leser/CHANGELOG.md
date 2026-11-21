@@ -7,4 +7,5 @@
 - HTTP-Server (Standardbibliothek) auf Port 8100, nur internes Netz; `GET /v1/gesundheit`, `POST /v1/lesen/kennzeichnungspass`
 - Jede Datei in eigenem Prozess mit Zeitlimit 30 s; Grenzen 10 MB / 20 Seiten
 - Selbsttest beim Bau des Images (pdfplumber auf Alpine)
-- BÄKO-Belegleser folgt, sobald echte Belege zum Prüfen vorliegen
+- **BÄKO-Belegleser** (`POST /v1/lesen/baeko-beleg`, Schema 1): Auftragsbestätigung, Rechnung (2026 und 2024 mit Skonto je Position, Strecke), Gutschrift; prüft Netto-Summe, MwSt.-Sätze, Überträge und Warengruppen auf den Cent – sonst `unlesbar`; trennt im PDF übereinander gedruckte Bezeichnungen; Name/Anschrift des Kunden werden nicht übernommen
+- Geprüft an 6 echten Belegen (165 Positionen, alle Summen stimmen)

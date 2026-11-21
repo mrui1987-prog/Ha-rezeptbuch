@@ -305,7 +305,7 @@ Alle elf Fragen wie vorgeschlagen entschieden.
 
 | Methode | Pfad | Inhalt |
 |---|---|---|
-| GET | `/v1/gesundheit` | `{"format":"rezeptbuch-leser","format_version":1,"addon_version":"…","leser":{"kennzeichnungspass":2,"baeko_beleg":1}}` (Leser mit Schema-Fassung; ein Leser fehlt, solange er nicht gebaut ist) |
+| GET | `/v1/gesundheit` | `{"format":"rezeptbuch-leser","format_version":1,"addon_version":"…","leser":{"kennzeichnungspass":2,"baeko_beleg":1}}` (Leser mit Schema-Fassung) |
 | POST | `/v1/lesen/kennzeichnungspass` | Körper = PDF (`application/pdf`), Kopfzeile `X-Dateiname` optional |
 | POST | `/v1/lesen/baeko-beleg` | wie oben; Belegart (Auftragsbestätigung/Rechnung/Gutschrift) erkennt der Leser selbst |
 
@@ -338,15 +338,16 @@ HTTP-Status: 200 bei jedem gelesenen oder abgelehnten PDF (Ergebnis steht im JSO
 
 Regeln: Neue Felder darf Add-on 3 jederzeit **hinzufügen**; Add-on 1 ignoriert Unbekanntes. Wird ein Feld umbenannt, entfernt oder in der Bedeutung geändert, steigt `format_version` bzw. `leser_schema`. Add-on 1 nennt die Fassungen, die es versteht, und lehnt andere mit Meldung ab (Abschnitt 6, Schritt 2).
 
-### 15.4 BÄKO-Belegleser (Grundlage docs/bestand.md 8.1–8.4)
+### 15.4 BÄKO-Belegleser (gebaut 21.11.2026, `leser_schema` 1; Grundlage docs/bestand.md 8.1–8.4)
 
-Liefert den Beleg **so, wie er auf dem Papier steht**, ohne Rohstoffe und ohne Umrechnung in Gramm (beides Add-on 1, K03-19, M03-18):
-- `belegart`: `auftragsbestaetigung` / `rechnung` / `gutschrift`; `belegnummer` (AT…/RE…/GS…), `belegdatum`, `kundennummer`, `haendler` („BÄKO Saar-Pfalz eG“ wie gedruckt).
-- Auftragsbestätigung: `lieferdatum_voraussichtlich`, `chefslist_nummer` (CL…).
-- Rechnung: Abschnitte je Lieferschein (`lieferschein`, `lieferdatum`, `chefslist_nummer`, `auftrag` + `auftragsdatum`); Gutschrift: `bezug` (RN… vom …), `grundtext`.
-- Je Position: `pos`, `artikelnummer` (Text), `bezeichnung` (alle Zeilen), `menge` (Text mit Komma wie gedruckt **und** als Tausendstel-Ganzzahl), `mengeneinheit` (KG, L, ST …), `gebinde_text`, `preis` (Text + Zehntausendstel-Cent-Ganzzahl), `preiseinheit` (EIN/HDT/TSD), `netto_cent`, `mwst_prozent`, `warengruppe` (nur Rechnung), `bestellartikel` („B“), `skonto` (Rechnung 2024).
-- `summen`: gedruckte Netto-Summe und **Summe der gelesenen Positionen** – stimmen sie nicht überein, ist `status` = `unlesbar` (K03-31).
+Liefert den Beleg **so, wie er auf dem Papier steht**, ohne Rohstoffe und ohne Umrechnung in Gramm (beides Add-on 1, K03-19, M03-18). Name und Anschrift des Kunden werden **nicht** übernommen.
+- Kopf: `belegart` (`auftragsbestaetigung` / `rechnung` / `gutschrift`), `haendler` (wie gedruckt, z. B. „BÄKO Saar-Pfalz eG“), `belegnummer` (AT…/RE…/GS…), `belegdatum` (AB: Auftragsdatum; ISO), `lieferdatum_voraussichtlich` (nur AB), `kundennummer` + `kundennummer_text`, `ausstelldatum_text`, `ihre_referenz` (CL…, Kopf), `versandart`.
+- Je Position: `nr` (laufend), `pos` (AB/GS), `seite`, `warengruppe` (nur Rechnung), `artikelnummer` (Text), `anzahl_text` (Rechnung, z. B. „16 SCK a 25 KG“), `bezeichnung` + `bezeichnung_zeilen`, `gebinde_text` (AB/GS, z. B. „1 VE à 3 BT“), `gebinde_klammer` („(2 TR)“), `zusatztext` (Text nach dem Gebinde, z. B. Grundtext der Gutschrift), `bestellartikel` + `bestell_hinweis`, `menge_text` + `menge_tausendstel`, `mengeneinheit`, `preis_text` + `preis_zehntausendstel_euro`, `preiseinheit` (EIN/HDT/TSD), `netto_text` + `netto_cent`, `mwst_prozent`, `skonto` (`text`, `prozent_text`, `cent`; Rechnungen 2024) und `netto_nach_konditionen_cent`, `lieferung` (`art` Hauptorder/Ordersatz/Rücknahme/Strecke, `lieferschein`, `lieferdatum`, `zusatz`), `auftrag` (`referenz` CL…, `auftrag` AT…/RN…, `auftragsdatum`), `ext_belegnummer`, `lieferantenbeleg` (Strecke).
+- `summen`: `netto_cent`, `mwst_cent`, `brutto_cent`, `belegsumme_cent`, `mwst_saetze` (je Satz netto/MwSt./brutto) und `gelesen_netto_cent` (Summe der gelesenen Positionen, nach Skonto). `warengruppen`: Rechnungsanlage bzw. Artikelgruppen der Gutschrift (Nummer, Name, Beträge). `zahlung_text` (z. B. „Abbuchung zum … abzgl. 2 % Skonto …“).
+- **Prüfungen, jede Abweichung = Warnung = `unlesbar` (K03-31):** Summe der Positionen = Netto-Summe; je MwSt.-Satz; jeder Übertrag am Seitenende und oben auf der Folgeseite; je Warengruppe gegen die Rechnungsanlage; Summe nach Konditionen = Netto − Skonto; Belegsumme = Brutto; Belegnummer passt zur Belegart; jede Zeile mit Zahlen rechts muss zugeordnet sein; Spalte „Ihre Art.-Nr.“ gefüllt → unbekannter Aufbau.
+- **Plausibilität (sperrt nicht):** Menge × Preis ≠ Netto (über Rundung hinaus); **im PDF übereinander gedruckte Bezeichnungszeilen** (bei der BÄKO gesehen: „M32“ über „grün“ bzw. über der nächsten Artikelzeile) werden nach der Reihenfolge im PDF getrennt, der Position zugeordnet und gemeldet; ein leicht versetzter Doppeldruck desselben Texts wird stillschweigend einmal genommen.
 - Streckenlieferung (WG 1301) und Pfand werden gelesen wie jede Position; was damit geschieht, entscheidet Add-on 1 (K03-24, K03-30).
+- **Geprüft an 6 echten Belegen** (AT1002852, RE1395402, RE1392522, RE1389186, RE1360935 mit Skonto je Position und Strecke, GS1008363): alle `ok`, 165 Positionen, Summen auf den Cent; Gegenprobe mit `pdftotext` 164/165 gleich (die fehlende ist eine überdruckte Zeile, die `pdftotext` verschluckt). Gescannte PDFs (Kundeninventur) → `falsches_dokument`.
 
 Zahlen als Ganzzahlen, damit nichts gerundet wird; die gedruckten Texte stehen daneben, damit der Bericht genau zeigt, was auf dem Beleg steht.
 
@@ -369,4 +370,5 @@ Zahlen als Ganzzahlen, damit nichts gerundet wird; die gedruckten Texte stehen d
 | 19.11.2026, 11:15 | Konzept erstellt (Schritt B, M04-19). Fragen K04-1 bis K04-11 offen. Liegt nur im Projektwissen; ins Repo mit der Umsetzung. |
 | 19.11.2026, 11:14 (eingetragen 11:25) | **K04-1 bis K04-11 wie vorgeschlagen entschieden** (Michael). Inhalt unverändert. |
 | 19.11.2026, 11:32 | **Konzept freigegeben** (Michael: „Ich gebe es frei“, M04-21). Umsetzung nach Freigabe Modul 06. |
+| 21.11.2026, 07:45 | **Abschnitt 15.4 nach dem Bau des Belegleisers auf die tatsächlichen Felder gebracht** (Michael hat 6 echte Belege + Kundeninventur geliefert, 07:12). Freigabe weiter offen. |
 | 21.11.2026, 00:55 | **Teil C2 überarbeitet** (Auftrag Michael 00:40, wegen M04-23): Leser in Add-on 3, JSON-Vertrag, Ablauf mit Aufruf von Add-on 3, Tests, Teile C2-L/C2-I, Auswirkungen; Abschnitte 15 und 16 neu (K04-12 bis K04-18 offen). **Freigabe der Überarbeitung offen.** Jetzt auch im Repo (Zweig von Add-on 3). |

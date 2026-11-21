@@ -9,7 +9,7 @@ PFLICHT = {"format", "format_version", "addon_version", "leser", "leser_schema",
 def test_gesundheit():
     g = gesundheit()
     assert g["format"] == "rezeptbuch-leser" and g["format_version"] == 1
-    assert g["addon_version"] == __version__ and g["leser"] == {"kennzeichnungspass": 2}
+    assert g["addon_version"] == __version__ and g["leser"] == {"kennzeichnungspass": 2, "baeko_beleg": 1}
 
 
 def test_antwort_pflichtfelder():

@@ -14,6 +14,7 @@ FORMAT_VERSION = 1
 # Leser, die dieses Add-on anbietet, mit der Fassung ihres Datenschemas
 LESER = {
     "kennzeichnungspass": 2,
+    "baeko_beleg": 1,
 }
 
 OK = "ok"                              # vollständig gelesen, übernehmbar
