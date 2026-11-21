@@ -112,6 +112,12 @@ def batch_sizes(recipe_id: int, payload: dict = Body(...), db: sqlite3.Connectio
     return service.set_batch_sizes(db, recipe_id, payload.get("batch_sizes"), revision=payload.get("revision"))
 
 
+@router.put("/admin/recipes/{recipe_id}/planning", dependencies=admin)
+def planning(recipe_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Planer: „darf vorproduziert werden“ und Abwiegezuschlag (docs/planer.md 3)."""
+    return service.set_planning(db, recipe_id, payload)
+
+
 @router.post("/admin/recipes/{recipe_id}/unlock", dependencies=admin)
 def unlock(recipe_id: int, payload: dict | None = Body(default=None), db: sqlite3.Connection = Depends(get_db)):
     return service.unlock_recipe(db, recipe_id, confirm=_confirm(payload or {}, "confirm"))

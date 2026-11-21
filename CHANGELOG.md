@@ -1,5 +1,19 @@
 # Änderungen
 
+## 0.10.16 – Modul 10 C2: Planer Teil P-A – Verkaufsartikel und Stückliste (in Entwicklung)
+
+Nach docs/planer.md (Konzept freigegeben 21.11.2026, 00:21; K10-P1 bis K10-P23). Der Tagesplan selbst („Planen“) folgt mit Teil P-B.
+
+- **Migration 0010:** Tabellen Verkaufsartikel und Stücklistenzeilen; am Rezept neu „darf vorproduziert werden“ und „Abwiegezuschlag“ (Zehntelprozent, 0–20 %)
+- **Reiter „Planer“** in allen Admin-Seiten (`/admin/planer`), Unterreiter **Planen** (Platzhalter bis P-B) und **Artikel**: Liste mit Suche (Nummer oder Name), Warengruppe, Status (in der Kasse / nicht mehr in der Kasse / alle), „ohne Stückliste“, „nicht planen“; Sammelaktionen „nicht planen“, „wieder planen“, „Stück je Ganzes“ setzen/leeren
+- **Artikelseite:** Stück je Ganzes, planen ja/nein, Bemerkung; **Stückliste** mit Rezepten (Gramm oder Stückgewicht) und Rohstoffen (Gramm oder Stück × Gebindegröße), Reihenfolge ↑↓, Summe je Ganzes bzw. Stück, Hinweise bei archivierten Rezepten/Rohstoffen, „Kopieren von Artikel-Nr.“
+- **Vectron-Import** im Reiter Import/Export der Rezeptseite: Probelauf mit Warengruppen-Auswahl (Vorgabe 1–14), dann Import; neu/geändert/wieder da/nicht mehr in der Kasse (nie gelöscht), Überschriften (#), leere Zeilen und WG 0 übersprungen, doppelte Nummern = Fehler; WG 12 → 12, WG 13 → 14 Stück je Ganzes. **Export** als .xlsx (Blätter Artikel und Stückliste)
+- **Rezept, Kasten „Planung“:** „darf vorproduziert werden“ und „Abwiegezuschlag %“, eigene Taste, keine neue Version
+- Ein Stückgewicht, das in einer Stückliste verwendet wird, lässt sich nicht löschen
+- **Migration 0010 enthält auch die Tabellen für P-B** (H1): Pläne je Tag mit Auftragsnummer, Planläufe, Artikel je Auftrag, Zuschlag/Übertrag am Auftrag (Anzeige), Abbuchungen; Buchungsarten „Planer“ und „Planer zurück“ im Bestandsverlauf (Tabelle der Buchungen neu aufgebaut, Inhalt unverändert)
+- **Rezept-Export und Vorlagen-Import** (H2): Spalten „Darf vorproduziert werden (ja/nein)“ und „Abwiegezuschlag %“ am Ende des Blatts „Rezepte“, auch in der Mustervorlage; leer = unverändert
+- **Schnittstelle:** `GET /api/v1/articles` (`q`, `group`, `status`, `without_lines`, `not_planned`), `/articles/groups`, `/articles/{id}` ohne PIN; mit Admin `POST /admin/articles/import?mode=check|run&groups=…`, `GET /admin/articles/export.xlsx`, `POST /admin/articles/bulk`, `PATCH /admin/articles/{id}`, `PUT /admin/articles/{id}/lines`, `POST /admin/articles/{id}/copy-lines`, `PUT /admin/recipes/{id}/planning`
+
 ## 0.10.15 – Modul 03: Rohstoffverwaltung (Teil R1, in Entwicklung)
 
 Umbau der Rohstoffseite nach docs/rohstoffverwaltung.md (Konzept freigegeben 20.11.2026, 13:20; M03-19 bis M03-23, K03-33 bis K03-41). Keine Migration.

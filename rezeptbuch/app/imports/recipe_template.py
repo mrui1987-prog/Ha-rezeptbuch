@@ -72,6 +72,7 @@ RECIPE_COLUMNS = {
     "import-id": "import_id", "rezeptnummer": "number", "rezeptname": "name", "rezeptgruppe": "group",
     "knetzeit langsam": "knead_slow", "knetzeit schnell": "knead_fast", "hinweistext": "note",
     "hinweis anzeigen": "note_display", "notiz intern": "internal_note",
+    "darf vorproduziert werden": "preproduce", "abwiegezuschlag": "surcharge", "abwiegezuschlag %": "surcharge",
     "prüfen": None, "bemerkung": None, "status": None, "version": None,
 }
 LINE_COLUMNS = {
@@ -97,7 +98,8 @@ CONV_TITLES = {"conv_unit": "Umrechnung Einheit", "conv_factor": "Gramm je Einhe
 COLUMN_TITLES = {
     SHEET_RECIPES: {"import_id": "Import-ID", "number": "Rezeptnummer", "name": "Rezeptname",
                     "group": "Rezeptgruppe", "knead_slow": "Knetzeit langsam", "knead_fast": "Knetzeit schnell",
-                    "note": "Hinweistext", "note_display": "Hinweis anzeigen", "internal_note": "Notiz intern"},
+                    "note": "Hinweistext", "note_display": "Hinweis anzeigen", "internal_note": "Notiz intern",
+                    "preproduce": "Darf vorproduziert werden", "surcharge": "Abwiegezuschlag"},
     SHEET_LINES: {"import_id": "Import-ID", "position": "Position", "step": "Schritt", "kind": "Zeilenart",
                   "ingredient": "Zutat", "sub_id": "Unterrezept Import-ID", "amount": "Menge Original",
                   "unit": "Einheit Original", "tol_unit": "Toleranzeinheit", "tol_value": "Toleranzwert",
@@ -118,6 +120,7 @@ BATCH_KIND_VALUES = {"gewicht": "weight", "weight": "weight", "stück": "pieces"
 TOL_UNIT_VALUES = {"g": "g", "%": "percent", "percent": "percent", "prozent": "percent"}
 REVIEW_VALUES = {"*", "x", "ja", "1"}
 # Spalte „Obergrenze“ im Blatt Chargengrößen (V06-2, seit 0.6.2): ja = aktiv, leer/nein = nicht aktiv
+PREPRODUCE_VALUES = {"ja": True, "x": True, "1": True, "nein": False, "0": False}
 LIMIT_VALUES = {"ja": True, "x": True, "1": True, "aktiv": True, "nein": False, "0": False}
 FIXED_FACTORS = {"g": Decimal(1), "kg": Decimal(1000)}
 # ml ↔ l: ist der Faktor für die eine Einheit bekannt, ergibt sich die andere (E7c)
@@ -435,6 +438,7 @@ class PlannedRecipe:
     name: str
     group: str | None
     data: dict
+    planning: dict = field(default_factory=dict)   # Planer-Felder (K10-P17/P21); fehlt = unverändert
     lines: list[dict] = field(default_factory=list)      # je Zeile: Eingabe + Fundstelle
     pieces: list[dict] = field(default_factory=list)
     batches: list[dict] = field(default_factory=list)
@@ -588,9 +592,28 @@ def _plan_recipes(sheet: Sheet, err: _Errors, report: ImportReport, ignored: set
             "note_display": note_display or "end",
             "internal_note": str(internal) if internal is not None else None,
         }
+        planning = {}
+        if "preproduce" in sheet.columns:               # Spalte fehlt (ältere Datei) oder leer: unverändert
+            text = _key(row.text("preproduce"))
+            if text:
+                value = PREPRODUCE_VALUES.get(text)
+                if value is None:
+                    err.add(SHEET_RECIPES, row.line, "preproduce", "„Darf vorproduziert werden“ muss „ja“ oder „nein“ sein.")
+                    broken = True
+                else:
+                    planning["preproduce"] = value
+        if "surcharge" in sheet.columns:
+            surcharge = row.raw("surcharge")
+            if surcharge is not None and str(surcharge).strip():
+                try:
+                    recipe_service.parse_surcharge(surcharge)
+                    planning["weigh_surcharge"] = surcharge
+                except ServiceError as exc:
+                    err.add(SHEET_RECIPES, row.line, "surcharge", exc.message)
+                    broken = True
         group = row.text("group") or None
         planned[key] = PlannedRecipe(import_id=import_id, line=row.line, number=number, name=name,
-                                     group=group, data=data, broken=broken)
+                                     group=group, data=data, planning=planning, broken=broken)
     return planned
 
 
@@ -957,6 +980,8 @@ def _create(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, 
     data["items"] = items
     recipe_id = recipe_service.create_in_tx(conn, data, source="import")
     _portions(conn, recipe, recipe_id, items)
+    if recipe.planning:
+        recipe_service.set_planning_in_tx(conn, recipe_id, recipe.planning, source="import")
 
     created[recipe.import_id.casefold()] = recipe_id
     info = recipe_service.get_recipe(conn, recipe_id)
@@ -986,6 +1011,8 @@ def _update(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, 
     outcome = recipe_service.save_in_tx(conn, recipe_id, data, revision=row["revision"], version_mode="new",
                                         source="import")
     _portions(conn, recipe, recipe_id, items)
+    planning_changed = bool(recipe.planning) and recipe_service.set_planning_in_tx(
+        conn, recipe_id, recipe.planning, source="import")
 
     created[recipe.import_id.casefold()] = recipe_id
     info = recipe_service.get_recipe(conn, recipe_id)
@@ -995,6 +1022,9 @@ def _update(conn: sqlite3.Connection, recipe: PlannedRecipe, created: dict[str, 
              "review_count": info["review_count"], "action": action,
              "old_version": before["version_no"], "new_version": info["version_no"]}
     report.recipes_updated.append(entry)
+    if planning_changed:
+        report.hint(f"Rezept „{info['name']}“: Planung (vorproduzierbar/Abwiegezuschlag) geändert.",
+                    line=recipe.line, sheet=SHEET_RECIPES)
     if action == "new_version" and info["review_count"] and not info["locked"]:
         recipe_service.lock_in_tx(conn, recipe_id, source="import")     # zu prüfende Zeilen: wie beim Anlegen sperren
         report.hint(f"Rezept „{info['name']}“ ist wegen „*“ gesperrt worden (bitte prüfen und freischalten).",

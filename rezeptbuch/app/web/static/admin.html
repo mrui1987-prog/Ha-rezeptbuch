@@ -108,7 +108,7 @@
 
   <!-- Rohstoffverwaltung (M03-20, docs/rohstoffverwaltung.md) -->
   <section id="view-app" class="hidden">
-    <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a><a id="tab-groups" href="#">Gruppen</a><a id="tab-io" href="#">Import/Export</a><a id="tab-calc" href="#">Berechnung</a><a id="tab-scales" href="#">Waagen</a><a id="tab-production" href="#">Ablauf</a>
+    <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a><a id="tab-groups" href="#">Gruppen</a><a id="tab-io" href="#">Import/Export</a><a id="tab-calc" href="#">Berechnung</a><a id="tab-planner" href="#">Planer</a><a id="tab-scales" href="#">Waagen</a><a id="tab-production" href="#">Ablauf</a>
       <span class="grow"></span><button type="button" id="btn-logout">Abmelden</button></div>
     <h1>Rohstoffverwaltung</h1>
     <div class="toolbar hidden" id="back-bar"><button type="button" id="btn-back-recipe">← Zurück zum Rezept</button>
@@ -316,7 +316,7 @@
         <div class="filters">
           <label class="inline">von <input id="h-from" type="date"></label>
           <label class="inline">bis <input id="h-to" type="date"></label>
-          <select id="h-kind" aria-label="Art"><option value="">alle Arten</option><option value="receipt">Zugang</option><option value="inventory">Bestand gesetzt</option><option value="consumption">Verwiegung</option><option value="reversal">Rückbuchung</option></select>
+          <select id="h-kind" aria-label="Art"><option value="">alle Arten</option><option value="receipt">Zugang</option><option value="inventory">Bestand gesetzt</option><option value="consumption">Verwiegung</option><option value="reversal">Rückbuchung</option><option value="planner">Planer</option><option value="planner_return">Planer zurück</option></select>
           <select id="h-rm" aria-label="Rohstoff"><option value="">alle Rohstoffe</option></select>
           <button type="button" id="h-load">Anzeigen</button>
         </div>
@@ -357,7 +357,7 @@ const API = BASE + "api/v1/";
 const ROOT = BASE + "admin/rohstoffe";
 // Nach der Anmeldung zurück zur Seite, die die Anmeldung verlangt hat (Rezepte Modul 05, Berechnung Modul 06)
 const PARAMS = new URLSearchParams(location.search);
-const NEXT_PAGE = { rezepte: "admin/rezepte", berechnung: "admin/berechnung", waagen: "admin/waagen", ablauf: "admin/ablauf" }[PARAMS.get("next")] || null;
+const NEXT_PAGE = { rezepte: "admin/rezepte", berechnung: "admin/berechnung", planer: "admin/planer", waagen: "admin/waagen", ablauf: "admin/ablauf" }[PARAMS.get("next")] || null;
 // Sprung aus einer Rezeptzeile (0.6.3): ?edit=<Rohstoff-ID>&back=<Rezept-ID> öffnet den Rohstoff,
 // „Zurück zum Rezept“ führt zur Rezeptseite mit diesem Rezept; ?open=<Rezept-ID> beim Weiterleiten nach der Anmeldung
 const ID_RE = /^[0-9]{1,9}$/;
@@ -373,6 +373,7 @@ $("tab-recipes").href = BASE + "admin/rezepte";
 $("tab-groups").href = BASE + "admin/rezepte?view=groups";
 $("tab-io").href = BASE + "admin/rezepte?view=io";
 $("tab-calc").href = BASE + "admin/berechnung";
+$("tab-planner").href = BASE + "admin/planer";
 $("tab-scales").href = BASE + "admin/waagen";
 $("tab-production").href = BASE + "admin/ablauf";
 
@@ -465,7 +466,7 @@ async function goTab(ev) {
   if (await checkSession()) location.href = target;
   else pendingPage = target;
 }
-["tab-recipes", "tab-groups", "tab-io", "tab-calc", "tab-scales", "tab-production"].forEach((id) => $(id).addEventListener("click", goTab));
+["tab-recipes", "tab-groups", "tab-io", "tab-calc", "tab-planner", "tab-scales", "tab-production"].forEach((id) => $(id).addEventListener("click", goTab));
 window.addEventListener("pageshow", (ev) => { if (ev.persisted && token) checkSession(); });
 
 // Eigene Rückfrage statt confirm(): In der HA-App (iOS) fehlt dort die Taste „Abbrechen“

@@ -48,6 +48,7 @@
   <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
   <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
   <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
+  <a id="nav-planner" href="#" data-next="planer">Planer</a>
   <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
   <a class="active" href="#" aria-current="page">Ablauf</a>
   <span class="grow"></span>
@@ -115,6 +116,7 @@ try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-recipes").href = BASE + "admin/rezepte";
 $("nav-calc").href = BASE + "admin/berechnung";
+$("nav-planner").href = BASE + "admin/planer";
 $("nav-scales").href = BASE + "admin/waagen";
 
 function toLogin(next) {
@@ -159,7 +161,7 @@ async function goTab(ev) {
   const target = ev.currentTarget.href;
   if (await checkSession(ev.currentTarget.dataset.next)) location.href = target;
 }
-["nav-raw", "nav-recipes", "nav-calc", "nav-scales"].forEach((id) => $(id).addEventListener("click", goTab));
+["nav-raw", "nav-recipes", "nav-calc", "nav-planner", "nav-scales"].forEach((id) => $(id).addEventListener("click", goTab));
 window.addEventListener("pageshow", (ev) => { if (ev.persisted) checkSession(); });
 $("nav-logout").addEventListener("click", async () => {
   try { await api("admin/logout", { method: "POST" }); } catch (e) { /* egal */ }

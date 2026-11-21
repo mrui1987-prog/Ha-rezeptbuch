@@ -27,7 +27,8 @@ FORMULA_ROWS = 300          # Zeilen mit Kontrollformeln im Blatt „Rezeptzeile
 # Überschriften wie die Importvorlage vom 14.11.2026 (ohne reine Formel-/Infospalten der Datenblätter)
 RECIPES = ["Import-ID", "Rezeptnummer (leer = nächste freie)", "Rezeptname", "Rezeptgruppe",
            "Knetzeit langsam (min)", "Knetzeit schnell (min)", "Hinweistext",
-           "Hinweis anzeigen (Beginn = am Anfang und am Ende, Ende = nur am Ende)", "Notiz intern", "Bemerkung"]
+           "Hinweis anzeigen (Beginn = am Anfang und am Ende, Ende = nur am Ende)", "Notiz intern",
+           "Darf vorproduziert werden (ja/nein)", "Abwiegezuschlag % (z. B. 1,2; leer = keiner)", "Bemerkung"]
 LINES = ["Import-ID", "Position", "Schritt", "Zeilenart (Rohstoff/Unterrezept)", "Zutat (bereinigt)",
          "Unterrezept Import-ID", "Menge Original", "Einheit Original (g/kg/ml/Stück/Maß)",
          "Faktor g je Einheit (Formel)", "Menge g (Formel)", "Toleranzeinheit (g/percent, optional)",
@@ -46,10 +47,10 @@ CONVERSION_NOTE = ("Nur ausfüllen, wenn Rezepte über Umrechnung importiert wer
 
 SAMPLE_RECIPES = [
     ["M1", None, "Schoko-Biskuit (Muster)", "Torten", None, None,
-     "Bei 180 °C etwa 30 Minuten backen.", "Ende", None, MUSTER + " (Unterrezept der Torte)"],
+     "Bei 180 °C etwa 30 Minuten backen.", "Ende", None, "ja", None, MUSTER + " (Unterrezept der Torte)"],
     ["M2", None, "Schwarzwälder Kirschtorte (Muster)", "Torten", None, None,
      "Boden zweimal durchschneiden und mit Kirschwasser tränken.", "Beginn",
-     "Musterrezept aus der Mustervorlage", MUSTER],
+     "Musterrezept aus der Mustervorlage", "nein", "1,2", MUSTER],
 ]
 # Import-ID, Position, Schritt, Zeilenart, Zutat, Unterrezept, Menge, Einheit, Tol.-Einheit, Tol.-Wert, Prüfen, Bemerkung
 SAMPLE_LINES = [
@@ -120,6 +121,8 @@ GUIDE = [
     ("• Hinweis anzeigen: „Beginn“ = am Anfang und am Ende der Verwiegung, „Ende“ = nur am Ende. "
      "Ein leerer Hinweistext erscheint an der Waage nicht.", False),
     ("• Notiz intern: nur im Admin-Bereich sichtbar, nie an der Waage.", False),
+    ("• Darf vorproduziert werden / Abwiegezuschlag: Angaben für den Planer (ja/nein; Prozent mit höchstens einer "
+     "Nachkommastelle, 0 bis 20). Leer = beim Anlegen nein bzw. kein Zuschlag, bei vorhandenen Rezepten unverändert.", False),
     ("• Toleranz je Zeile ist freiwillig (sonst gilt die des Rohstoffs): Einheit g oder percent, Wert in g bzw. %.", False),
     ("• Chargengröße „Gewicht“ ohne Wert = Gesamtgewicht des Rezepts; „Stück“ braucht Anzahl und Stückgewicht-Bezeichnung.", False),
     ("• „Obergrenze“ = ja: größter Teig für dieses Rezept (Kessel); höchstens eine Chargengröße je Rezept.", False),
@@ -179,7 +182,7 @@ def build_sample() -> bytes:
                value=f"Erstellt am {datetime.now().strftime('%d.%m.%Y')} mit HA-Rezeptbuch {__version__}.")
     guide.column_dimensions["A"].width = 120
 
-    ws_r = _sheet(wb, "Rezepte", RECIPES, SAMPLE_RECIPES, [10, 14, 34, 16, 12, 12, 46, 24, 30, 40], muster)
+    ws_r = _sheet(wb, "Rezepte", RECIPES, SAMPLE_RECIPES, [10, 14, 34, 16, 12, 12, 46, 24, 30, 16, 16, 40], muster)
     lines = []
     for ln in SAMPLE_LINES:
         lines.append([*ln[:8], None, None, *ln[8:]])

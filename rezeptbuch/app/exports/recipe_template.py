@@ -25,6 +25,7 @@ RECIPE_HEADER = [
     "Import-ID", "Rezeptnummer", "Rezeptname", "Rezeptgruppe", "Knetzeit langsam (min)",
     "Knetzeit schnell (min)", "Hinweistext", "Hinweis anzeigen (Beginn = am Anfang und am Ende, Ende = nur am Ende)",
     "Notiz intern", "Status (nicht importieren)", "Version (nicht importieren)",
+    "Darf vorproduziert werden (ja/nein)", "Abwiegezuschlag % (z. B. 1,2; leer = keiner)",
 ]
 LINE_HEADER = [
     "Import-ID", "Rezeptname (nicht importieren)", "Position", "Schritt", "Zeilenart (Rohstoff/Unterrezept)",
@@ -45,7 +46,7 @@ RAW_HEADER = [
 ]
 
 WIDTHS = {
-    "Rezepte": [10, 12, 30, 20, 12, 12, 50, 22, 40, 14, 12],
+    "Rezepte": [10, 12, 30, 20, 12, 12, 50, 22, 40, 14, 12, 16, 16],
     "Rezeptzeilen": [10, 26, 9, 22, 14, 30, 12, 12, 12, 12, 10, 10, 12, 12, 8],
     "Stückgewichte": [10, 26, 24, 11, 11],
     "Chargengrößen": [10, 26, 24, 14, 14, 22, 11, 14],
@@ -55,6 +56,13 @@ WIDTHS = {
 
 def import_id(number: int) -> str:
     return f"R{number}"
+
+
+def _surcharge_text(tenths) -> str | None:
+    """Abwiegezuschlag als Text mit Komma („1,2“); leer = keiner (K10-P21)."""
+    if tenths is None:
+        return None
+    return str(tenths // 10) if tenths % 10 == 0 else f"{tenths // 10},{tenths % 10}"
 
 
 def _status(recipe: dict) -> str:
@@ -165,6 +173,7 @@ def build_workbook(conn: sqlite3.Connection, include_archived: bool = False, ids
             rid, recipe["number"], recipe["name"], recipe["group_name"], recipe["knead_slow_min"],
             recipe["knead_fast_min"], recipe["note"], "Beginn" if recipe["note_display"] == "start" else "Ende",
             recipe.get("internal_note"), _status(recipe), recipe["version_no"],
+            "ja" if recipe.get("preproduce") else "nein", _surcharge_text(recipe.get("weigh_surcharge_tenths")),
         ])
         ws_r.cell(row=r_row, column=7).alignment = Alignment(wrap_text=True, vertical="top")
         r_row += 1

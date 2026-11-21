@@ -58,7 +58,7 @@ def name_key(name: str) -> str:
 
 _RECIPE_SELECT = (
     "SELECT r.id, r.number, r.group_id, r.current_version_id, r.locked, r.archived, r.created_at, "
-    "       r.revision, r.internal_note, v.version_no, v.name, v.knead_slow_min, v.knead_fast_min, v.note, v.note_display, "
+    "       r.revision, r.internal_note, r.preproduce, r.weigh_surcharge_tenths, v.version_no, v.name, v.knead_slow_min, v.knead_fast_min, v.note, v.note_display, "
     "       v.created_at AS version_created_at, v.frozen_at, g.name AS group_name "
     "FROM recipe r "
     "LEFT JOIN recipe_version v ON v.id = r.current_version_id "
@@ -323,6 +323,9 @@ def get_recipe(conn: sqlite3.Connection, recipe_id: int, include_internal: bool 
         "created_at": row["created_at"],
         "piece_weights": _piece_weights(conn, recipe_id),
         "batch_sizes": _batch_sizes(conn, recipe_id),
+        # Planer (K10-P17, K10-P21)
+        "preproduce": bool(row["preproduce"]),
+        "weigh_surcharge_tenths": row["weigh_surcharge_tenths"],
         "versions": _versions(conn, recipe_id, row["current_version_id"]),
         "usage": use,
     }
@@ -919,6 +922,14 @@ def set_piece_weights_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: lis
         "JOIN recipe_piece_weight p ON p.id = b.piece_weight_id "
         f"WHERE b.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY b.sort_order",
         removed)]
+    in_articles = [r["name"] for r in conn.execute(
+        "SELECT DISTINCT a.name FROM sales_article_line l JOIN sales_article a ON a.id = l.article_id "
+        f"WHERE l.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY a.name", removed)]
+    if in_articles:
+        # Planer (K10-P6): Stücklisten verweisen auf Stückgewichte – erst dort ändern
+        raise ConflictError("Das Stückgewicht wird in der Stückliste dieser Verkaufsartikel verwendet: "
+                            + ", ".join(f"„{n}“" for n in in_articles) + ". Bitte erst dort ändern.",
+                            code="piece_weight_in_articles", articles=in_articles)
     if affected and not confirm_delete_batch_sizes:
         labels = ", ".join(f"„{a['label']}“" for a in affected)
         raise ConflictError(
@@ -1222,3 +1233,61 @@ def delete_in_tx(conn: sqlite3.Connection, recipe_id: int, *, source: str = "adm
                                          (recipe_id,)).fetchone()[0]}
     conn.execute("DELETE FROM recipe WHERE id = ?", (recipe_id,))
     _log(conn, "delete", recipe_id, snapshot, None, source)
+
+
+# -- Planungsangaben (Planer, Modul 10, docs/planer.md 3) ------------------------------
+
+MAX_SURCHARGE_TENTHS = 200          # höchstens 20,0 % Abwiegezuschlag
+
+
+def parse_surcharge(value) -> int | None:
+    """Abwiegezuschlag in Zehntelprozent aus Zahl oder Text („1,2“ → 12); leer = kein Zuschlag."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, bool):
+        raise ValidationError("Abwiegezuschlag: bitte eine Zahl in Prozent eingeben.", field="weigh_surcharge")
+    try:
+        tenths = Fraction(str(value).strip().replace(",", ".")) * 10
+    except (ValueError, ZeroDivisionError):
+        raise ValidationError("Abwiegezuschlag: bitte eine Zahl in Prozent eingeben, z. B. 1,2.",
+                              field="weigh_surcharge") from None
+    if tenths.denominator != 1:
+        raise ValidationError("Abwiegezuschlag: höchstens eine Nachkommastelle (z. B. 1,2 %).", field="weigh_surcharge")
+    if not 0 <= tenths <= MAX_SURCHARGE_TENTHS:
+        raise ValidationError("Abwiegezuschlag: 0 bis 20 %.", field="weigh_surcharge")
+    return int(tenths)
+
+
+def set_planning(conn: sqlite3.Connection, recipe_id: int, data, *, source: str = "admin") -> dict:
+    """Setzt „darf vorproduziert werden“ und den Abwiegezuschlag (K10-P17, K10-P21).
+
+    Gehört zum Rezept, nicht zur Version – es entsteht keine neue Version, die Revision bleibt.
+    ``data``: ``preproduce`` (true/false) und ``weigh_surcharge`` (Prozent als Zahl/Text, leer = keiner);
+    fehlende Schlüssel bleiben unverändert.
+    """
+    if not isinstance(data, dict):
+        raise ValidationError("Ungültige Anfrage.")
+    with transaction(conn):
+        set_planning_in_tx(conn, recipe_id, data, source=source)
+    return get_recipe(conn, recipe_id)
+
+
+def set_planning_in_tx(conn: sqlite3.Connection, recipe_id: int, data: dict, *, source: str = "admin") -> bool:
+    """Wie ``set_planning``, innerhalb einer laufenden Transaktion (auch für den Vorlagen-Import); True = geändert."""
+    row = _fetch(conn, recipe_id)
+    preproduce = bool(row["preproduce"])
+    surcharge = row["weigh_surcharge_tenths"]
+    if "preproduce" in data:
+        if not isinstance(data["preproduce"], bool):
+            raise ValidationError("„darf vorproduziert werden“: ja oder nein.", field="preproduce")
+        preproduce = data["preproduce"]
+    if "weigh_surcharge" in data:
+        surcharge = parse_surcharge(data["weigh_surcharge"])
+    old = {"preproduce": bool(row["preproduce"]), "weigh_surcharge_tenths": row["weigh_surcharge_tenths"]}
+    new = {"preproduce": preproduce, "weigh_surcharge_tenths": surcharge}
+    if old == new:
+        return False
+    conn.execute("UPDATE recipe SET preproduce = ?, weigh_surcharge_tenths = ? WHERE id = ?",
+                 (int(preproduce), surcharge, recipe_id))
+    _log(conn, "update", recipe_id, {"planning": old}, {"planning": new}, source)
+    return True
