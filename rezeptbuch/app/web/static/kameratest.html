@@ -23,7 +23,7 @@
   button.primary, label.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
   button:disabled { opacity:.45; }
   input[type=file] { display:none; }
-  #video { width:100%; max-height:55vh; background:#000; border-radius:10px; display:block; object-fit:cover; }
+  #video { width:100%; max-height:55vh; background:#000; border-radius:10px; display:block; object-fit:contain; }
   .result { font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; word-break:break-all; min-height:36px; }
   .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
   table { border-collapse:collapse; width:100%; font-size:15px; }
@@ -47,7 +47,11 @@
   <button type="button" class="primary" id="start">Kamera starten</button>
   <button type="button" id="stop" disabled>Stopp</button>
   <select id="cams" class="hidden" aria-label="Kamera wählen"></select>
-  <video id="video" playsinline muted autoplay></video>
+  <div style="position:relative">
+    <video id="video" playsinline muted autoplay></video>
+    <div aria-hidden="true" style="position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid rgba(46,157,58,.9);border-radius:8px;pointer-events:none"></div>
+  </div>
+  <p class="hint" style="margin-top:8px">Strichcode quer in den grünen Rahmen halten, ca. 10–20 cm Abstand.</p>
 </section>
 
 <section>
@@ -202,8 +206,10 @@
       return;
     }
     const devId = $("cams").value;
-    const constraints = { audio: false, video: devId ? { deviceId: { exact: devId } }
-      : { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    // Hohe Auflösung auch bei gewählter Kamera anfordern (13:43/17:25: nur 640 × 480 → kein Live-Treffer)
+    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    const constraints = { audio: false, video: devId ? Object.assign({ deviceId: { exact: devId } }, size)
+      : Object.assign({ facingMode: { ideal: "environment" } }, size) };
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
@@ -216,6 +222,16 @@
     if (track && track.getSettings) {
       const s = track.getSettings();
       fact("Bildgröße", (s.width || "?") + " × " + (s.height || "?"));
+      // Dauerfokus, falls das Gerät es kann (iPhone/Android)
+      try {
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.focusMode && caps.focusMode.includes("continuous")) {
+          await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+          fact("Fokus", "Dauerfokus");
+        } else {
+          fact("Fokus", "Gerätestandard");
+        }
+      } catch (e) { fact("Fokus", "nicht einstellbar"); }
     }
     video.srcObject = stream;
     try { await video.play(); } catch (e) { log("video.play: " + e); }
@@ -244,21 +260,36 @@
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
         const hints = new Map();
         hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+        const F = ZX.BarcodeFormat;
+        hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS,
+          [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX]);
         const reader = new ZX.MultiFormatReader();
         reader.setHints(hints);
+        // Abwechselnd: Mittelstreifen (Zielrahmen, wie die Markierung im Bild) und ganzes Bild
+        let n = 0, tries = 0, since = Date.now();
         const tick = () => {
           if (!stream) return;
           if (video.readyState >= 2 && video.videoWidth) {
-            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-            try {
-              const lum = new ZX.HTMLCanvasElementLuminanceSource(canvas);
-              const bmp = new ZX.BinaryBitmap(new ZX.HybridBinarizer(lum));
-              const r = reader.decode(bmp);
-              if (r) found(r.getText(), zxFormat(r), "live, ZXing");
-            } catch (e) { /* kein Code im Bild */ }
+            const W = video.videoWidth, H = video.videoHeight;
+            const band = (n++ % 3) !== 2;
+            const sw = band ? W * 0.8 : W, sh = band ? H * 0.4 : H;
+            const sx = (W - sw) / 2, sy = (H - sh) / 2;
+            const k = Math.min(1, 1280 / sw);
+            canvas.width = Math.round(sw * k); canvas.height = Math.round(sh * k);
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+            tries++;
+            for (const B of [ZX.HybridBinarizer, ZX.GlobalHistogramBinarizer]) {
+              try {
+                const r = reader.decode(new ZX.BinaryBitmap(new B(new ZX.HTMLCanvasElementLuminanceSource(canvas))));
+                if (r) { found(r.getText(), zxFormat(r), "live, ZXing (" + (band ? "Rahmen" : "ganzes Bild") + ")"); break; }
+              } catch (e) { /* kein Code im Bild */ }
+            }
+            if (Date.now() - since > 2000) {
+              fact("Leseversuche live", Math.round(tries * 1000 / (Date.now() - since)) + " je Sekunde");
+              tries = 0; since = Date.now();
+            }
           }
-          timer = setTimeout(tick, 300);
+          timer = setTimeout(tick, 120);
         };
         tick();
       } catch (e) {

@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.19 – Kameratest: Live-Erkennung verbessert (in Entwicklung)
+
+Befund 17:25 (iPhone, HA-App über https): Live-Kamera läuft, aber nur 640 × 480 und kein Treffer; Foto erkennt EAN-13.
+
+- Live: 1920 × 1080 angefordert (auch bei gewählter Kamera), Dauerfokus wenn möglich, Lesen abwechselnd im Mittelstreifen und im ganzen Bild, zwei Binarisierer, nur übliche Strichcode-Formate, alle 120 ms
+- Grüner Zielrahmen im Kamerabild, Anzeige „Leseversuche je Sekunde“ und „Fokus“; Bild nicht mehr beschnitten
+
 ## 0.10.18 – Kameratest: Fotoerkennung verbessert (in Entwicklung)
 
 Befund Kameratest 13:43 (iPhone, HA-App): Live-Kamera gesperrt, weil die Seite über http läuft; Foto kam an, Code wurde nicht gefunden.
