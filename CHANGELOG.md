@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.18 – Kameratest: Fotoerkennung verbessert (in Entwicklung)
+
+Befund Kameratest 13:43 (iPhone, HA-App): Live-Kamera gesperrt, weil die Seite über http läuft; Foto kam an, Code wurde nicht gefunden.
+
+- Foto: bis zu 12 Leseversuche (Größen 2400/1600/1000/700 px, Ausschnitt Mitte 60/40 %, um 90° gedreht, zwei Binarisierer) statt einem Versuch bei 1600 px; Vorschaubild des Fotos; Fotogröße und Trefferweg im Protokoll
+- Anzeige des Adress-Schemas und Hinweis, dass die Live-Kamera https braucht
+
 ## 0.10.17 – Prüfseite Kamera/Strichcode (in Entwicklung)
 
 Vorarbeit für die Strichcode-Erfassung (Inventur, Bestand, Wareneingang; Wunsch Michael 21.11.2026). Reine Prüfseite, speichert und bucht nichts, keine Migration.
