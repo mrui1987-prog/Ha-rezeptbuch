@@ -428,6 +428,9 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
                 target = "substitute"
                 note = (f"Ersatz für Rohstoff {sub_rm['name']} – BÄKO {line['article_no'] or ''} "
                         f"{line['description'] or ''} – anderer Hersteller, Pass prüfen")
+                if sub.get("pack_g") is not None:
+                    pack_g = _int(sub.get("pack_g"), f"lines.{i}.substitute.pack_g", minimum=1, maximum=10 ** 7)
+                    note += f" – Gebinde {pack_g / 1000:g} kg".replace(".", ",")
                 if line["unit_code"] != "KG" and sub_rm["type"] != "aid":
                     gpu = _gpu(sub.get("grams_per_unit"), f"lines.{i}.substitute.grams_per_unit")
                 elif sub_rm["type"] == "aid":

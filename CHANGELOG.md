@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.10.25 – Wareneingang: Ersatz per Scan
+
+Entscheidung Michael 22.11.2026 (Sprachchat, „so umsetzen“ 14:40), `docs/strichcode.md` H-D.
+
+- Unbekannter Code beim „Mit Kamera abhaken“: neue Taste **„Ersatz für …“** – bestellten Rohstoff wählen, sofort Rückfrage **„Gebinde gleich groß?“**, sonst Größe in kg eingeben
+- Der fremde Code gilt **nur für diese Lieferung** (wird nicht am Rohstoff gespeichert); weitere Scans desselben Codes zählen direkt auf die Zeile
+- Buchung mit Vermerk „Ersatz für Rohstoff … – anderer Hersteller, Pass prüfen“, bei anderem Gebinde zusätzlich „Gebinde x kg“
+
 ## 0.10.24 – Wareneingang, Teil W1 (in Entwicklung)
 
 Konzept `docs/wareneingang.md` (W1) und `docs/strichcode.md` Abschnitt 6.

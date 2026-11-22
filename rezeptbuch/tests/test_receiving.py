@@ -155,6 +155,20 @@ def test_substitute_on_delivery_day(conn, env):
     assert conn.execute("SELECT count(*) FROM raw_material_source WHERE raw_material_id = ?", (b,)).fetchone()[0] == 0
 
 
+def test_substitute_scan_same_material_other_pack(conn, env):
+    """Ersatz per Scan (H-D): gleicher Rohstoff, anderes Gebinde, kein Code gespeichert, Vermerk mit Gebinde."""
+    a = mehl(conn, "Roggenmehl A")
+    stock.inventory(conn, a, {"stock_kg": "0"})
+    _, doc = load(conn, env, [position(1, "11", "Roggenmehl A", 50000)],
+                  {"1": {"action": "assign", "raw_material_id": a}})
+    rec.book(conn, doc["id"], {"lines": [{"id": doc["lines"][0]["id"], "qty_milli": 40000,
+                                          "substitute": {"raw_material_id": a, "pack_g": 20000}}]})
+    assert rms.get_raw_material(conn, a)["stock_g"] == 40000
+    note = stock.movements(conn, a)[0]["note"]
+    assert "Pass prüfen" in note and "Gebinde 20 kg" in note
+    assert conn.execute("SELECT count(*) FROM raw_material_barcode").fetchone()[0] == 0
+
+
 def test_unexpected_line_and_aid(conn, env):
     rm = mehl(conn)
     tuete = rms.create_raw_material(conn, {"name": "Brötchentüten", "type": "aid", "unit_label": "Karton"})["id"]

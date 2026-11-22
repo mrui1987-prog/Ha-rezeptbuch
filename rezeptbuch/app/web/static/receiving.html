@@ -84,7 +84,7 @@
     RB.store.set("rezeptbuch_device", DEVICE);
   }
 
-  const S = { view: "home", back: null, delivery: null, marks: {}, scanning: false, busy: false };
+  const S = { view: "home", back: null, delivery: null, marks: {}, scanning: false, busy: false, temp: {} };
 
   // ------------------------------------------------------------ Hilfen
   function fmtMilli(m, unit) {
@@ -350,7 +350,7 @@
   async function openDelivery(id, keepMarks) {
     let d;
     try { d = await RB.api("receiving/deliveries/" + id); } catch (e) { fail(e); return; }
-    if (!keepMarks || !S.delivery || S.delivery.id !== id) S.marks = {};
+    if (!keepMarks || !S.delivery || S.delivery.id !== id) { S.marks = {}; S.temp = {}; }
     S.delivery = d;
     d.lines.forEach((l) => {
       if (l.state !== "open" && l.state !== "backorder") return;
@@ -406,6 +406,7 @@
     const name = el("div");
     const t = el("div", (m.sub ? m.sub.name + " (Ersatz)" : (l.raw_material_name || l.description)), "title");
     if (l.order_item) t.appendChild(el("span", "B", "tag b"));
+    if (m.sub && m.sub.pack_g) t.appendChild(el("span", "Gebinde " + fmtMilli(m.sub.pack_g, "kg"), "tag"));
     if (l.unexpected) t.appendChild(el("span", "nicht erwartet", "tag"));
     if (l.state === "backorder") t.appendChild(el("span", "Rückstand", "tag"));
     name.appendChild(t);
@@ -432,7 +433,7 @@
     const arow = el("div", null, "row");
     arow.appendChild(btn("Fehlt", () => { m.on = true; m.qty = 0; paintDelivery(); }));
     if (l.target !== "other") arow.appendChild(btn(m.sub ? "Ersatz entfernen" : "Ersatz", async () => {
-      if (m.sub) { m.sub = null; paintDelivery(); return; }
+      if (m.sub) { m.sub = null; Object.keys(S.temp).forEach((c) => { if (S.temp[c].lineId === l.id) delete S.temp[c]; }); paintDelivery(); return; }
       const r = await pickMaterial("Ersatz – welcher Rohstoff kam?", "Statt " + (l.raw_material_name || l.description), (x) => x.type !== "aid");
       if (!r) return;
       let gpu = null;
@@ -467,7 +468,8 @@
       if (!m || !m.on) return;
       const it = { id: l.id, qty_milli: m.qty, rest: m.rest };
       if (m.track) it.start_tracking = true;
-      if (m.sub) it.substitute = { raw_material_id: m.sub.raw_material_id, grams_per_unit: m.sub.grams_per_unit };
+      if (m.sub) it.substitute = { raw_material_id: m.sub.raw_material_id, grams_per_unit: m.sub.grams_per_unit,
+                                   pack_g: m.sub.pack_g || undefined };
       items.push(it);
     });
     if (!items.length) return;
@@ -508,11 +510,12 @@
     return (l.pack && l.pack.step_milli) || 1000;
   }
 
-  function countLine(l, rm) {
+  function countLine(l, rm, step) {
     const m = S.marks[l.id];
-    m.qty += scanStep(l, rm); m.on = true;
+    m.qty += step || scanStep(l, rm); m.on = true;
     signal(true);
-    msg("+1 " + (rm && rm.pack_label ? rm.pack_label : (l.pack && l.pack.name) || "") + " " + (l.raw_material_name || l.description)
+    msg("+1 " + (step ? "Gebinde (Ersatz)" : rm && rm.pack_label ? rm.pack_label : (l.pack && l.pack.name) || "") + " "
+        + (l.raw_material_name || l.description)
         + " → " + fmtMilli(m.qty, l.unit_code), "blue");
     paintDelivery();
   }
@@ -521,6 +524,9 @@
     if (S.busy) return;
     S.busy = true;
     try {
+      const t = S.temp[raw];
+      const tl = t && openLines().find((x) => x.id === t.lineId);
+      if (tl) { countLine(tl, null, t.step); return; }
       const r = await RB.api("barcodes/lookup?code=" + encodeURIComponent(raw) + "&format=" + encodeURIComponent(format || ""));
       if (r.status === "location") { signal(false); msg("Lagerort-Code – hier nicht nötig.", "orange"); return; }
       if (r.status === "known") {
@@ -542,7 +548,8 @@
       let chosen = null;
       const lines = openLines().filter((l) => l.raw_material_id);
       const p = RB.dialog({ title: "Code " + r.code_text + " unbekannt", text: "Was hast du gescannt? Der Code wird gespeichert.",
-        content: wrap, buttons: [{ label: "Abbrechen", value: null }, { label: "Nicht in der Lieferung", value: "other" }] });
+        content: wrap, buttons: [{ label: "Abbrechen", value: null }, { label: "Ersatz für …", value: "sub" },
+                                  { label: "Nicht in der Lieferung", value: "other" }] });
       lines.forEach((l) => wrap.appendChild(btn(l.raw_material_name, () => {
         chosen = l; const back = document.querySelector(".dlg-back"); if (back) back.remove();
       })));
@@ -550,6 +557,8 @@
       if (res === "line" && chosen) {
         const a = await RB.api("barcodes", { method: "POST", body: { code: raw, format: format || "", raw_material_id: chosen.raw_material_id } });
         countLine(chosen, a.raw_material);
+      } else if (res === "sub") {
+        await substituteScan(raw, r.code_text, lines);
       } else if (res === "other") {
         const m = await pickMaterial("Welcher Rohstoff?", "Code " + r.code_text + " wird ihm zugeordnet.");
         if (!m) return;
@@ -560,6 +569,51 @@
       }
     } catch (e) { signal(false); fail(e); }
     finally { S.busy = false; }
+  }
+
+  // Ersatz per Scan (H-D): fremder Code nur für diese Lieferung, Gebinde sofort abfragen, Vermerk an der Buchung
+  async function chooseLine(title, text, lines) {
+    const wrap = el("div", null, "list");
+    let chosen = null;
+    const p = RB.dialog({ title: title, text: text, content: wrap, buttons: [{ label: "Abbrechen", value: null }] });
+    lines.forEach((l) => {
+      const b = btn(l.raw_material_name || l.description, () => {
+        chosen = l; const back = document.querySelector(".dlg-back"); if (back) back.remove();
+      });
+      b.appendChild(el("small", "erwartet " + fmtMilli(l.remaining_milli, l.unit_code) + (l.pack_text ? " · " + l.pack_text : "")));
+      wrap.appendChild(b);
+    });
+    const res = await Promise.race([p, new Promise((ok) => { const iv = setInterval(() => { if (chosen) { clearInterval(iv); ok("line"); } }, 80); })]);
+    return res === "line" ? chosen : null;
+  }
+
+  async function substituteScan(raw, codeText, lines) {
+    const l = await chooseLine("Ersatz für welchen Rohstoff?", "Code " + codeText + " gilt nur für diese Lieferung.", lines);
+    if (!l) return;
+    const gpu = l.unit_code === "KG" ? 1000 : l.grams_per_unit;
+    const curG = l.rm_pack_g || (l.pack && l.pack.step_milli && gpu ? Math.round(l.pack.step_milli * gpu / 1000) : null);
+    let packG = curG;
+    if (curG) {
+      const same = await RB.dialog({ title: "Gebinde gleich groß?", text: "Bisher: 1 Gebinde = " + fmtMilli(curG, "kg")
+          + ". Hat das Ersatz-Gebinde dieselbe Größe?",
+        buttons: [{ label: "Abbrechen", value: null }, { label: "Nein, andere Größe", value: "no" },
+                  { label: "Ja, gleich", value: "yes", kind: "primary" }] });
+      if (same === null || same === undefined) return;
+      if (same === "no") packG = null;
+    }
+    if (!packG) {
+      const kg = await askNumber("Größe des Ersatz-Gebindes", (l.raw_material_name || "") + ": wie viel kg hat 1 Gebinde?", "kg");
+      if (!kg) return;
+      packG = Math.round(kg * 1000);
+    }
+    const m = S.marks[l.id];
+    const useGpu = l.unit_code === "KG" ? null : (packG !== curG || !gpu ? packG : gpu);
+    m.sub = { raw_material_id: l.raw_material_id, name: l.raw_material_name, grams_per_unit: useGpu,
+              pack_g: packG !== curG ? packG : null };
+    m.qty = 0;
+    const step = Math.round(packG * 1000 / (useGpu || gpu || 1000));
+    S.temp[raw] = { lineId: l.id, step: step };
+    countLine(l, null, step);
   }
 
   // ------------------------------------------------------------ Kamera (wie Scan-Seite)
