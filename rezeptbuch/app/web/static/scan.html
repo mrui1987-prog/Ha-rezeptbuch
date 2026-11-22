@@ -99,8 +99,7 @@
     { id: "info", label: "Info", sub: "nur anzeigen" },
     { id: "receipt", label: "+1 Einkauf", sub: "mit Beleg", cls: "plus" },
     { id: "correction", label: "+1 Korrektur", sub: "🔒 PIN", cls: "plus", pin: true },
-    { id: "loss_breakage", label: "−1 Bruch", cls: "minus", reason: "breakage" },
-    { id: "loss_spoilage", label: "−1 Verderb", cls: "minus", reason: "spoilage" },
+    { id: "loss_breakage", label: "−1 Bruch/Verderb", cls: "minus", reason: "breakage" },   // M03-27
     { id: "loss_own_use", label: "−1 Eigenverbrauch", cls: "minus", reason: "own_use" },
     { id: "loss_merchandise", label: "−1 Handelsware", cls: "minus", reason: "merchandise" },
     { id: "loss_other", label: "−1 Sonstiges", cls: "minus", reason: "other" },
@@ -490,6 +489,17 @@
       devs.forEach((d, i) => { const o = RB.el("option", d.label || ("Kamera " + (i + 1))); o.value = d.deviceId; sel.appendChild(o); });
       if (current) sel.value = current;
       sel.classList.remove("hidden");
+      if (!current) {
+        // Erste Nutzung: beste Rückkamera wählen (iPhone: Triple-, sonst Dual-Kamera; Praxisprüfung 22.11.)
+        const pick = [/triple/i, /dual/i, /back|rück|rear/i].map((re) => devs.find((d) => re.test(d.label))).find(Boolean);
+        if (pick) {
+          sel.value = pick.deviceId;
+          RB.store.set("rezeptbuch_scan_cam", pick.deviceId);
+          const t = stream && stream.getVideoTracks()[0];
+          const now = t && t.getSettings ? t.getSettings().deviceId : "";
+          if (now !== pick.deviceId) start();
+        }
+      }
     }
   }
   $("cams").addEventListener("change", () => { RB.store.set("rezeptbuch_scan_cam", $("cams").value); if (stream) start(); });
@@ -579,6 +589,17 @@
   });
 
   window.addEventListener("pagehide", stop);
+  // Hoch/quer gedreht: Kamera neu starten, sonst bleibt das Bild verzerrt/abgeschnitten (Praxisprüfung 22.11.)
+  let turnTimer = null, lastPortrait = window.innerHeight >= window.innerWidth;
+  function turned() {
+    const portrait = window.innerHeight >= window.innerWidth;
+    if (portrait === lastPortrait) return;
+    lastPortrait = portrait;
+    clearTimeout(turnTimer);
+    turnTimer = setTimeout(() => { if (stream && S.mode) start(); }, 400);
+  }
+  window.addEventListener("resize", turned);
+  window.addEventListener("orientationchange", turned);
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else if (S.mode) start(); });
   paintModes();
 })();
