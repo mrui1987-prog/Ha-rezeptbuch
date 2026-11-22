@@ -1,7 +1,8 @@
 """Liefert die Seiten des Admin-Bereichs: PIN-Eingabe und Rohstoffliste (``admin.html``),
 Rezepte und Gruppen (``recipes.html``, Modul 05), Prüfseite „Berechnung“ (``calc.html``, Modul 06),
 Prüfseite „Waagen“ (``scales.html``, Modul 08), Prüfseite „Ablauf“ (``production.html``, Modul 09), Planer (``planner.html``, Modul 10),
-Startseite und Stationsoberfläche (``start.html``, ``station.html``, Modul 10), Scan-Seite (``scan.html``, Strichcode S1).
+Startseite und Stationsoberfläche (``start.html``, ``station.html``, Modul 10), Scan-Seite (``scan.html``, Strichcode S1),
+Planen (``plan.html``, Planer P-B, ohne PIN).
 
 Die Admin-Seiten sind je eine in sich geschlossene HTML-Datei (Stil und Skript eingebettet).
 Die Stationsoberfläche nutzt zusätzlich die gemeinsamen Dateien ``ui/common.css`` und
@@ -25,6 +26,7 @@ PLANNER_PAGE = Path(__file__).parent / "static" / "planner.html"
 START_PAGE = Path(__file__).parent / "static" / "start.html"
 STATION_PAGE = Path(__file__).parent / "static" / "station.html"
 SCAN_PAGE = Path(__file__).parent / "static" / "scan.html"
+PLAN_PAGE = Path(__file__).parent / "static" / "plan.html"
 UI_DIR = Path(__file__).parent / "static" / "ui"
 UI_FILES = {"common.css": "text/css; charset=utf-8", "common.js": "text/javascript; charset=utf-8"}
 STATIONS = (1, 2)
@@ -86,6 +88,12 @@ def station_page(station: int) -> HTMLResponse:
 def scan_page() -> HTMLResponse:
     """Scan-Seite (docs/strichcode.md, Teil S1); ersetzt die Prüfseite /kameratest."""
     return HTMLResponse(SCAN_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/planer", response_class=HTMLResponse)
+def plan_page() -> HTMLResponse:
+    """Planen: Plan je Tag, „Jetzt planen“, Rohstoffe abbuchen (docs/planer.md 6–10, ohne PIN, K10-P5)."""
+    return HTMLResponse(PLAN_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/ui/{name}")

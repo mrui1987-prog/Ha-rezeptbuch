@@ -1,6 +1,6 @@
 """Einstiegspunkt des Rezeptservers.
 
-Stand 0.10.22: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
+Stand 0.10.23: Statusseite, Health-Endpunkt, Datenbank (Modul 02), Rohstoffverwaltung
 und PIN-Schutz (Modul 03), Rohstoff-CSV-Import (Modul 05, Teil C1), Rezeptpflege (Modul 05, Teil C2),
 Vorlagen-Import und Export .xlsx (Modul 05, Teil C3), Rezeptberechnung (Modul 06),
 Waagen-Anbindung per MQTT mit Live-Kanal (Modul 08), Wiegeablauf (Modul 09, Teile C1 und C2), Stationsoberfläche (Modul 10, Teil C1),
@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from . import __version__
 from .auth.pin import ensure_default_pin
 from .articles.router import router as articles_router
+from .planner.router import router as planner_router
 from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
 from .calculation.router import router as calculation_router
@@ -99,6 +100,7 @@ app.include_router(auth_router)
 app.include_router(raw_materials_router)
 app.include_router(dealers_router)
 app.include_router(articles_router)
+app.include_router(planner_router)
 app.include_router(imports_router)
 app.include_router(exports_router)      # vor recipes_router: /admin/recipes/export.xlsx ist keine Rezept-ID
 app.include_router(recipes_router)

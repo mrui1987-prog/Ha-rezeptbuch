@@ -49,6 +49,11 @@ def import_articles(mode: str = "check", groups: str | None = None, body: bytes 
     return vectron.import_articles(db, body, mode=mode, groups=groups)
 
 
+@router.post("/admin/articles/replace", dependencies=admin)
+def replace_in_lines(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return service.replace_in_lines(db, payload)
+
+
 @router.post("/admin/articles/bulk", dependencies=admin)
 def bulk(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
     return service.bulk(db, payload)

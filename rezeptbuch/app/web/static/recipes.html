@@ -1249,21 +1249,45 @@ $("batch-add").addEventListener("click", () => { rec.batches.push({ id: null, la
 
 $("portion-save").addEventListener("click", () => savePortions());
 
+// K10-P24: Stückgewicht löschen, das in Stücklisten steckt – je Stückgewicht wählen
+async function resolvePieceArticles(data) {
+  const out = {};
+  for (const pc of data.pieces || []) {
+    const list = pc.articles.slice(0, 15).join("\n") + (pc.articles.length > 15 ? "\n… und " + (pc.articles.length - 15) + " weitere" : "");
+    const choices = [{ label: "In Gramm umwandeln (" + pc.weight_g + " g je Stück)", value: { action: "grams" } }];
+    (data.options || []).forEach((o) => choices.push({ label: "Ersetzen durch „" + o.label + "“ (" + o.weight_g + " g)",
+                                                     value: { action: "replace", replace_with: o.id } }));
+    choices.push({ label: "Zeilen aus den Stücklisten entfernen", value: { action: "remove" } });
+    const v = await ask("Das Stückgewicht „" + pc.label + "“ (" + pc.weight_g + " g) steckt in "
+      + pc.articles.length + " Stückliste(n):\n" + list + "\n\nWas soll mit diesen Zeilen passieren?", choices);
+    if (!v) return null;
+    out[pc.piece_weight_id] = v;
+  }
+  return out;
+}
+
 async function savePortions() {
   showMsg("portion-msg", "");
   $("portion-save").disabled = true;
   try {
     const pieceBody = { revision: rec.revision, piece_weights: rec.pieces.map((p) => ({ id: p.id, label: p.label, weight_g: blankToNull(p.weight_g) })) };
-    let r;
-    try {
-      r = await api("admin/recipes/" + rec.id + "/piece-weights", { method: "PUT", body: pieceBody });
-    } catch (err) {
-      if (err.status === 409 && err.data.code === "confirmation_required") {
-        if (!(await ask(err.message, [{ label: "Löschen bestätigen", value: true }]))) return;
-        pieceBody.confirm_delete_batch_sizes = true;
+    let r = null;
+    // Rückfragen nacheinander: Chargengrößen löschen, Stückgewicht in Stücklisten (K10-P24)
+    for (let attempt = 0; attempt < 4 && r === null; attempt++) {
+      try {
         r = await api("admin/recipes/" + rec.id + "/piece-weights", { method: "PUT", body: pieceBody });
-      } else { throw err; }
+      } catch (err) {
+        if (err.status === 409 && err.data.code === "confirmation_required") {
+          if (!(await ask(err.message, [{ label: "Löschen bestätigen", value: true }]))) return;
+          pieceBody.confirm_delete_batch_sizes = true;
+        } else if (err.status === 409 && err.data.code === "piece_weight_in_articles") {
+          const res = await resolvePieceArticles(err.data);
+          if (!res) return;
+          pieceBody.article_resolution = Object.assign(pieceBody.article_resolution || {}, res);
+        } else { throw err; }
+      }
     }
+    if (r === null) return;
     // Chargengrößen, deren Stückgewicht es nicht mehr gibt, sind mit gelöscht
     const labels = r.piece_weights.map((p) => p.label.toLowerCase());
     const batches = rec.batches.filter((b) => b.kind !== "pieces" || labels.indexOf(b.piece_label.trim().toLowerCase()) >= 0);

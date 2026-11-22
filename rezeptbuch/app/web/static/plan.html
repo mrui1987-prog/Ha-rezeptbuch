@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planer – HA-Rezeptbuch</title>
+<link rel="stylesheet" href="ui/common.css">
+<style>
+  /* Planer P-B (Modul 10 C2, docs/planer.md 6–10): Eingabe je Tag, „Jetzt planen“ mit Vorschau, Rohstoffe.
+     Ohne PIN (K10-P5); auch im Admin-Reiter „Planer → Planen“ eingebettet. Tablet quer, große Tasten. */
+  body { padding: 1.5vh 2vw 12vh; font-size: 2.2vh; min-height: 100vh; }
+  body.embedded { padding-top: .5vh; }
+  header { display: flex; align-items: center; gap: 1.5vw; flex-wrap: wrap; margin-bottom: 1vh; }
+  header h1 { margin: 0; font-size: 3.4vh; flex: 1; }
+  header a { color: var(--accent); font-size: 2vh; }
+  body.embedded header h1, body.embedded header a { display: none; }
+  .tabs { display: flex; gap: .6vw; }
+  .tabs button { min-height: 6vh; font-size: 2.3vh; min-width: 9rem; }
+  .tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .bar { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; margin: 1vh 0; }
+  .bar button { min-height: 6vh; font-size: 2.2vh; }
+  .bar input[type=date], .bar input[type=search] { font-size: 2.3vh; padding: .8vh .8vw; min-height: 6vh; }
+  .bar input[type=search] { flex: 1; min-width: 12rem; }
+  .day { font-size: 2.8vh; font-weight: 700; min-width: 15rem; text-align: center; }
+  .chips { display: flex; gap: .5vw; flex-wrap: wrap; }
+  .chips button { min-height: 5vh; font-size: 2vh; }
+  .chips button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .panel { background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius); padding: 1vh 1.2vw; margin: 1vh 0; }
+  h2 { font-size: 2.6vh; margin: 1.2vh 0 .6vh; }
+  h3 { font-size: 2.4vh; margin: .4vh 0; }
+  .art { display: grid; grid-template-columns: 1fr auto auto auto auto auto; gap: .6vw; align-items: center;
+         padding: .7vh 0; border-bottom: 1px solid var(--track); }
+  .art .nm { font-size: 2.3vh; }
+  .art .nm small { color: var(--muted); display: block; font-size: 1.7vh; }
+  .art.off { opacity: .45; }
+  .art label { display: flex; flex-direction: column; font-size: 1.6vh; color: var(--muted); }
+  .art input { width: 6.5rem; font-size: 2.6vh; padding: .6vh .4vw; text-align: right; }
+  .art .ono { min-height: 6vh; min-width: 7.5rem; font-size: 2.2vh; }
+  .art .more { min-height: 6vh; font-size: 2vh; }
+  .sticky { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 2px solid var(--line);
+            padding: 1vh 2vw; display: flex; gap: 1vw; align-items: center; z-index: 10; }
+  .sticky .grow { flex: 1; color: var(--muted); }
+  .sticky button { min-height: 7vh; font-size: 2.5vh; min-width: 14rem; }
+  .err { border-color: var(--high); color: var(--high); }
+  .hint { color: var(--muted); font-size: 1.9vh; }
+  .block { background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius); padding: 1vh 1vw; margin: 1vh 0; }
+  .block .head { display: flex; align-items: baseline; gap: 1vw; flex-wrap: wrap; }
+  .tag { font-size: 1.7vh; padding: .2vh .6vw; border-radius: 6px; background: #e6f0fb; color: var(--accent); }
+  .row { display: grid; grid-template-columns: 4vh 4vh minmax(10rem, 1.4fr) 9rem minmax(16rem, 2fr) auto; gap: .6vw;
+         align-items: center; padding: .6vh 0; border-top: 1px solid var(--track); }
+  .row.carry { background: #fff6e5; }
+  .row input[type=checkbox] { width: 3.4vh; height: 3.4vh; }
+  .row .x { min-height: 5vh; min-width: 4vh; padding: 0; }
+  .row .g { min-height: 5.5vh; font-size: 2.2vh; text-align: right; }
+  .row .tog { min-height: 6vh; font-size: 2.2vh; text-align: left; }
+  .row .tog.drop { color: var(--muted); text-decoration: line-through; }
+  .row .acts { display: flex; gap: .4vw; }
+  .row .acts button { min-height: 5.5vh; font-size: 2vh; }
+  .row .note { grid-column: 3 / -1; color: var(--warn); font-size: 1.8vh; }
+  .row .exist { grid-column: 3 / -1; color: var(--muted); font-size: 1.8vh; }
+  .src { grid-column: 3 / -1; }
+  table.list { border-collapse: collapse; width: 100%; font-size: 2vh; }
+  table.list th, table.list td { text-align: left; padding: .4vh .6vw; border-bottom: 1px solid var(--track); }
+  table.list .r { text-align: right; }
+  .sum { display: flex; gap: 1vw; align-items: center; padding-top: .6vh; border-top: 2px solid var(--line); }
+  .sum .grow { flex: 1; font-weight: 700; }
+  .sum button { min-height: 5.5vh; font-size: 2vh; }
+  .short { color: var(--high); font-weight: 700; }
+  .dlg p { white-space: pre-line; }
+  .dlg input, .dlg select { font-size: 2.6vh; padding: .8vh 1vw; margin: .6vh 0; }
+  .dlg .list { max-height: 45vh; overflow: auto; }
+  .dlg .cp { display: grid; grid-template-columns: 4vh 1fr 6rem 6rem 6rem 5rem; gap: .5vw; align-items: center; padding: .3vh 0; }
+  .dlg .cp input[type=number] { width: 100%; font-size: 2.2vh; }
+  .seg { display: flex; gap: .5vw; margin: .6vh 0; }
+  .seg button { min-height: 6vh; min-width: 7rem; font-size: 2.4vh; }
+  .seg button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="notice" class="notice hidden"></div>
+<header>
+  <h1>Planer</h1>
+  <div class="tabs">
+    <button type="button" id="t-input" class="on keep">Eingabe</button>
+    <button type="button" id="t-run" class="keep">Jetzt planen</button>
+    <button type="button" id="t-stock" class="keep">Rohstoffe</button>
+  </div>
+  <a href="./" id="home">Startseite</a>
+</header>
+
+<section id="v-input">
+  <div class="bar">
+    <button type="button" id="d-prev">◀</button>
+    <input type="date" id="d-date">
+    <span class="day" id="d-name"></span>
+    <button type="button" id="d-next">▶</button>
+    <button type="button" id="d-copy">Plan übernehmen von …</button>
+  </div>
+  <div class="bar">
+    <input type="search" id="f-q" placeholder="Artikel suchen (Nummer oder Name)">
+    <label><input type="checkbox" id="f-only"> nur Artikel im Plan</label>
+  </div>
+  <div class="chips" id="f-groups"></div>
+  <div id="arts"></div>
+</section>
+
+<section id="v-run" class="hidden">
+  <div class="panel">
+    <h3>Tage auswählen</h3>
+    <div class="chips" id="r-days"></div>
+    <div class="bar"><button type="button" id="r-go" class="primary">Jetzt planen</button>
+      <span class="hint">Zusammengefasst wird nur per Klick (auch über Tage).</span></div>
+  </div>
+  <div id="r-out"></div>
+</section>
+
+<section id="v-stock" class="hidden">
+  <div class="bar">
+    <input type="date" id="s-date">
+    <button type="button" id="s-book" class="primary">Rohstoffe für heute abbuchen</button>
+  </div>
+  <p class="hint">Nur bestandsgeführte Rohstoffe aus Stücklisten werden abgebucht, am Produktionstag. Rezeptzutaten
+    werden weiter beim Wiegen abgezogen.</p>
+  <div id="s-out"></div>
+</section>
+
+<div class="sticky" id="bar-input">
+  <span class="grow" id="dirty">Keine Änderungen.</span>
+  <button type="button" id="p-save" class="primary">Plan speichern</button>
+</div>
+<div class="sticky hidden" id="bar-run">
+  <span class="grow" id="run-info"></span>
+  <button type="button" id="r-commit" class="go" disabled>Aufträge anlegen</button>
+</div>
+
+<script src="ui/common.js"></script>
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const el = RB.el;
+  const embedded = /[?&]embedded=1/.test(location.search);
+  if (embedded) document.body.classList.add("embedded");
+  RB.notice.attach($("notice"));
+  RB.onApiResult((err) => {
+    if (err && err.status === 0) RB.notice.set("net", "grey", err.message); else RB.notice.clear("net");
+  });
+  $("home").href = RB.BASE;
+
+  const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const addDays = (s, n) => { const d = new Date(s + "T12:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+  const dayName = (s) => { const d = new Date(s + "T12:00:00"); return WD[d.getDay()] + " " + s.slice(8, 10) + "." + s.slice(5, 7) + "."; };
+  const g = RB.grams;
+  const today = iso(new Date());
+
+  function msg(text, level) { RB.notice.set("msg", level || "blue", text, 6); }
+  function fail(err) { RB.notice.set("msg", "red", err.message || "Fehler", 10); }
+  function btn(text, cls, on) { const b = el("button", text, cls || ""); b.type = "button"; b.addEventListener("click", on); return b; }
+
+  // ------------------------------------------------------------ Reiter
+  let view = "input";
+  function show(v) {
+    if (view === "input" && v !== "input" && dirty && !confirm2) { askLeave(v); return; }
+    view = v;
+    ["input", "run", "stock"].forEach((x) => {
+      $("v-" + x).classList.toggle("hidden", x !== v);
+      $("t-" + x).classList.toggle("on", x === v);
+    });
+    $("bar-input").classList.toggle("hidden", v !== "input");
+    $("bar-run").classList.toggle("hidden", v !== "run");
+    if (v === "run") loadDays();
+    if (v === "stock") loadStock();
+  }
+  let confirm2 = false;
+  async function askLeave(v) {
+    const r = await RB.dialog({ title: "Plan nicht gespeichert", text: "Änderungen speichern?", buttons: [
+      { label: "Zurück", value: "back" }, { label: "Verwerfen", value: "drop" }, { label: "Speichern", value: "save", kind: "primary" }] });
+    if (r === "back") return;
+    if (r === "save" && !(await savePlan())) return;
+    dirty = false; confirm2 = true; show(v); confirm2 = false;
+  }
+  $("t-input").addEventListener("click", () => show("input"));
+  $("t-run").addEventListener("click", () => show("run"));
+  $("t-stock").addEventListener("click", () => show("stock"));
+
+  // ------------------------------------------------------------ Eingabe
+  let articles = [], rows = [], day = addDays(today, 1), dirty = false, group = null;
+  // rows: [{article_id, order_no, pieces, halves, wholes}]
+
+  function setDirty(v) { dirty = v; $("dirty").textContent = v ? "Nicht gespeichert." : "Keine Änderungen."; $("dirty").classList.toggle("err", v); }
+
+  async function loadArticles() {
+    try { articles = (await RB.api("articles?status=active")).filter((a) => a.plan_enabled); }
+    catch (e) { fail(e); articles = []; }
+    const groups = [...new Set(articles.map((a) => a.register_group))];
+    const box = $("f-groups"); box.textContent = "";
+    box.appendChild(btn("Alle", group === null ? "on" : "", () => { group = null; loadArticlesUi(); }));
+    groups.forEach((gr) => box.appendChild(btn("WG " + gr, group === gr ? "on" : "", () => { group = gr; loadArticlesUi(); })));
+  }
+  function loadArticlesUi() {
+    [...$("f-groups").children].forEach((b) => b.classList.toggle("on", b.textContent === (group === null ? "Alle" : "WG " + group)));
+    renderArts();
+  }
+
+  async function loadPlan() {
+    $("d-date").value = day;
+    $("d-name").textContent = dayName(day) + (day === today ? " (heute)" : "");
+    try {
+      const p = await RB.api("plans/" + day);
+      rows = p.lines.map((l) => ({ article_id: l.article_id, order_no: l.order_no, pieces: l.pieces, halves: l.halves, wholes: l.wholes }));
+    } catch (e) { fail(e); rows = []; }
+    setDirty(false);
+    renderArts();
+  }
+  async function goDay(d) {
+    if (dirty) {
+      const r = await RB.dialog({ title: "Plan nicht gespeichert", text: "Änderungen für " + dayName(day) + " speichern?",
+        buttons: [{ label: "Zurück", value: "back" }, { label: "Verwerfen", value: "drop" }, { label: "Speichern", value: "save", kind: "primary" }] });
+      if (r === "back") { $("d-date").value = day; return; }
+      if (r === "save" && !(await savePlan())) return;
+    }
+    day = d; loadPlan();
+  }
+  $("d-prev").addEventListener("click", () => goDay(addDays(day, -1)));
+  $("d-next").addEventListener("click", () => goDay(addDays(day, 1)));
+  $("d-date").addEventListener("change", () => { if ($("d-date").value) goDay($("d-date").value); });
+  $("f-q").addEventListener("input", renderArts);
+  $("f-only").addEventListener("change", renderArts);
+
+  function rowsOf(a) { return rows.filter((r) => r.article_id === a.id); }
+
+  function renderArts() {
+    const q = $("f-q").value.trim().toLowerCase();
+    const only = $("f-only").checked;
+    const box = $("arts"); box.textContent = "";
+    let lastGroup = null;
+    articles.forEach((a) => {
+      if (group !== null && a.register_group !== group) return;
+      if (q && !(String(a.register_no) === q || a.name.toLowerCase().includes(q))) return;
+      let mine = rowsOf(a);
+      if (only && !mine.length) return;
+      if (a.register_group !== lastGroup) { box.appendChild(el("h2", "Warengruppe " + a.register_group)); lastGroup = a.register_group; }
+      if (!mine.length) mine = [null];
+      mine.forEach((r, i) => box.appendChild(artRow(a, r, i)));
+    });
+    if (!box.children.length) box.appendChild(el("p", "Keine Artikel.", "hint"));
+  }
+
+  function artRow(a, r, index) {
+    const noLines = !a.line_count;
+    const wrap = el("div", null, "art" + (noLines ? " off" : ""));
+    const nm = el("div", null, "nm");
+    nm.appendChild(document.createTextNode(a.name));
+    nm.appendChild(el("small", a.register_no + (a.pieces_per_whole ? " · " + a.pieces_per_whole + " Stück je Ganzes" : "")
+      + (noLines ? " · Stückliste fehlt" : "")));
+    wrap.appendChild(nm);
+    const ensure = () => {
+      if (!r) { r = { article_id: a.id, order_no: a.last_order_no || 1, pieces: 0, halves: 0, wholes: 0 }; rows.push(r); }
+      return r;
+    };
+    const field = (key, label, show) => {
+      const lab = el("label", label);
+      const inp = el("input"); inp.type = "number"; inp.min = "0"; inp.inputMode = "numeric";
+      inp.value = r && r[key] ? r[key] : "";
+      inp.disabled = noLines;
+      if (!show) lab.style.visibility = "hidden";
+      inp.addEventListener("input", () => {
+        const v = parseInt(inp.value, 10);
+        ensure()[key] = Number.isFinite(v) && v > 0 ? v : 0;
+        setDirty(true);
+      });
+      lab.appendChild(inp);
+      return lab;
+    };
+    wrap.appendChild(field("pieces", "Stück", true));
+    wrap.appendChild(field("halves", "halbe", true));
+    wrap.appendChild(field("wholes", "ganze", Boolean(a.pieces_per_whole)));
+    const ono = btn("Auftrag " + (r ? r.order_no : (a.last_order_no || 1)), "ono", async () => {
+      const v = await RB.numpad({ title: "Auftragsnummer", text: a.name + " – in welchem Auftrag?", value: ensure().order_no, max: 2 });
+      if (v === null) return;
+      const n = parseInt(v, 10);
+      if (!(n >= 1 && n <= 99)) { msg("Auftragsnummer 1 bis 99.", "orange"); return; }
+      if (rows.some((x) => x !== r && x.article_id === a.id && x.order_no === n)) { msg("Diesen Auftrag gibt es für den Artikel schon.", "orange"); return; }
+      ensure().order_no = n; setDirty(true); renderArts();
+    });
+    ono.disabled = noLines;
+    wrap.appendChild(ono);
+    const more = btn(index === 0 ? "+ Auftrag" : "✕", "more", () => {
+      if (index === 0) {
+        const used = rows.filter((x) => x.article_id === a.id).map((x) => x.order_no);
+        let n = 1; while (used.includes(n)) n++;
+        if (!r) ensure();
+        rows.push({ article_id: a.id, order_no: n, pieces: 0, halves: 0, wholes: 0 });
+      } else {
+        rows.splice(rows.indexOf(r), 1);
+      }
+      setDirty(true); renderArts();
+    });
+    more.disabled = noLines;
+    wrap.appendChild(more);
+    return wrap;
+  }
+
+  async function savePlan() {
+    const lines = rows.filter((r) => r.pieces || r.halves || r.wholes);
+    try { await RB.api("plans/" + day, { method: "PUT", body: { lines: lines } }); }
+    catch (e) { fail(e); return false; }
+    msg("Plan " + dayName(day) + " gespeichert.");
+    await loadArticles();
+    await loadPlan();
+    return true;
+  }
+  $("p-save").addEventListener("click", savePlan);
+  window.addEventListener("beforeunload", (ev) => { if (dirty) { ev.preventDefault(); ev.returnValue = ""; } });
+
+  // Plan übernehmen von … (K10-P11)
+  $("d-copy").addEventListener("click", async () => {
+    if (dirty && !(await savePlan())) return;
+    const src = el("input"); src.type = "date"; src.value = addDays(day, -7);
+    const list = el("div", null, "list");
+    let lines = [];
+    async function load() {
+      list.textContent = "";
+      try { lines = (await RB.api("plans/" + src.value)).lines; } catch (e) { lines = []; }
+      if (!lines.length) { list.appendChild(el("p", "An diesem Tag gibt es keinen Plan.", "hint")); return; }
+      lines.forEach((l) => {
+        l.take = true;
+        const r = el("div", null, "cp");
+        const cb = el("input"); cb.type = "checkbox"; cb.checked = true; cb.addEventListener("change", () => { l.take = cb.checked; });
+        r.appendChild(cb);
+        r.appendChild(el("span", l.register_no + " " + l.name + " · A" + l.order_no));
+        ["pieces", "halves", "wholes"].forEach((k) => {
+          const i = el("input"); i.type = "number"; i.min = "0"; i.value = l[k] || "";
+          if (k === "wholes" && !l.pieces_per_whole) i.disabled = true;
+          i.placeholder = k === "pieces" ? "Stück" : k === "halves" ? "halbe" : "ganze";
+          i.addEventListener("input", () => { l[k] = parseInt(i.value, 10) || 0; });
+          r.appendChild(i);
+        });
+        list.appendChild(r);
+      });
+    }
+    src.addEventListener("change", load);
+    const box = el("div");
+    box.appendChild(el("p", "Von welchem Tag? (Vorgabe: gleicher Wochentag letzte Woche) Alle Artikel sind vorgehakt; "
+      + "abwählen oder Mengen ändern, dann „Übernehmen“."));
+    box.appendChild(src); box.appendChild(list);
+    await load();
+    const r = await RB.dialog({ title: "Plan übernehmen nach " + dayName(day), content: box, buttons: [
+      { label: "Abbrechen", value: null }, { label: "Übernehmen", value: "ok", kind: "primary" }] });
+    if (r !== "ok") return;
+    const take = lines.filter((l) => l.take).map((l) => ({ article_id: l.article_id, order_no: l.order_no,
+      pieces: l.pieces, halves: l.halves, wholes: l.wholes }));
+    if (!take.length) return;
+    try { await RB.api("plans/" + day + "/add", { method: "POST", body: { lines: take } }); }
+    catch (e) {
+      if (e.code !== "overwrite_question") { fail(e); return; }
+      const ok = await RB.dialog({ title: "Überschreiben?", text: e.message + "\n" + e.data.lines.map((l) =>
+        l.register_no + " " + l.name + " · Auftrag " + l.order_no + " (" + l.quantity_text + ")").join("\n"),
+        buttons: [{ label: "Abbrechen", value: false }, { label: "Überschreiben", value: true, kind: "primary" }] });
+      if (!ok) return;
+      try { await RB.api("plans/" + day + "/add", { method: "POST", body: { lines: take, overwrite: true } }); }
+      catch (e2) { fail(e2); return; }
+    }
+    msg("Plan übernommen.");
+    loadPlan();
+  });
+
+  // ------------------------------------------------------------ Jetzt planen
+  let run = null, choices = null, picked = new Set(), expanded = new Set(), selected = new Set();
+
+  async function loadDays() {
+    const box = $("r-days"); box.textContent = "";
+    let days = [];
+    try { days = await RB.api("plans?date_from=" + today + "&date_to=" + addDays(today, 13)); } catch (e) { fail(e); }
+    if (!picked.size) { const first = days.find((d) => d.date === day) || days[0]; if (first) picked.add(first.date); }
+    if (!days.length) box.appendChild(el("span", "In den nächsten 14 Tagen gibt es keinen Plan.", "hint"));
+    days.forEach((d) => {
+      box.appendChild(btn(dayName(d.date) + " (" + d.lines + ")", picked.has(d.date) ? "on" : "", (ev) => {
+        picked.has(d.date) ? picked.delete(d.date) : picked.add(d.date);
+        ev.currentTarget.classList.toggle("on", picked.has(d.date));
+      }));
+    });
+    if (run) renderRun();
+  }
+  $("r-go").addEventListener("click", async () => {
+    if (!picked.size) { msg("Bitte mindestens einen Tag wählen.", "orange"); return; }
+    try { run = await RB.api("plan-runs", { method: "POST", body: { dates: [...picked].sort() } }); }
+    catch (e) { fail(e); return; }
+    choices = run.choices; selected.clear(); expanded.clear();
+    renderRun();
+  });
+
+  async function change(mut) {
+    mut(choices);
+    try { run = await RB.api("plan-runs/" + run.id, { method: "PUT", body: { choices: choices } }); }
+    catch (e) { fail(e); return; }
+    choices = run.choices;
+    renderRun();
+  }
+
+  function doughText(e) {
+    if (!e.doughs.length) return "kein Auftrag";
+    const same = e.doughs.every((x) => x === e.doughs[0]);
+    return same ? e.doughs.length + " × " + g(e.doughs[0]) : e.doughs.map(g).join(" + ");
+  }
+
+  function renderRun() {
+    const out = $("r-out"); out.textContent = "";
+    if (!run) return;
+    if (run.errors.length) {
+      const p = el("div", null, "panel err");
+      p.appendChild(el("h3", "Fehler in Stücklisten – Anlegen gesperrt"));
+      run.errors.forEach((x) => p.appendChild(el("div", dayName(x.date) + " · " + x.register_no + " " + x.name + ": " + x.message)));
+      out.appendChild(p);
+    }
+    run.hints.forEach((h) => out.appendChild(el("p", h, "hint")));
+    if (!run.days.length) out.appendChild(el("p", "Nichts zu planen.", "hint"));
+    run.days.forEach((d) => {
+      out.appendChild(el("h2", "Produktion " + dayName(d.date)));
+      d.recipes.forEach((b) => out.appendChild(block(b)));
+    });
+    if (run.raw.length) {
+      out.appendChild(el("h2", "Rohstoffbedarf aus Stücklisten"));
+      const t = el("table", null, "list");
+      const hr = el("tr"); ["Tag", "Rohstoff", "Bedarf", "Bestand", ""].forEach((h, i) => hr.appendChild(el("th", h, i === 2 || i === 3 ? "r" : "")));
+      t.appendChild(hr);
+      run.raw.forEach((r) => {
+        const tr = el("tr");
+        tr.appendChild(el("td", dayName(r.date)));
+        tr.appendChild(el("td", r.number + " " + r.name));
+        tr.appendChild(el("td", g(r.amount_g) + (r.pieces_without_size ? " + " + r.pieces_without_size + " Stück (ohne Gebindegröße)" : ""), "r"));
+        tr.appendChild(el("td", r.stock_managed ? RB.kg(r.stock_g) : "–", "r"));
+        tr.appendChild(el("td", r.short ? "Bestand reicht nicht" : "", r.short ? "short" : ""));
+        t.appendChild(tr);
+      });
+      out.appendChild(t);
+    }
+    const n = run.days.reduce((s, d) => s + d.recipes.reduce((s2, b) => s2 + b.entries.filter((e) => e.doughs.length).length, 0), 0);
+    $("run-info").textContent = run.status === "done" ? "Angelegt." : n + " Aufträge in der Vorschau" + (run.has_existing ? " · es gibt schon angelegte" : "");
+    $("r-commit").disabled = run.status !== "preview" || run.errors.length > 0 || n === 0;
+  }
+
+  function block(b) {
+    const box = el("div", null, "block");
+    const head = el("div", null, "head");
+    head.appendChild(el("h3", b.number + " " + b.name));
+    if (b.preproduce) head.appendChild(el("span", "🏷 vorproduzierbar", "tag"));
+    head.appendChild(el("span", b.limit_g ? "Obergrenze " + g(b.limit_g) : "ohne Obergrenze", "hint"));
+    box.appendChild(head);
+    b.entries.forEach((e) => box.appendChild(entryRow(b, e)));
+    const sum = el("div", null, "sum");
+    sum.appendChild(el("span", "Summe " + g(b.sum_g), "grow"));
+    const sel = b.entries.filter((e) => selected.has(e.key));
+    const m = btn("Ausgewählte zusammenfassen", "", () => change((c) => {
+      const keys = []; sel.forEach((e) => { keys.push(...e.key.split("+")); });
+      c.merges = c.merges.filter((grp) => !grp.some((k) => keys.includes(k)));
+      c.merges.push(keys);
+      sel.forEach((e) => selected.delete(e.key));
+    }));
+    m.disabled = sel.length < 2;
+    sum.appendChild(m);
+    box.appendChild(sum);
+    return box;
+  }
+
+  function entryRow(b, e) {
+    const frag = document.createDocumentFragment();
+    const row = el("div", null, "row" + (e.kind === "carry" ? " carry" : ""));
+    if (e.kind === "order") {
+      const cb = el("input"); cb.type = "checkbox"; cb.checked = selected.has(e.key);
+      cb.addEventListener("change", () => { cb.checked ? selected.add(e.key) : selected.delete(e.key); renderRun(); });
+      row.appendChild(cb);
+    } else row.appendChild(el("span", "⚠"));
+    const open = expanded.has(e.key);
+    row.appendChild(btn(open ? "▾" : "▸", "x", () => { open ? expanded.delete(e.key) : expanded.add(e.key); renderRun(); }));
+    row.appendChild(el("span", e.label + (e.merged && e.production_date !== e.parts[0].date ? "" : "")));
+    const gb = btn(g(e.manual_g && e.mode === "hand" ? e.manual_g : e.demand_g), "g", async () => {
+      if (e.kind === "carry") return;
+      const v = await RB.numpad({ title: "Von Hand", text: "Menge für " + b.name + " in Gramm (Bedarf " + g(e.demand_g) + ")", value: e.manual_g || e.demand_g, max: 8 });
+      if (v === null) return;
+      const n = parseInt(v, 10);
+      if (!(n > 0)) return;
+      change((c) => { c.manual[e.key] = n; c.modes[e.key] = "hand"; });
+    });
+    row.appendChild(gb);
+    const tog = btn("⇄ " + e.mode_text + " · " + doughText(e) + (e.surcharge_text && e.surcharge_g ? " (" + e.surcharge_text + ")" : ""),
+      "tog" + (e.mode === "drop" ? " drop" : ""), () => change((c) => {
+        const list = e.modes;
+        const i = list.indexOf(e.mode);
+        c.modes[e.key] = e.mode === "hand" ? "exact" : list[(i + 1) % list.length];
+      }));
+    row.appendChild(tog);
+    const acts = el("div", null, "acts");
+    if (e.kind === "order") {
+      acts.appendChild(btn("+", "", () => surchargeDialog(b, e)));
+      if (e.merged) {
+        acts.appendChild(btn("📅", "", () => dateDialog(e)));
+        acts.appendChild(btn("Trennen", "", () => change((c) => { c.merges = c.merges.filter((grp) => grp.join("+") !== e.key && !e.key.split("+").every((k) => grp.includes(k))); })));
+      }
+    } else if (e.next_key) {
+      acts.appendChild(btn("mit nächstem zusammenfassen", "", () => change((c) => { c.carry_into[e.key] = e.next_key; })));
+    }
+    if (e.carry_in_g) {
+      acts.appendChild(btn("Übertrag trennen", "", () => change((c) => {
+        Object.keys(c.carry_into).forEach((k) => { if (c.carry_into[k] === e.key) delete c.carry_into[k]; });
+      })));
+    }
+    row.appendChild(acts);
+    const notes = [];
+    if (e.hint) notes.push(e.hint);
+    if (e.carry_in_g) notes.push("inkl. Übertrag " + g(e.carry_in_g));
+    if (e.merged && e.production_date) notes.push("Produktionstag " + dayName(e.production_date));
+    if (notes.length) row.appendChild(el("div", notes.join(" · "), "note"));
+    if (e.existing.length) {
+      row.appendChild(el("div", "schon angelegt: " + e.existing.map((x) => g(x.amount_g) + " ("
+        + ({ open: "offen", in_progress: "in Arbeit", done: "fertig", cancelled: "abgebrochen" }[x.status] || x.status) + ")").join(", "), "exist"));
+    }
+    if (open) {
+      const src = el("div", null, "src");
+      const t = el("table", null, "list");
+      e.sources.forEach((s) => {
+        const tr = el("tr");
+        tr.appendChild(el("td", s.register_no + " " + s.name));
+        tr.appendChild(el("td", dayName(s.date) + " · A" + s.order_no));
+        tr.appendChild(el("td", s.quantity_text));
+        tr.appendChild(el("td", e.kind === "carry" ? "Übertrag" : g(s.amount_g), "r"));
+        t.appendChild(tr);
+      });
+      e.pieces.forEach((p) => {
+        const tr = el("tr");
+        tr.appendChild(el("td", "Stückgewicht " + p.label));
+        tr.appendChild(el("td", ""));
+        tr.appendChild(el("td", (Math.round(p.count * 100) / 100).toLocaleString("de-DE") + " × " + g(p.weight_g)));
+        tr.appendChild(el("td", ""));
+        t.appendChild(tr);
+      });
+      src.appendChild(t);
+      row.appendChild(src);
+    }
+    frag.appendChild(row);
+    return frag;
+  }
+
+  async function surchargeDialog(b, e) {
+    const cur = e.surcharge || { unit: "%", value: 0 };
+    let unit = cur.unit;
+    const box = el("div");
+    box.appendChild(el("p", "Abwiegezuschlag für " + b.name + ". % = anteilig, g = je Teig. Die Obergrenze gilt einschließlich Zuschlag."
+      + (b.default_surcharge_tenths ? "\nVorgabe am Rezept: " + (b.default_surcharge_tenths / 10).toLocaleString("de-DE") + " %" : "")));
+    const seg = el("div", null, "seg");
+    const bp = btn("%", unit === "%" ? "on" : "", () => { unit = "%"; bp.classList.add("on"); bg.classList.remove("on"); });
+    const bg = btn("g", unit === "g" ? "on" : "", () => { unit = "g"; bg.classList.add("on"); bp.classList.remove("on"); });
+    seg.appendChild(bp); seg.appendChild(bg); box.appendChild(seg);
+    const inp = el("input"); inp.inputMode = "decimal";
+    inp.value = cur.value ? (cur.unit === "%" ? (cur.value / 10).toLocaleString("de-DE") : String(cur.value)) : "";
+    box.appendChild(inp);
+    const r = await RB.dialog({ title: "Zuschlag", content: box, buttons: [
+      { label: "Abbrechen", value: null }, { label: "Kein Zuschlag", value: "none" }, { label: "Vorgabe", value: "default" },
+      { label: "OK", value: "ok", kind: "primary" }] });
+    if (r === null) return;
+    if (r === "default") { change((c) => { delete c.surcharge[e.key]; }); return; }
+    if (r === "none") { change((c) => { c.surcharge[e.key] = null; }); return; }
+    const t = inp.value.trim().replace(",", ".");
+    const num = Number(t);
+    if (!Number.isFinite(num) || num < 0) { msg("Bitte eine Zahl eingeben.", "orange"); return; }
+    const value = unit === "%" ? Math.round(num * 10) : Math.round(num);
+    change((c) => { c.surcharge[e.key] = { unit: unit, value: value }; });
+  }
+
+  async function dateDialog(e) {
+    const inp = el("input"); inp.type = "date"; inp.value = e.production_date;
+    const r = await RB.dialog({ title: "Produktionstag", text: "Vorgabe: frühester Tag der Teile (K10-P9).", content: inp,
+      buttons: [{ label: "Abbrechen", value: null }, { label: "OK", value: "ok", kind: "primary" }] });
+    if (r !== "ok" || !inp.value) return;
+    change((c) => { c.dates[e.key] = inp.value; });
+  }
+
+  $("r-commit").addEventListener("click", async (ev) => {
+    if (!run) return;
+    const b = ev.currentTarget; b.disabled = true;
+    const doCommit = async (mode) => {
+      try {
+        const res = await RB.api("plan-runs/" + run.id + "/commit", { method: "POST", body: mode ? { mode: mode } : {} });
+        msg(res.count + " Aufträge angelegt" + (res.removed.length ? ", " + res.removed.length + " ersetzt" : "") + ".", "blue");
+        res.hints.forEach((h) => msg(h, "orange"));
+        run = await RB.api("plan-runs/" + run.id);
+        renderRun();
+      } catch (e) {
+        if (e.code === "existing_orders") {
+          const r = await RB.dialog({ title: "Schon angelegt", text: e.message, buttons: [
+            { label: "Zurück", value: null }, { label: "Nur Unterschied dazu", value: "delta" },
+            { label: "Ersetzen", value: "replace", kind: "primary" }] });
+          if (r) await doCommit(r);
+        } else fail(e);
+      }
+    };
+    await doCommit(null);
+    if (run && run.status === "preview") b.disabled = false;
+  });
+
+  // ------------------------------------------------------------ Rohstoffe abbuchen (K10-P12)
+  $("s-date").value = today;
+  $("s-date").addEventListener("change", loadStock);
+  async function loadStock() {
+    const out = $("s-out"); out.textContent = "";
+    let data;
+    try { data = await RB.api("plans/" + $("s-date").value + "/stock"); } catch (e) { fail(e); return; }
+    $("s-book").disabled = $("s-date").value > today;
+    if (!data.rows.length) { out.appendChild(el("p", "Keine Rohstoffe aus Stücklisten an diesem Tag.", "hint")); return; }
+    const t = el("table", null, "list");
+    const hr = el("tr"); ["Rohstoff", "Bedarf", "abgebucht", "offen", "Bestand"].forEach((h, i) => hr.appendChild(el("th", h, i ? "r" : "")));
+    t.appendChild(hr);
+    data.rows.forEach((r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", r.number + " " + r.name + (r.stock_managed ? "" : " (ohne Bestandsführung)")));
+      tr.appendChild(el("td", g(r.amount_g), "r"));
+      tr.appendChild(el("td", r.stock_managed ? g(r.booked_g) : "–", "r"));
+      tr.appendChild(el("td", r.stock_managed ? g(r.diff_g) : "–", "r"));
+      tr.appendChild(el("td", r.stock_managed ? RB.kg(r.stock_g) : "–", "r" + (r.short ? " short" : "")));
+      t.appendChild(tr);
+    });
+    out.appendChild(t);
+  }
+  $("s-book").addEventListener("click", async () => {
+    const d = $("s-date").value;
+    let data;
+    try { data = await RB.api("plans/" + d + "/stock"); } catch (e) { fail(e); return; }
+    const todo = data.rows.filter((r) => r.stock_managed && r.diff_g > 0);
+    const text = todo.length ? todo.map((r) => r.number + " " + r.name + ": −" + g(r.diff_g) + " → Bestand " + RB.kg(r.stock_g - r.diff_g)).join("\n")
+      : "Nichts Neues abzubuchen.";
+    const ok = await RB.dialog({ title: "Abbuchen " + dayName(d), text: text, buttons: [
+      { label: "Abbrechen", value: false }, { label: "Abbuchen", value: true, kind: "primary" }] });
+    if (!ok) return;
+    const send = async (ret) => {
+      try {
+        const res = await RB.api("plans/" + d + "/stock-booking", { method: "POST", body: ret === undefined ? {} : { return: ret } });
+        msg(res.booked.length + " abgebucht" + (res.returned.length ? ", " + res.returned.length + " zurückgebucht" : "") + ".");
+      } catch (e) {
+        if (e.code !== "return_question") { fail(e); return; }
+        const r = await RB.dialog({ title: "Zurückbuchen?", text: e.message + "\n" + e.data.rows.map((x) => x.number + " " + x.name + ": " + g(-x.diff_g)).join("\n"),
+          buttons: [{ label: "Nein", value: false }, { label: "Ja, zurückbuchen", value: true, kind: "primary" }] });
+        await send(r);
+      }
+    };
+    await send(undefined);
+    loadStock();
+  });
+
+  // ------------------------------------------------------------ Start
+  (async function start() {
+    await loadArticles();
+    await loadPlan();
+  })();
+})();
+</script>
+</body>
+</html>

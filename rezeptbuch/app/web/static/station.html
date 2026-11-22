@@ -127,6 +127,9 @@
   table.list { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 2.5vh; }
   table.list th, table.list td { padding: .9vh .7vw; border-bottom: 1px solid #e0e3e6; text-align: left; }
   table.list th { background: #f1f3f5; font-size: 2.1vh; color: var(--muted); }
+  table.list td.b-acts { white-space: nowrap; }
+  table.list td.b-acts button { font-size: 2.3vh; min-height: 5.5vh; margin-left: .4vw; }
+  table.list.sub { font-size: 2.2vh; margin: .4vh 0 1vh; }
   table.list td.r, table.list th.r { text-align: right; font-variant-numeric: tabular-nums; }
   table.list tr.current td { background: #fff4c2; font-weight: 700; }
   table.list tr.done td { color: var(--muted); }
@@ -167,6 +170,7 @@
   <button type="button" id="b-orders" disabled>Produktionsliste</button>
   <button type="button" id="b-compact" class="hidden">Kompakt</button>
   <button type="button" id="b-batches">Chargen</button>
+  <button type="button" id="b-planner" class="hidden">Planer</button>
   <button type="button" id="b-menu" class="keep">Menü 🔒</button>
 </footer>
 
@@ -833,9 +837,10 @@
     if (!rows.length) { main.appendChild(el("div", "Heute noch keine Chargen an dieser Waage.", "item-sub")); return null; }
     const t = el("table", null, "list");
     const hr = el("tr");
-    [["Charge"], ["Rezept"], ["Teig"], ["Menge", "r"], ["Stand"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
+    [["Charge"], ["Rezept"], ["Teig"], ["Menge", "r"], ["Stand"], [""]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
     t.appendChild(el("thead")).appendChild(hr);
     const body = el("tbody");
+    const artButtons = {};
     rows.forEach((r) => {
       const tr = el("tr");
       tr.appendChild(el("td", r.d.batch.batch_no));
@@ -843,11 +848,81 @@
       tr.appendChild(el("td", r.d.dough_index + " von " + r.o.doughs.length));
       tr.appendChild(el("td", RB.kg(r.d.target_g), "r"));
       tr.appendChild(el("td", STATUS_TEXT[r.d.batch.status] || r.d.batch.status));
+      // K10-P22: getrennte Knöpfe „Zutaten“ und „Artikel“, klappen je eine Zeile darunter auf
+      const cell = el("td", null, "b-acts");
+      const detail = el("tr", null, "hidden");
+      const dcell = el("td"); dcell.colSpan = 6; detail.appendChild(dcell);
+      let open = null;
+      async function toggle(kind, btn) {
+        if (open === kind) { open = null; detail.classList.add("hidden"); btn.classList.remove("primary"); return; }
+        [...cell.children].forEach((b) => b.classList.remove("primary"));
+        open = kind; btn.classList.add("primary"); detail.classList.remove("hidden");
+        dcell.textContent = "lädt …";
+        try {
+          dcell.textContent = "";
+          dcell.appendChild(kind === "items" ? await itemsTable(r.d.batch.id) : await articlesTable(r.o.id));
+        } catch (err) { dcell.textContent = err.message; }
+      }
+      const bi = el("button", "Zutaten", "keep"); bi.type = "button";
+      bi.addEventListener("click", () => toggle("items", bi));
+      const ba = el("button", "Artikel", "keep"); ba.type = "button";
+      ba.addEventListener("click", () => toggle("articles", ba));
+      (artButtons[r.o.id] = artButtons[r.o.id] || []).push(ba);
+      cell.appendChild(bi); cell.appendChild(ba);
+      tr.appendChild(cell);
       body.appendChild(tr);
+      body.appendChild(detail);
     });
     t.appendChild(body);
     main.appendChild(t);
+    // Aufträge ohne Planer: Knopf „Artikel“ grau
+    Object.keys(artButtons).forEach((id) => {
+      RB.api("orders/" + id + "/articles").then((a) => {
+        if (!a.from_planner) artButtons[id].forEach((b) => { b.disabled = true; b.title = "Auftrag nicht aus dem Planer"; });
+      }).catch(() => { /* bleibt aktiv, Fehler beim Aufklappen */ });
+    });
     return null;
+  }
+
+  async function itemsTable(batchId) {
+    const b = await RB.api("batches/" + batchId);
+    const t = el("table", null, "list sub");
+    const hr = el("tr");
+    [["Zutat"], ["Soll", "r"], ["Ist", "r"], ["Abweichung", "r"], ["Quittung"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
+    t.appendChild(hr);
+    (b.items || []).forEach((i) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", i.name));
+      tr.appendChild(el("td", RB.grams(i.target_g), "r"));
+      tr.appendChild(el("td", i.actual_g === null ? "–" : RB.grams(i.actual_g), "r"));
+      const diff = i.actual_g === null || i.target_g === null ? null : i.actual_g - i.target_g;
+      tr.appendChild(el("td", diff === null ? "–" : (diff > 0 ? "+" : "") + Math.round(diff).toLocaleString("de-DE") + " g", "r"));
+      tr.appendChild(el("td", i.ack_text || "offen"));
+      t.appendChild(tr);
+    });
+    return t;
+  }
+
+  async function articlesTable(orderId) {
+    const a = await RB.api("orders/" + orderId + "/articles");
+    const box = el("div");
+    if (!a.from_planner) { box.appendChild(el("div", "Auftrag nicht aus dem Planer.", "item-sub")); return box; }
+    const notes = [];
+    if (a.dough_count > 1) notes.push("Auftrag in " + a.dough_count + " Teigen");
+    if (a.surcharge_text) notes.push("Zuschlag " + a.surcharge_text);
+    if (a.carryover_of_order_id) notes.push("Übertrag aus Auftrag " + a.carryover_of_order_id);
+    if (notes.length) box.appendChild(el("div", notes.join(" · "), "item-sub"));
+    const t = el("table", null, "list sub");
+    a.articles.forEach((x) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", x.register_no + " " + x.name));
+      tr.appendChild(el("td", x.plan_date.slice(8, 10) + "." + x.plan_date.slice(5, 7) + ". · Auftrag " + x.order_no));
+      tr.appendChild(el("td", x.quantity_text));
+      tr.appendChild(el("td", x.carryover ? "Übertrag" : RB.grams(x.amount_g), "r"));
+      t.appendChild(tr);
+    });
+    box.appendChild(t);
+    return box;
   }
 
   // ------------------------------------------------------------ Tasten
@@ -856,6 +931,9 @@
   $("b-compact").addEventListener("click", () => { compact = !compact; S.view = "weigh"; setBar(false); render(); });
   $("bottom").addEventListener("click", () => { if (barOpen) setBar(false); });
   $("b-batches").addEventListener("click", () => { S.view = S.view === "batches" ? "weigh" : "batches"; render(); });
+  // Planer ohne PIN (K10-P5), ausblendbar über den Admin-Schalter „Planer in der Vorwahl anzeigen“
+  $("b-planner").addEventListener("click", () => { location.href = RB.BASE + "planer"; });
+  RB.api("settings/planner").then((s) => $("b-planner").classList.toggle("hidden", !s.in_preselection)).catch(() => { /* bleibt aus */ });
   $("b-start").addEventListener("click", (ev) => {
     const n = nextOrder();
     if (!n) return;

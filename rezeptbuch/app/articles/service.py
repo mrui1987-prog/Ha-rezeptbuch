@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from fractions import Fraction
 import sqlite3
 
 from ..db import transaction
@@ -361,3 +362,116 @@ def bulk(conn: sqlite3.Connection, data, source: str = "admin") -> dict:
                     {"plan_enabled": bool(flag)}, source)
             changed += 1
     return {"changed": changed}
+
+
+# ---------------------------------------------------------------------------
+# Sammelaktion „Austauschen“ (K10-P25, docs/planer.md 5)
+# ---------------------------------------------------------------------------
+
+REPLACE_KINDS = ("recipe", "raw", "piece_weight")
+
+
+def parse_factor(value) -> Fraction:
+    """Faktor wie „1,25“ (0,01 bis 100, höchstens zwei Nachkommastellen); leer = 1."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return Fraction(1)
+    text = str(value).strip().replace(",", ".")
+    try:
+        f = Fraction(text)
+    except (ValueError, ZeroDivisionError):
+        raise ValidationError("Faktor bitte als Zahl, z. B. 1,25.", field="factor") from None
+    if (f * 100).denominator != 1 or not Fraction(1, 100) <= f <= 100:
+        raise ValidationError("Faktor 0,01 bis 100 mit höchstens zwei Nachkommastellen.", field="factor")
+    return f
+
+
+def _round(x: Fraction) -> int:
+    return max(1, int(x + Fraction(1, 2)))
+
+
+def replace_in_lines(conn: sqlite3.Connection, data, source: str = "admin") -> dict:
+    """Rezept, Rohstoff oder Stückgewicht in allen oder ausgewählten Stücklisten ersetzen (``mode`` check/run)."""
+    if not isinstance(data, dict):
+        raise ValidationError("Ungültige Anfrage.")
+    kind = data.get("kind")
+    if kind not in REPLACE_KINDS:
+        raise ValidationError("Was soll ersetzt werden: Rezept, Rohstoff oder Stückgewicht?", field="kind")
+    from_id = _int(data.get("from_id"), "from_id", "Bisher", 1, 10**9)
+    to_id = _int(data.get("to_id"), "to_id", "Neu", 1, 10**9)
+    if from_id == to_id:
+        raise ValidationError("Bisher und neu sind gleich.", field="to_id")
+    factor = parse_factor(data.get("factor"))
+    mode = data.get("mode") or "check"
+    if mode not in ("check", "run"):
+        raise ValidationError("mode: check oder run.", field="mode")
+    ids = data.get("article_ids")
+    if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, int) for i in ids)):
+        raise ValidationError("Ungültige Artikelauswahl.", field="article_ids")
+
+    hints: list[str] = []
+    if kind == "recipe":
+        target = conn.execute("SELECT r.id, r.archived, r.number, v.name FROM recipe r LEFT JOIN recipe_version v "
+                              "ON v.id = r.current_version_id WHERE r.id = ?", (to_id,)).fetchone()
+        column = "recipe_id"
+    elif kind == "raw":
+        target = conn.execute("SELECT id, archived, number, name FROM raw_material WHERE id = ?", (to_id,)).fetchone()
+        column = "raw_material_id"
+    else:
+        target = conn.execute("SELECT p.id, p.recipe_id, p.label AS name, r.archived, r.number FROM recipe_piece_weight p "
+                              "JOIN recipe r ON r.id = p.recipe_id WHERE p.id = ?", (to_id,)).fetchone()
+        column = "piece_weight_id"
+    if target is None:
+        raise NotFoundError("Ersatz nicht gefunden.", field="to_id", code="not_found")
+    if target["archived"]:
+        raise ValidationError("Der Ersatz ist archiviert.", field="to_id", code="target_archived")
+    sql = (f"SELECT l.*, a.register_no, a.name AS article_name, p.weight_g AS pw_g FROM sales_article_line l "
+           f"JOIN sales_article a ON a.id = l.article_id LEFT JOIN recipe_piece_weight p ON p.id = l.piece_weight_id "
+           f"WHERE l.{column} = ?")
+    params: list = [from_id]
+    if ids:
+        sql += f" AND l.article_id IN ({','.join('?' * len(ids))})"
+        params += ids
+    lines = conn.execute(sql + " ORDER BY a.register_no, l.position", params).fetchall()
+    converted = 0
+    updates = []
+    for ln in lines:
+        if kind == "recipe":
+            if ln["piece_weight_id"] is not None:
+                converted += 1
+                updates.append((ln["id"], {"recipe_id": to_id, "piece_weight_id": None,
+                                           "amount_g": _round(ln["pw_g"] * factor)}))
+            else:
+                updates.append((ln["id"], {"recipe_id": to_id, "amount_g": _round(ln["amount_g"] * factor)}))
+        elif kind == "raw":
+            if ln["amount_g"] is not None:
+                updates.append((ln["id"], {"raw_material_id": to_id, "amount_g": _round(ln["amount_g"] * factor)}))
+            else:
+                updates.append((ln["id"], {"raw_material_id": to_id,
+                                           "amount_pieces": _round(ln["amount_pieces"] * factor)}))
+        else:
+            updates.append((ln["id"], {"recipe_id": target["recipe_id"], "piece_weight_id": to_id}))
+    if converted:
+        hints.append(f"{converted} Zeile{'n' if converted != 1 else ''} mit Stückgewicht werden in Gramm umgewandelt "
+                     "(das Stückgewicht gehört zum bisherigen Rezept).")
+    if kind == "piece_weight" and factor != 1:
+        hints.append("Beim Stückgewicht gilt kein Faktor – es wird nur ausgetauscht.")
+    articles = sorted({f"{ln['register_no']} {ln['article_name']}" for ln in lines})
+    report = {"kind": kind, "lines": len(lines), "articles": articles, "hints": hints,
+              "target": f"{target['number']} {target['name']}" if kind != "piece_weight" else target["name"],
+              "done": False}
+    if mode == "check" or not lines:
+        return report
+    with transaction(conn):
+        touched = set()
+        for line_id, values in updates:
+            sets = ", ".join(f"{k} = ?" for k in values)
+            conn.execute(f"UPDATE sales_article_line SET {sets} WHERE id = ?", (*values.values(), line_id))
+        for ln in lines:
+            touched.add(ln["article_id"])
+        for article_id in touched:
+            log(conn, "update", article_id, {"replace": {"kind": kind, "from_id": from_id}},
+                {"replace": {"kind": kind, "to_id": to_id, "factor": str(factor)}}, source)
+            conn.execute("UPDATE sales_article SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                         (article_id,))
+    report["done"] = True
+    return report

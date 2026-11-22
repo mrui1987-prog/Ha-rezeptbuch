@@ -104,7 +104,8 @@ def restore_version(recipe_id: int, version_no: int, payload: dict | None = Body
 def piece_weights(recipe_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
     return service.set_piece_weights(db, recipe_id, payload.get("piece_weights"),
                                      revision=payload.get("revision"),
-                                     confirm_delete_batch_sizes=_confirm(payload, "confirm_delete_batch_sizes"))
+                                     confirm_delete_batch_sizes=_confirm(payload, "confirm_delete_batch_sizes"),
+                                     article_resolution=payload.get("article_resolution"))
 
 
 @router.put("/admin/recipes/{recipe_id}/batch-sizes", dependencies=admin)

@@ -18,6 +18,7 @@ from ..errors import ConflictError, NotFoundError, ValidationError
 from .common import check_date, local_today, require_confirm, station_row
 
 ORDER_ONLY = ("fixed_station", "planned_date")
+EXTRA_COLUMNS = ("surcharge_tenths", "surcharge_g", "carryover_of_order_id")
 
 
 def _recipe_row(conn: sqlite3.Connection, recipe_id: int) -> sqlite3.Row:
@@ -32,6 +33,18 @@ def _recipe_row(conn: sqlite3.Connection, recipe_id: int) -> sqlite3.Row:
 
 def create_order(conn: sqlite3.Connection, payload) -> dict:
     """Legt einen Auftrag an (Vorwahl). Antwort wie ``get_order``."""
+    prepared = prepare_order(conn, payload)
+    with transaction(conn):
+        order_id = insert_order_in_tx(conn, prepared)
+    return get_order(conn, order_id)
+
+
+def prepare_order(conn: sqlite3.Connection, payload) -> dict:
+    """Prüft und berechnet einen Auftrag, ohne zu schreiben (auch für den Planer, docs/planer.md 9).
+
+    Ergebnis für ``insert_order_in_tx``. ``payload`` wie ``POST /orders``; der Planer gibt zusätzlich
+    ``surcharge_tenths``/``surcharge_g``/``carryover_of_order_id`` (nur Anzeige) über ``insert_order_in_tx`` mit.
+    """
     if not isinstance(payload, dict):
         raise ValidationError("Ungültige Anfrage.", code="invalid_request")
     if payload.get("version_no") not in (None, ""):
@@ -91,39 +104,52 @@ def create_order(conn: sqlite3.Connection, payload) -> dict:
         "overrides": dict(req.overrides),
     }
     validate_basis(conn, req.recipe_id, order)          # zweite Sicherung (Befund B4)
+    return {"req": req, "order": order, "basis": basis, "doughs": doughs, "count": count, "value": value,
+            "unit": unit, "fixed": fixed, "planned_date": planned_date}
 
+
+def insert_order_in_tx(conn: sqlite3.Connection, prepared: dict, *, extra: dict | None = None) -> int:
+    """Schreibt einen mit ``prepare_order`` geprüften Auftrag (innerhalb einer Transaktion); gibt die ID zurück.
+
+    ``extra``: zusätzliche Spalten von ``production_order`` (Planer: Zuschlag, Übertrag – nur Anzeige).
+    """
+    req, order, basis, doughs = prepared["req"], prepared["order"], prepared["basis"], prepared["doughs"]
+    count, value, unit, fixed = prepared["count"], prepared["value"], prepared["unit"], prepared["fixed"]
+    planned_date, bt = prepared["planned_date"], req.basis_type
+    extra = {k: v for k, v in (extra or {}).items() if k in EXTRA_COLUMNS}
     columns = ("recipe_id", "basis_type", "basis_value", "basis_input_unit", "basis_raw_material_id",
                "basis_item_position", "batch_size_id", "total_part_g", "factor_hundredths", "limit_g",
                "limit_source", "split_mode", "dough_count", "fixed_station_id", "planned_date",
                "list_position", "sub_modes")
-    with transaction(conn):
-        position = conn.execute(
-            "SELECT COALESCE(MAX(list_position), 0) + 1 FROM production_order WHERE planned_date = ?",
-            (planned_date,)).fetchone()[0]
-        values = (req.recipe_id, bt, value, unit, order["basis_raw_material_id"], order["basis_item_position"],
-                  order["batch_size_id"], order["total_part_g"], order["factor_hundredths"], order["limit_g"],
-                  order["limit_source"], order["split_mode"], count, fixed, planned_date, position,
-                  json.dumps({str(k): v for k, v in req.sub_modes.items()}) if req.sub_modes else None)
-        order_id = conn.execute(
-            f"INSERT INTO production_order ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
-            values).lastrowid
-        for p in basis.get("pieces") or []:
-            conn.execute("INSERT INTO order_piece (order_id, piece_weight_id, label, weight_g, piece_count) "
-                         "VALUES (?, ?, ?, ?, ?)", (order_id, p["piece_weight_id"], p["label"], p["weight_g"],
-                                                    p["count"]))
-        for size in basis.get("batch_sizes") or []:
-            conn.execute(
-                "INSERT INTO order_batch_size (order_id, batch_size_id, label, kind, value, piece_weight_g, "
-                "batch_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (order_id, size["id"], size["label"], size["kind"], size["value"],
-                 size["piece_weight_g"] if size["kind"] == "pieces" else None, size["count"]))
-        for index, target in enumerate(doughs, start=1):
-            conn.execute("INSERT INTO order_dough (order_id, dough_index, target_g) VALUES (?, ?, ?)",
-                         (order_id, index, target))
-        for pos, amount in req.overrides.items():
-            conn.execute("INSERT INTO order_item_override (order_id, item_position, amount_g) VALUES (?, ?, ?)",
-                         (order_id, pos, amount))
-    return get_order(conn, order_id)
+    position = conn.execute(
+        "SELECT COALESCE(MAX(list_position), 0) + 1 FROM production_order WHERE planned_date = ?",
+        (planned_date,)).fetchone()[0]
+    values = (req.recipe_id, bt, value, unit, order["basis_raw_material_id"], order["basis_item_position"],
+              order["batch_size_id"], order["total_part_g"], order["factor_hundredths"], order["limit_g"],
+              order["limit_source"], order["split_mode"], count, fixed, planned_date, position,
+              json.dumps({str(k): v for k, v in req.sub_modes.items()}) if req.sub_modes else None)
+    columns = columns + tuple(extra)
+    values = values + tuple(extra.values())
+    order_id = conn.execute(
+        f"INSERT INTO production_order ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+        values).lastrowid
+    for p in basis.get("pieces") or []:
+        conn.execute("INSERT INTO order_piece (order_id, piece_weight_id, label, weight_g, piece_count) "
+                     "VALUES (?, ?, ?, ?, ?)", (order_id, p["piece_weight_id"], p["label"], p["weight_g"],
+                                                p["count"]))
+    for size in basis.get("batch_sizes") or []:
+        conn.execute(
+            "INSERT INTO order_batch_size (order_id, batch_size_id, label, kind, value, piece_weight_g, "
+            "batch_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (order_id, size["id"], size["label"], size["kind"], size["value"],
+             size["piece_weight_g"] if size["kind"] == "pieces" else None, size["count"]))
+    for index, target in enumerate(doughs, start=1):
+        conn.execute("INSERT INTO order_dough (order_id, dough_index, target_g) VALUES (?, ?, ?)",
+                     (order_id, index, target))
+    for pos, amount in req.overrides.items():
+        conn.execute("INSERT INTO order_item_override (order_id, item_position, amount_g) VALUES (?, ?, ?)",
+                     (order_id, pos, amount))
+    return order_id
 
 
 def create_sub_orders(conn: sqlite3.Connection, order: sqlite3.Row) -> list[int]:
