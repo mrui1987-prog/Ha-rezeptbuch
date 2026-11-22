@@ -38,6 +38,8 @@ EXPECTED_TABLES = {
     "order_article_source", "plan_stock_booking",
     # Modul 03, Strichcode-Scanner Teil S1 (0011)
     "storage_location", "raw_material_barcode", "purchase",
+    # Modul 03, Wareneingang Teil W1 (0012)
+    "receiving_document", "receiving_line", "other_article",
 }
 
 

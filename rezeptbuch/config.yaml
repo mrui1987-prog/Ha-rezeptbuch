@@ -1,5 +1,5 @@
 name: HA-Rezeptbuch
-version: "0.10.22"
+version: "0.10.23"
 slug: rezeptbuch
 description: Rezeptverwaltung, Produktionsliste und Wiegeablauf für kleine Bäckereien
 url: https://github.com/mrui1987-prog/ha-rezeptbuch
@@ -24,3 +24,4 @@ schema:
   admin_timeout_minutes: int(1,60)
   log_level: list(debug|info|warning|error)
   weather_entity: str?
+  reader_url: str?

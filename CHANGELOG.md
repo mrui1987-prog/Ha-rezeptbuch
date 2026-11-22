@@ -1,5 +1,17 @@
 # Änderungen
 
+## 0.10.23 – Wareneingang, Teil W1 (in Entwicklung)
+
+Konzept `docs/wareneingang.md` (W1) und `docs/strichcode.md` Abschnitt 6.
+
+- Neue Seite **Wareneingang** (Kachel auf der Startseite, Link in der Rohstoffverwaltung)
+- **Beleg hochladen** (PIN): BÄKO-Auftragsbestätigung als PDF, gelesen vom Belegleser (Add-on 3); unbekannte Positionen zuordnen: Rohstoff, neuer Rohstoff, Hilfs- und Betriebsstoff, sonstiger Artikel, Ersatz
+- **Lieferungen** (ohne PIN): Positionen abhaken, Menge per ± Gebinde oder Zahlenfeld, Fehlt / Ersatz / Rest als Rückstand oder streichen, „Bestand ab jetzt führen“, nicht erwartete Ware ergänzen, alles in einer Buchung
+- **Mit Kamera abhaken**: Start bei 0, jeder Scan = +1 Gebinde; unbekannter Code → Auswahl aus der Lieferung
+- **Archiv & Sonstige** (PIN): Belege als PDF ansehen, löschen (nur ohne Buchung), sonstige Artikel archivieren oder zum Rohstoff machen
+- Rechnungen und Gutschriften kommen mit Teil W2
+- Neue Option `reader_url` (nur falls der Belegleser nicht automatisch gefunden wird)
+
 ## 0.10.22 – Scanner: Korrekturen aus der Praxisprüfung
 
 - Abgangsgründe „Bruch“ und „Verderb“ zusammengefasst zu **„Bruch/Verderb“** (M03-27); alte Buchungen zeigen den neuen Text

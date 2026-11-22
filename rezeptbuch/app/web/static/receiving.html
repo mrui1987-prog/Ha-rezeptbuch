@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wareneingang – HA-Rezeptbuch</title>
+<link rel="stylesheet" href="ui/common.css">
+<style>
+  /* Wareneingang Teil W1 (Modul 03, docs/wareneingang.md, docs/strichcode.md 6). Touch: Tasten ≥ 56 px. */
+  body { padding: 2vh 3vw; display: flex; flex-direction: column; gap: 1.6vh; min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 2vw; }
+  header h1 { margin: 0; font-size: 3.6vh; flex: 1; }
+  header button { min-height: 56px; font-size: 2.4vh; }
+  .hint { color: var(--muted); font-size: 2vh; margin: 0; }
+  button { min-height: 56px; height: auto; white-space: normal; line-height: 1.2; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 2vh; }
+  .tiles button { min-height: 18vh; font-size: 3.4vh; font-weight: 700; }
+  .tiles button small { display: block; font-size: 2vh; font-weight: 400; color: var(--muted); margin-top: .5vh; }
+  .card { border: 2px solid var(--line); border-radius: var(--radius); padding: 1.4vh 2vw; display: flex;
+          flex-direction: column; gap: 1vh; }
+  .card.done { border-color: var(--ok); background: #f1faf3; }
+  .card.warn { border-color: var(--high); }
+  .card .title { font-size: 2.8vh; font-weight: 700; }
+  .card .sub { font-size: 2vh; color: var(--muted); }
+  .row { display: flex; gap: 1.2vw; flex-wrap: wrap; align-items: center; }
+  .row button { font-size: 2.3vh; padding: .6vh 1.2rem; }
+  .big { width: 100%; min-height: 9vh; font-size: 3vh; font-weight: 700; }
+  .check { min-width: 9vh; min-height: 9vh; font-size: 5vh; font-weight: 700; border-radius: 50%; padding: 0; }
+  .check.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .qty { font-size: 3.2vh; font-weight: 700; min-width: 9rem; text-align: center; }
+  .pm { min-width: 9vh; font-size: 4vh; font-weight: 700; }
+  .tag { display: inline-block; border-radius: 6px; padding: 0 .5rem; font-size: 1.8vh; font-weight: 700;
+         background: var(--accent); color: #fff; margin-left: .4rem; vertical-align: middle; }
+  .tag.b { background: var(--high); }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 1vh; }
+  .choices button { font-size: 2.3vh; min-height: 8vh; }
+  .choices button.sel { outline: 4px solid var(--accent); outline-offset: 2px; }
+  .chosen { font-size: 2.3vh; font-weight: 700; color: var(--ok); }
+  .bottom { position: sticky; bottom: 0; background: #fff; padding: 1vh 0; }
+  .cam { position: relative; background: #111; border-radius: var(--radius); overflow: hidden; max-height: 40vh; }
+  .cam video { width: 100%; max-height: 40vh; display: block; object-fit: cover; }
+  .cam .frame { position: absolute; left: 10%; right: 10%; top: 30%; bottom: 30%; border: 3px solid rgba(255,255,255,.85);
+                border-radius: 8px; pointer-events: none; }
+  .cam .flash { position: absolute; inset: 0; background: rgba(40, 170, 80, .55); opacity: 0; transition: opacity .35s; }
+  .cam .flash.on { opacity: 1; transition: none; }
+  .cam .flash.bad { background: rgba(200, 40, 40, .55); }
+  .cam .msg { position: absolute; left: 0; right: 0; bottom: 0; padding: 1vh 2vw; color: #fff; font-size: 2vh;
+              background: rgba(0,0,0,.55); }
+  .manual { display: flex; gap: 2vw; }
+  .manual input { flex: 1; font-size: 2.4vh; padding: 1vh 1vw; }
+  .file { display: flex; align-items: center; justify-content: center; min-height: 18vh; font-size: 3.4vh; font-weight: 700;
+          border: 3px dashed var(--accent); border-radius: var(--radius); color: var(--accent); }
+  .file input { display: none; }
+  .dlg input, .dlg select { font-size: 2.6vh; padding: .8vh 1vw; width: 100%; box-sizing: border-box; margin: .6vh 0; }
+  .dlg .list { display: flex; flex-direction: column; gap: .8vh; max-height: 40vh; overflow: auto; margin-top: 1vh; }
+  .dlg .list button { text-align: left; min-height: 9vh; font-size: 2.8vh; line-height: 1.25; padding: 1.4vh 1.2rem;
+                      display: block; width: 100%; box-sizing: border-box; }
+  .dlg .list button small { display: block; margin-top: .4vh; color: var(--muted); font-size: 2vh; }
+  table.simple { border-collapse: collapse; font-size: 2.1vh; width: 100%; }
+  table.simple td { padding: .6vh 1vw; border-bottom: 1px solid var(--line); vertical-align: middle; }
+</style>
+</head>
+<body>
+<header>
+  <button type="button" id="back">‹ Zurück</button>
+  <h1 id="title">Wareneingang</h1>
+</header>
+<div class="notice hidden" id="notice"></div>
+<main id="main"></main>
+
+<script src="ui/common.js"></script>
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const el = RB.el;
+  const ZXING_URL = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";
+  const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
+  RB.notice.attach($("notice"));
+
+  let DEVICE = RB.store.get("rezeptbuch_device");
+  if (!DEVICE) {
+    DEVICE = "d-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    RB.store.set("rezeptbuch_device", DEVICE);
+  }
+
+  const S = { view: "home", back: null, delivery: null, marks: {}, scanning: false, busy: false };
+
+  // ------------------------------------------------------------ Hilfen
+  function fmtMilli(m, unit) {
+    return (m / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + unit;
+  }
+  function date(d) { return d ? d.slice(8, 10) + "." + d.slice(5, 7) + "." + d.slice(0, 4) : "–"; }
+  function packs(milli, pack) {
+    if (!pack || !pack.step_milli || pack.step_milli === 1000) return "";
+    const n = milli / pack.step_milli;
+    return " = " + n.toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " " + pack.name;
+  }
+  function msg(text, level) { RB.notice.set("w", level || "blue", text, 6); }
+  function fail(err) { RB.notice.set("w", "red", err.message || String(err), 10); }
+  function btn(label, onClick, cls) {
+    const b = el("button", null, cls || "");
+    b.type = "button";
+    if (typeof label === "string") b.textContent = label; else b.appendChild(label);
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function setView(title, back) { $("title").textContent = title; S.back = back; $("main").textContent = ""; }
+  $("back").addEventListener("click", () => {
+    stopCam();
+    if (S.back) S.back(); else location.href = RB.BASE;
+  });
+
+  async function ensurePin() {
+    try { await RB.api("admin/session"); return true; } catch (e) { /* anmelden */ }
+    const pin = await RB.numpad({ title: "PIN eingeben", secret: true, max: 12 });
+    if (pin === null || pin === "") return false;
+    try {
+      const data = await RB.api("admin/login", { method: "POST", body: { pin: pin } });
+      try { sessionStorage.setItem("rezeptbuch_admin_session", data.session); } catch (e) { /* ohne */ }
+      return true;
+    } catch (e) { fail(e); return false; }
+  }
+  function session() { try { return sessionStorage.getItem("rezeptbuch_admin_session"); } catch (e) { return null; } }
+
+  async function pickMaterial(title, text, filter) {
+    const wrap = el("div");
+    const search = el("input"); search.placeholder = "Suchen (Name oder Nummer)";
+    const list = el("div", null, "list");
+    wrap.appendChild(search); wrap.appendChild(list);
+    let chosen = null, closeFn = null;
+    async function refresh() {
+      let rows = [];
+      try { rows = await RB.api("barcodes/candidates?search=" + encodeURIComponent(search.value)); } catch (e) { rows = []; }
+      if (filter) rows = rows.filter(filter);
+      list.textContent = "";
+      rows.slice(0, 30).forEach((r) => {
+        const b = el("button", r.number + " " + r.name);
+        b.type = "button";
+        b.appendChild(el("small", r.type === "aid" ? "Hilfs- und Betriebsstoff" : "Rohstoff"));
+        b.addEventListener("click", () => { chosen = r; closeFn(); });
+        list.appendChild(b);
+      });
+      if (!rows.length) list.appendChild(el("p", "Nichts gefunden."));
+    }
+    let t = null;
+    search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(refresh, 250); });
+    refresh();
+    const p = RB.dialog({ title: title, text: text, content: wrap, buttons: [{ label: "Abbrechen", value: null }] });
+    closeFn = () => { const back = document.querySelector(".dlg-back"); if (back) back.remove(); };
+    const result = await Promise.race([p, new Promise((res) => {
+      const iv = setInterval(() => { if (chosen) { clearInterval(iv); res(chosen); } }, 80);
+      p.then(() => clearInterval(iv));
+    })]);
+    return result || null;
+  }
+
+  async function askNumber(title, text, unit, value) {
+    const v = await RB.numpad({ title: title, text: text, unit: unit, decimal: true, value: value });
+    if (v === null || v === "") return null;
+    const n = Number(v.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // ------------------------------------------------------------ Start
+  async function home() {
+    stopCam();
+    setView("Wareneingang", null);
+    let deliveries = [];
+    try { deliveries = await RB.api("receiving/deliveries"); } catch (e) { fail(e); }
+    const tiles = el("div", null, "tiles");
+    const t1 = el("span", "Lieferungen"); t1.appendChild(el("small", deliveries.length + " offen"));
+    tiles.appendChild(btn(t1, () => listDeliveries(), "primary"));
+    const t2 = el("span", "Beleg hochladen"); t2.appendChild(el("small", "🔒 PIN · Auftragsbestätigung (PDF)"));
+    tiles.appendChild(btn(t2, async () => { if (await ensurePin()) uploadView(); }));
+    const t3 = el("span", "Archiv & Sonstige"); t3.appendChild(el("small", "🔒 PIN · Belege, sonstige Artikel"));
+    tiles.appendChild(btn(t3, async () => { if (await ensurePin()) archive(); }));
+    $("main").appendChild(tiles);
+  }
+
+  // ------------------------------------------------------------ Beleg hochladen
+  function uploadView() {
+    setView("Beleg hochladen", home);
+    const label = el("label", "📄 PDF auswählen", "file");
+    const input = el("input"); input.type = "file"; input.accept = "application/pdf,.pdf";
+    label.appendChild(input);
+    $("main").appendChild(label);
+    $("main").appendChild(el("p", "Auftragsbestätigung aus Chefslist. Rechnungen und Gutschriften kommen mit Teil W2.", "hint"));
+    input.addEventListener("change", async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      label.textContent = "Wird gelesen …";
+      try {
+        const res = await fetch(RB.API + "admin/receiving/upload", { method: "POST", cache: "no-store",
+          headers: { "X-Rezeptbuch-Session": session() || "", "X-Dateiname": encodeURIComponent(file.name) },
+          body: await file.arrayBuffer() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Fehler " + res.status);
+        preview(data);
+      } catch (e) { fail(e); uploadView(); }
+    });
+  }
+
+  const ACTIONS = [
+    { id: "assign", label: "Rohstoff zuordnen" },
+    { id: "new", label: "Neuer Rohstoff" },
+    { id: "aid", label: "Hilfs- und Betriebsstoff" },
+    { id: "other", label: "Sonstiger Artikel" },
+    { id: "substitute", label: "Ersatz für Rohstoff" },
+  ];
+
+  function preview(pre) {
+    setView(pre.kind_text + " " + (pre.doc_no || ""), uploadView);
+    const decisions = {};
+    const head = el("div", null, "card" + (pre.duplicate ? " warn" : ""));
+    head.appendChild(el("div", "Lieferung voraussichtlich " + date(pre.expected_date), "title"));
+    head.appendChild(el("div", "Beleg vom " + date(pre.doc_date) + (pre.chefslist_ref ? " · Chefslist " + pre.chefslist_ref : "")
+      + " · " + pre.lines.length + " Positionen", "sub"));
+    if (pre.duplicate) head.appendChild(el("div", "Schon eingelesen am " + date(pre.duplicate.slice(0, 10)) + " – Speichern nicht möglich.", "title"));
+    (pre.plausibility || []).forEach((p) => head.appendChild(el("div", "⚠ " + (p.meldung || p.text || JSON.stringify(p)), "sub")));
+    $("main").appendChild(head);
+
+    pre.lines.forEach((line) => {
+      const c = el("div", null, "card");
+      const t = el("div", line.line_no + ". " + (line.description || "–"), "title");
+      if (line.order_item) t.appendChild(el("span", "B", "tag b"));
+      c.appendChild(t);
+      c.appendChild(el("div", "Art.-Nr. " + (line.article_no || "–") + " · " + fmtMilli(line.qty_milli, line.unit_code)
+        + (line.pack_text ? " · " + line.pack_text : ""), "sub"));
+      const state = el("div", null, "chosen");
+      c.appendChild(state);
+      if (line.target === "raw_material") {
+        state.textContent = "→ " + line.raw_material_name;
+        if (line.needs_gpu) c.appendChild(gpuButton(line, decisions, state));
+      } else if (line.target === "other") {
+        state.textContent = "→ Sonstiger Artikel (ohne Bestand)";
+      } else {
+        c.classList.add("warn");
+        state.textContent = "Noch nicht zugeordnet";
+        if (line.suggestions && line.suggestions.length) {
+          const sug = el("div", null, "row");
+          sug.appendChild(el("span", "Vorschlag:", "sub"));
+          line.suggestions.slice(0, 3).forEach((s) => sug.appendChild(btn(s.name, () =>
+            decide(line, c, state, decisions, s.type === "aid" ? "aid_assign" : "assign", { raw_material_id: s.id, name: s.name }))));
+          c.appendChild(sug);
+        }
+        const ch = el("div", null, "choices");
+        ACTIONS.forEach((a) => ch.appendChild(btn(a.label, () => choose(a.id, line, c, state, decisions))));
+        c.appendChild(ch);
+      }
+      $("main").appendChild(c);
+    });
+
+    const bottom = el("div", null, "bottom");
+    bottom.appendChild(btn("Beleg speichern", async () => {
+      try {
+        const doc = await RB.api("admin/receiving/commit", { method: "POST", body: { token: pre.token, decisions: decisions } });
+        msg("Gespeichert – Lieferung " + doc.doc_no + " wartet.", "blue");
+        openDelivery(doc.id);
+      } catch (e) { fail(e); }
+    }, "primary big"));
+    if (pre.duplicate) bottom.firstChild.disabled = true;
+    $("main").appendChild(bottom);
+  }
+
+  function gpuButton(line, decisions, state) {
+    return btn("Gramm je " + line.unit_code + " eintragen", async () => {
+      const g = await askNumber("Gewicht je " + line.unit_code, line.description + (line.pack_text ? " (" + line.pack_text + ")" : ""), "g");
+      if (!g) return;
+      decisions[String(line.line_no)] = Object.assign(decisions[String(line.line_no)] || {}, { grams_per_unit: Math.round(g) });
+      state.textContent = "→ " + (line.raw_material_name || state.dataset.name || "") + " · " + Math.round(g) + " g je " + line.unit_code;
+    });
+  }
+
+  async function needGpu(line) {
+    if (!line.needs_gpu) return {};
+    const g = await askNumber("Gewicht je " + line.unit_code, "Wie viel Gramm sind 1 " + line.unit_code + "?"
+      + (line.pack_text ? " (" + line.pack_text + ")" : ""), "g");
+    if (!g) return null;
+    return { grams_per_unit: Math.round(g) };
+  }
+
+  function decide(line, card, state, decisions, action, extra) {
+    decisions[String(line.line_no)] = Object.assign({ action: action }, extra);
+    card.classList.remove("warn"); card.classList.add("done");
+    const text = { assign: "→ ", aid_assign: "→ Hilfs- und Betriebsstoff ", new: "→ neu: ", aid_new: "→ neu (Hilfs- und Betriebsstoff): ",
+                   other: "→ Sonstiger Artikel", substitute: "→ Ersatz für " }[action];
+    state.textContent = text + (extra.name || "") + (extra.grams_per_unit ? " · " + extra.grams_per_unit + " g je " + line.unit_code : "");
+  }
+
+  async function choose(id, line, card, state, decisions) {
+    if (id === "other") return decide(line, card, state, decisions, "other", {});
+    if (id === "assign" || id === "substitute") {
+      const m = await pickMaterial(id === "assign" ? "Rohstoff zuordnen" : "Ersatz für welchen Rohstoff?", line.description,
+                                   (r) => r.type !== "aid");
+      if (!m) return;
+      const g = await needGpu(line); if (g === null) return;
+      return decide(line, card, state, decisions, id, Object.assign({ raw_material_id: m.id, name: m.name }, g));
+    }
+    if (id === "new") {
+      const name = el("input"); name.value = line.description || "";
+      const tol = el("input"); tol.inputMode = "decimal"; tol.value = "5";
+      const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
+      wrap.appendChild(el("label", "Toleranz beim Wiegen (g)")); wrap.appendChild(tol);
+      const ok = await RB.dialog({ title: "Neuer Rohstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
+        { label: "Weiter", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
+      if (!ok) return;
+      const g = await needGpu(line); if (g === null) return;
+      return decide(line, card, state, decisions, "new", Object.assign({ name: name.value.trim(), tolerance: tol.value.replace(",", "."),
+                                                                          tolerance_unit: "g" }, g));
+    }
+    if (id === "aid") {
+      const how = await RB.dialog({ title: "Hilfs- und Betriebsstoff", text: line.description, buttons: [
+        { label: "Abbrechen", value: null }, { label: "Vorhandenen zuordnen", value: "assign" },
+        { label: "Neu anlegen", value: "new", kind: "primary" }] });
+      if (how === "assign") {
+        const m = await pickMaterial("Hilfs- und Betriebsstoff zuordnen", line.description, (r) => r.type === "aid");
+        if (m) decide(line, card, state, decisions, "aid_assign", { raw_material_id: m.id, name: m.name });
+      } else if (how === "new") {
+        const name = el("input"); name.value = line.description || "";
+        const unit = el("input"); unit.value = line.unit_code === "KT" ? "Karton" : "VE";
+        const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
+        wrap.appendChild(el("label", "Einheit (z. B. Karton)")); wrap.appendChild(unit);
+        const ok = await RB.dialog({ title: "Neuer Hilfs- und Betriebsstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
+          { label: "Übernehmen", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
+        if (ok) decide(line, card, state, decisions, "aid_new", { name: name.value.trim(), unit_label: unit.value.trim() || "VE" });
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ Lieferungen
+  async function listDeliveries() {
+    stopCam();
+    setView("Lieferungen", home);
+    let rows = [];
+    try { rows = await RB.api("receiving/deliveries"); } catch (e) { fail(e); }
+    if (!rows.length) $("main").appendChild(el("p", "Keine offene Lieferung. Erst die Auftragsbestätigung hochladen.", "hint"));
+    rows.forEach((d) => {
+      const open = d.lines.filter((l) => l.state === "open" || l.state === "backorder").length;
+      const b = el("button", null, "card");
+      b.type = "button";
+      b.style.textAlign = "left";
+      b.appendChild(el("span", "Lieferung " + date(d.expected_date) + " · " + d.doc_no, "title"));
+      b.appendChild(el("span", open + " Positionen offen" + (d.has_backorder ? " · mit Rückstand" : "") + " · " + d.dealer_name, "sub"));
+      b.addEventListener("click", () => openDelivery(d.id));
+      $("main").appendChild(b);
+    });
+  }
+
+  async function openDelivery(id, keepMarks) {
+    let d;
+    try { d = await RB.api("receiving/deliveries/" + id); } catch (e) { fail(e); return; }
+    if (!keepMarks || !S.delivery || S.delivery.id !== id) S.marks = {};
+    S.delivery = d;
+    d.lines.forEach((l) => {
+      if (l.state !== "open" && l.state !== "backorder") return;
+      if (!S.marks[l.id]) {
+        const pre = !l.order_item && !l.unexpected && !S.scanning;
+        S.marks[l.id] = { on: pre, qty: pre ? l.remaining_milli : 0, rest: "backorder", sub: null, track: false };
+      }
+    });
+    paintDelivery();
+  }
+
+  function openLines() { return S.delivery.lines.filter((l) => l.state === "open" || l.state === "backorder"); }
+
+  function paintDelivery() {
+    const d = S.delivery;
+    setView("Lieferung " + date(d.expected_date), () => { stopCam(); S.scanning = false; listDeliveries(); });
+    const top = el("div", null, "row");
+    top.appendChild(el("span", d.doc_no + " · " + d.dealer_name, "sub"));
+    top.appendChild(btn(S.scanning ? "Kamera aus" : "📷 Mit Kamera abhaken", () => toggleScan()));
+    top.appendChild(btn("+ Nicht erwartet", () => addUnexpected(null)));
+    $("main").appendChild(top);
+    if (S.scanning) $("main").appendChild(camBlock());
+
+    const lines = openLines();
+    if (!lines.length) $("main").appendChild(el("p", "Alles gebucht.", "hint"));
+    lines.forEach((l) => $("main").appendChild(lineCard(l)));
+    d.lines.filter((l) => l.state === "booked" || l.state === "cancelled").forEach((l) => {
+      const c = el("div", null, "card done");
+      c.appendChild(el("div", "✓ " + (l.raw_material_name || l.description), "title"));
+      c.appendChild(el("div", l.state === "cancelled" ? "gestrichen" : "gebucht " + fmtMilli(l.delivered_qty_milli, l.unit_code), "sub"));
+      $("main").appendChild(c);
+    });
+
+    const n = lines.filter((l) => S.marks[l.id] && S.marks[l.id].on).length;
+    const bottom = el("div", null, "bottom");
+    const b = btn(n === 1 ? "1 Position buchen" : n + " Positionen buchen", bookMarked, "primary big");
+    b.disabled = n === 0;
+    bottom.appendChild(b);
+    $("main").appendChild(bottom);
+    if (S.scanning) startCam();
+  }
+
+  function lineCard(l) {
+    const m = S.marks[l.id];
+    const c = el("div", null, "card" + (m.on ? " done" : ""));
+    const top = el("div", null, "row");
+    const check = btn("✓", () => {
+      m.on = !m.on;
+      if (m.on && !m.qty) m.qty = l.remaining_milli;
+      paintDelivery();
+    }, "check" + (m.on ? " on" : ""));
+    top.appendChild(check);
+    const name = el("div");
+    const t = el("div", (m.sub ? m.sub.name + " (Ersatz)" : (l.raw_material_name || l.description)), "title");
+    if (l.order_item) t.appendChild(el("span", "B", "tag b"));
+    if (l.unexpected) t.appendChild(el("span", "nicht erwartet", "tag"));
+    if (l.state === "backorder") t.appendChild(el("span", "Rückstand", "tag"));
+    name.appendChild(t);
+    name.appendChild(el("div", "erwartet " + fmtMilli(l.remaining_milli, l.unit_code) + (l.pack_text ? " · " + l.pack_text : ""), "sub"));
+    name.style.flex = "1";
+    top.appendChild(name);
+    c.appendChild(top);
+
+    if (l.target === "other") {
+      c.appendChild(el("div", "Sonstiger Artikel – nur abhaken, kein Bestand.", "sub"));
+    }
+    const qrow = el("div", null, "row");
+    const step = (l.pack && l.pack.step_milli) || 1000;
+    qrow.appendChild(btn("−", () => { m.qty = Math.max(0, m.qty - step); m.on = true; paintDelivery(); }, "pm"));
+    qrow.appendChild(btn(fmtMilli(m.qty, l.unit_code) + packs(m.qty, l.pack), async () => {
+      const v = await askNumber("Gelieferte Menge", l.raw_material_name || l.description, l.unit_code,
+                                String(m.qty / 1000).replace(".", ","));
+      if (v === null) return;
+      m.qty = Math.round(v * 1000); m.on = true; paintDelivery();
+    }, "qty"));
+    qrow.appendChild(btn("+", () => { m.qty += step; m.on = true; paintDelivery(); }, "pm"));
+    c.appendChild(qrow);
+
+    const arow = el("div", null, "row");
+    arow.appendChild(btn("Fehlt", () => { m.on = true; m.qty = 0; paintDelivery(); }));
+    if (l.target !== "other") arow.appendChild(btn(m.sub ? "Ersatz entfernen" : "Ersatz", async () => {
+      if (m.sub) { m.sub = null; paintDelivery(); return; }
+      const r = await pickMaterial("Ersatz – welcher Rohstoff kam?", "Statt " + (l.raw_material_name || l.description), (x) => x.type !== "aid");
+      if (!r) return;
+      let gpu = null;
+      if (l.unit_code !== "KG") {
+        gpu = await askNumber("Gewicht je " + l.unit_code, r.name + ": wie viel Gramm sind 1 " + l.unit_code + "?", "g");
+        if (!gpu) return;
+      }
+      m.sub = { raw_material_id: r.id, name: r.name, grams_per_unit: gpu ? Math.round(gpu) : null };
+      m.on = true; paintDelivery();
+    }));
+    if (m.on && m.qty < l.remaining_milli) {
+      arow.appendChild(btn(m.rest === "backorder" ? "Rest: Rückstand ✓" : "Rest: Rückstand", () => { m.rest = "backorder"; paintDelivery(); },
+                           m.rest === "backorder" ? "primary" : ""));
+      arow.appendChild(btn(m.rest === "cancel" ? "Rest streichen ✓" : "Rest streichen", () => { m.rest = "cancel"; paintDelivery(); },
+                           m.rest === "cancel" ? "primary" : ""));
+    }
+    if (l.target === "raw_material" && l.tracked === false && !m.sub) {
+      arow.appendChild(btn(m.track ? "Bestand ab jetzt führen ✓" : "Bestand ab jetzt führen", () => { m.track = !m.track; paintDelivery(); },
+                           m.track ? "primary" : ""));
+    }
+    c.appendChild(arow);
+    if (l.target === "raw_material" && l.tracked === false && !m.track && !m.sub) {
+      c.appendChild(el("div", "Ohne Bestandsführung – wird nur vermerkt.", "sub"));
+    }
+    return c;
+  }
+
+  async function bookMarked() {
+    const items = [];
+    openLines().forEach((l) => {
+      const m = S.marks[l.id];
+      if (!m || !m.on) return;
+      const it = { id: l.id, qty_milli: m.qty, rest: m.rest };
+      if (m.track) it.start_tracking = true;
+      if (m.sub) it.substitute = { raw_material_id: m.sub.raw_material_id, grams_per_unit: m.sub.grams_per_unit };
+      items.push(it);
+    });
+    if (!items.length) return;
+    try {
+      const res = await RB.api("receiving/deliveries/" + S.delivery.id + "/book", { method: "POST", body: { device_id: DEVICE, lines: items } });
+      msg(res.lines.length + " Positionen gebucht" + (res.status === "partial" ? " – Rest bleibt offen." : "."), "blue");
+      S.marks = {};
+      if (res.status === "booked") { stopCam(); S.scanning = false; listDeliveries(); }
+      else openDelivery(S.delivery.id);
+    } catch (e) { fail(e); }
+  }
+
+  async function addUnexpected(material) {
+    const m = material || await pickMaterial("Nicht erwartet", "Welcher Rohstoff kam zusätzlich?");
+    if (!m) return null;
+    try {
+      const r = await RB.api("receiving/deliveries/" + S.delivery.id + "/unexpected", { method: "POST", body: { raw_material_id: m.id } });
+      await openDelivery(S.delivery.id, true);
+      return r.line_id;
+    } catch (e) { fail(e); return null; }
+  }
+
+  // ------------------------------------------------------------ Scan-Abhaken (strichcode.md 6)
+  function toggleScan() {
+    S.scanning = !S.scanning;
+    if (S.scanning) {
+      // Start bei 0: jeder Scan = +1 Gebinde
+      openLines().forEach((l) => { const m = S.marks[l.id]; if (m && !m.sub) { m.on = false; m.qty = 0; } });
+      try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
+    } else stopCam();
+    paintDelivery();
+  }
+
+  function scanStep(l, rm) {
+    const gpu = l.grams_per_unit;
+    if (rm && rm.pack_g && gpu) return Math.round(rm.pack_g * 1000 / gpu);
+    if (l.rm_pack_g && gpu) return Math.round(l.rm_pack_g * 1000 / gpu);
+    return (l.pack && l.pack.step_milli) || 1000;
+  }
+
+  function countLine(l, rm) {
+    const m = S.marks[l.id];
+    m.qty += scanStep(l, rm); m.on = true;
+    signal(true);
+    msg("+1 " + (rm && rm.pack_label ? rm.pack_label : (l.pack && l.pack.name) || "") + " " + (l.raw_material_name || l.description)
+        + " → " + fmtMilli(m.qty, l.unit_code), "blue");
+    paintDelivery();
+  }
+
+  async function scanned(raw, format) {
+    if (S.busy) return;
+    S.busy = true;
+    try {
+      const r = await RB.api("barcodes/lookup?code=" + encodeURIComponent(raw) + "&format=" + encodeURIComponent(format || ""));
+      if (r.status === "location") { signal(false); msg("Lagerort-Code – hier nicht nötig.", "orange"); return; }
+      if (r.status === "known") {
+        const l = openLines().find((x) => x.raw_material_id === r.raw_material.id
+          || (S.marks[x.id] && S.marks[x.id].sub && S.marks[x.id].sub.raw_material_id === r.raw_material.id));
+        if (l) { countLine(l, r.raw_material); return; }
+        signal(false);
+        const add = await RB.dialog({ title: r.raw_material.name, text: "Nicht in dieser Lieferung. Zusätzlich aufnehmen?",
+          buttons: [{ label: "Nein", value: false }, { label: "Zusätzlich aufnehmen", value: true, kind: "primary" }] });
+        if (!add) return;
+        const id = await addUnexpected(r.raw_material);
+        const nl = id && S.delivery.lines.find((x) => x.id === id);
+        if (nl) countLine(nl, r.raw_material);
+        return;
+      }
+      // unbekannter Code: Rohstoffe dieser Lieferung zur Auswahl
+      signal(false);
+      const wrap = el("div", null, "list");
+      let chosen = null;
+      const lines = openLines().filter((l) => l.raw_material_id);
+      const p = RB.dialog({ title: "Code " + r.code_text + " unbekannt", text: "Was hast du gescannt? Der Code wird gespeichert.",
+        content: wrap, buttons: [{ label: "Abbrechen", value: null }, { label: "Nicht in der Lieferung", value: "other" }] });
+      lines.forEach((l) => wrap.appendChild(btn(l.raw_material_name, () => {
+        chosen = l; const back = document.querySelector(".dlg-back"); if (back) back.remove();
+      })));
+      const res = await Promise.race([p, new Promise((ok) => { const iv = setInterval(() => { if (chosen) { clearInterval(iv); ok("line"); } }, 80); })]);
+      if (res === "line" && chosen) {
+        const a = await RB.api("barcodes", { method: "POST", body: { code: raw, format: format || "", raw_material_id: chosen.raw_material_id } });
+        countLine(chosen, a.raw_material);
+      } else if (res === "other") {
+        const m = await pickMaterial("Welcher Rohstoff?", "Code " + r.code_text + " wird ihm zugeordnet.");
+        if (!m) return;
+        const a = await RB.api("barcodes", { method: "POST", body: { code: raw, format: format || "", raw_material_id: m.id } });
+        const id = await addUnexpected(a.raw_material);
+        const nl = id && S.delivery.lines.find((x) => x.id === id);
+        if (nl) countLine(nl, a.raw_material);
+      }
+    } catch (e) { signal(false); fail(e); }
+    finally { S.busy = false; }
+  }
+
+  // ------------------------------------------------------------ Kamera (wie Scan-Seite)
+  let stream = null, timer = null, detector = null, audio = null, zxLoad = null;
+  const seen = new Map();
+  const GAP_MS = 1500;
+  if ("BarcodeDetector" in window && BarcodeDetector.getSupportedFormats) {
+    BarcodeDetector.getSupportedFormats().then((f) => {
+      const use = FORMATS.filter((x) => f.includes(x));
+      if (use.length) detector = new BarcodeDetector({ formats: use });
+    }).catch(() => {});
+  }
+  function camBlock() {
+    const wrap = el("div");
+    const cam = el("div", null, "cam");
+    const v = el("video"); v.id = "video"; v.setAttribute("playsinline", ""); v.muted = true; v.autoplay = true;
+    cam.appendChild(v); cam.appendChild(el("div", null, "frame"));
+    const f = el("div", null, "flash"); f.id = "flash"; cam.appendChild(f);
+    const m = el("div", "Kamera wird gestartet …", "msg"); m.id = "cam-msg"; cam.appendChild(m);
+    wrap.appendChild(cam);
+    const man = el("div", null, "manual");
+    const inp = el("input"); inp.placeholder = "Code eintippen oder Handscanner"; inp.autocomplete = "off";
+    man.appendChild(inp);
+    man.appendChild(btn("OK", () => { const t = inp.value.trim(); inp.value = ""; if (t) scanned(t, ""); }));
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); man.lastChild.click(); } });
+    wrap.appendChild(man);
+    return wrap;
+  }
+  function beep(ok) {
+    try {
+      if (!audio) return;
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = ok ? 1320 : 330; g.gain.value = 0.15;
+      o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.09 : 0.25));
+    } catch (e) { /* ohne Ton */ }
+  }
+  function signal(ok) {
+    const f = $("flash");
+    if (f) { f.className = "flash on" + (ok ? "" : " bad"); setTimeout(() => { f.className = "flash" + (ok ? "" : " bad"); }, 60); }
+    beep(ok);
+    if (navigator.vibrate) { try { navigator.vibrate(ok ? 80 : [60, 60, 60]); } catch (e) { /* iPhone: nein */ } }
+  }
+  function camMsg(t) { const m = $("cam-msg"); if (m) { m.textContent = t; m.classList.toggle("hidden", !t); } }
+  function detected(text, format) {
+    text = String(text).replace(/[\x00-\x1f\x7f]/g, (c) => (c === "\x1d" ? c : "")).slice(0, 200);
+    const now = Date.now(), last = seen.get(text);
+    seen.set(text, now);
+    if (last !== undefined && now - last < GAP_MS) return;
+    scanned(text, format);
+  }
+  function loadZxing() {
+    if (window.ZXing) return Promise.resolve(window.ZXing);
+    if (zxLoad) return zxLoad;
+    zxLoad = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = ZXING_URL;
+      s.onload = () => resolve(window.ZXing);
+      s.onerror = () => { zxLoad = null; reject(new Error("Leser (ZXing) nicht ladbar – Internet?")); };
+      document.head.appendChild(s);
+    });
+    return zxLoad;
+  }
+  async function pickCam() {
+    let id = RB.store.get("rezeptbuch_scan_cam") || "";
+    if (id || !navigator.mediaDevices.enumerateDevices) return id;
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+    const pick = [/triple/i, /dual/i, /back|rück|rear/i].map((re) => devs.find((d) => re.test(d.label))).find(Boolean);
+    if (pick) { RB.store.set("rezeptbuch_scan_cam", pick.deviceId); id = pick.deviceId; }
+    return id;
+  }
+  async function startCam() {
+    const video = $("video");
+    if (!video) return;
+    if (stream) { video.srcObject = stream; try { await video.play(); } catch (e) { /* */ } camMsg(""); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) {
+      camMsg("Keine Live-Kamera (nur über https). Code eintippen oder Handscanner."); return;
+    }
+    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    let devId = "";
+    try { devId = await pickCam(); } catch (e) { devId = ""; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: devId
+        ? Object.assign({ deviceId: { exact: devId } }, size) : Object.assign({ facingMode: { ideal: "environment" } }, size) });
+    } catch (e) { camMsg("Kamera nicht verfügbar: " + (e.message || e.name)); return; }
+    if (!S.scanning) { stopCam(); return; }
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) { /* autoplay */ }
+    camMsg("");
+    if (detector) {
+      const tick = async () => {
+        if (!stream) return;
+        const v = $("video");
+        try { if (v && v.readyState >= 2) { const c = await detector.detect(v); if (c.length) detected(c[0].rawValue, c[0].format); } }
+        catch (e) { /* weiter */ }
+        timer = setTimeout(tick, 200);
+      };
+      tick();
+      return;
+    }
+    let ZX;
+    try { ZX = await loadZxing(); } catch (e) { camMsg(e.message + " Code eintippen."); return; }
+    const hints = new Map();
+    hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+    const F = ZX.BarcodeFormat;
+    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE]);
+    const reader = new ZX.MultiFormatReader();
+    reader.setHints(hints);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    let n = 0;
+    const tick = () => {
+      if (!stream) return;
+      const v = $("video");
+      if (v && v.readyState >= 2 && v.videoWidth) {
+        const W = v.videoWidth, H = v.videoHeight, band = (n++ % 3) !== 2;
+        const sw = band ? W * 0.8 : W, sh = band ? H * 0.4 : H, k = Math.min(1, 1280 / sw);
+        canvas.width = Math.round(sw * k); canvas.height = Math.round(sh * k);
+        ctx.drawImage(v, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+        for (const B of [ZX.HybridBinarizer, ZX.GlobalHistogramBinarizer]) {
+          let r = null;
+          try { r = reader.decode(new ZX.BinaryBitmap(new B(new ZX.HTMLCanvasElementLuminanceSource(canvas)))); } catch (e) { r = null; }
+          if (r) { let f = ""; try { f = String(ZX.BarcodeFormat[r.getBarcodeFormat()]).toLowerCase(); } catch (e) { f = ""; } detected(r.getText(), f); break; }
+        }
+      }
+      timer = setTimeout(tick, 120);
+    };
+    tick();
+  }
+  function stopCam() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+  }
+  window.addEventListener("pagehide", stopCam);
+  let lastPortrait = window.innerHeight >= window.innerWidth, turnTimer = null;
+  function turned() {
+    const p = window.innerHeight >= window.innerWidth;
+    if (p === lastPortrait) return;
+    lastPortrait = p;
+    clearTimeout(turnTimer);
+    turnTimer = setTimeout(() => { if (S.scanning) { stopCam(); startCam(); } }, 400);
+  }
+  window.addEventListener("resize", turned);
+  window.addEventListener("orientationchange", turned);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stopCam(); else if (S.scanning) startCam(); });
+
+  // ------------------------------------------------------------ Archiv & Sonstige (PIN)
+  async function archive() {
+    stopCam();
+    setView("Archiv & Sonstige", home);
+    let docs = [], others = [];
+    try { [docs, others] = await Promise.all([RB.api("admin/receiving/documents"), RB.api("admin/other-articles")]); }
+    catch (e) { fail(e); }
+    $("main").appendChild(el("h2", "Belege"));
+    if (!docs.length) $("main").appendChild(el("p", "Noch keine Belege.", "hint"));
+    const t = el("table", null, "simple");
+    docs.forEach((d) => {
+      const tr = el("tr");
+      const info = el("td");
+      info.appendChild(el("div", d.kind_text + " " + d.doc_no));
+      info.appendChild(el("div", "Lieferung " + date(d.expected_date) + " · " + ({ expected: "erwartet", partial: "teilweise", booked: "gebucht",
+        cancelled: "storniert" }[d.status] || d.status), "sub"));
+      tr.appendChild(info);
+      const a = el("td");
+      a.appendChild(btn("PDF", () => openPdf(d.id)));
+      a.appendChild(btn("Löschen", async () => {
+        const ok = await RB.dialog({ title: "Beleg " + d.doc_no + " löschen?", text: "Nur möglich, solange nichts gebucht ist.",
+          buttons: [{ label: "Abbrechen", value: false }, { label: "Löschen", value: true, kind: "danger" }] });
+        if (!ok) return;
+        try { await RB.api("admin/receiving/documents/" + d.id, { method: "DELETE" }); archive(); } catch (e) { fail(e); }
+      }));
+      tr.appendChild(a);
+      t.appendChild(tr);
+    });
+    $("main").appendChild(t);
+
+    $("main").appendChild(el("h2", "Sonstige Artikel"));
+    $("main").appendChild(el("p", "Artikel ohne Bestandsführung (z. B. Tüten). „Zum Rohstoff machen“ hängt alle Belegzeilen um.", "hint"));
+    if (!others.length) $("main").appendChild(el("p", "Keine.", "hint"));
+    const t2 = el("table", null, "simple");
+    others.forEach((o) => {
+      const tr = el("tr");
+      const info = el("td");
+      info.appendChild(el("div", o.description || "–"));
+      info.appendChild(el("div", "Art.-Nr. " + o.article_no, "sub"));
+      tr.appendChild(info);
+      const a = el("td");
+      a.appendChild(btn("Zum Rohstoff machen", async () => {
+        const m = await pickMaterial("Zu welchem Rohstoff?", o.description);
+        if (!m) return;
+        try { await RB.api("admin/other-articles/" + o.id, { method: "PATCH", body: { raw_material_id: m.id } }); archive(); }
+        catch (e) { fail(e); }
+      }));
+      a.appendChild(btn("Archivieren", async () => {
+        try { await RB.api("admin/other-articles/" + o.id, { method: "PATCH", body: { archived: true } }); archive(); }
+        catch (e) { fail(e); }
+      }));
+      tr.appendChild(a);
+      t2.appendChild(tr);
+    });
+    $("main").appendChild(t2);
+  }
+
+  async function openPdf(id) {
+    try {
+      const res = await fetch(RB.API + "admin/receiving/documents/" + id + ".pdf", { headers: { "X-Rezeptbuch-Session": session() || "" } });
+      if (!res.ok) throw new Error("PDF nicht ladbar (" + res.status + ")");
+      const url = URL.createObjectURL(await res.blob());
+      const a = el("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { fail(e); }
+  }
+
+  home();
+})();
+</script>
+</body>
+</html>

@@ -25,6 +25,7 @@ PLANNER_PAGE = Path(__file__).parent / "static" / "planner.html"
 START_PAGE = Path(__file__).parent / "static" / "start.html"
 STATION_PAGE = Path(__file__).parent / "static" / "station.html"
 SCAN_PAGE = Path(__file__).parent / "static" / "scan.html"
+RECEIVING_PAGE = Path(__file__).parent / "static" / "receiving.html"
 UI_DIR = Path(__file__).parent / "static" / "ui"
 UI_FILES = {"common.css": "text/css; charset=utf-8", "common.js": "text/javascript; charset=utf-8"}
 STATIONS = (1, 2)
@@ -86,6 +87,12 @@ def station_page(station: int) -> HTMLResponse:
 def scan_page() -> HTMLResponse:
     """Scan-Seite (docs/strichcode.md, Teil S1); ersetzt die Prüfseite /kameratest."""
     return HTMLResponse(SCAN_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/wareneingang", response_class=HTMLResponse)
+def receiving_page() -> HTMLResponse:
+    """Wareneingang Teil W1 (docs/wareneingang.md): Beleg hochladen, Lieferung abhaken, Archiv."""
+    return HTMLResponse(RECEIVING_PAGE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/ui/{name}")

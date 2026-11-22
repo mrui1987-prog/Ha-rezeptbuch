@@ -8,3 +8,6 @@ configuration:
   weather_entity:
     name: Wetter-Entität
     description: Wetter für die Stationsoberfläche (Ecke oben links), z. B. weather.forecast_home. Leer lassen oder „aus“ = kein Wetter.
+  reader_url:
+    name: Adresse Belegleser (Add-on 3)
+    description: Nur nötig, wenn der Belegleser nicht automatisch gefunden wird, z. B. http://ebca0349-rezeptbuch-leser:8100. Leer lassen = automatisch.
