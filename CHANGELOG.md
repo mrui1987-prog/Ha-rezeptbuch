@@ -1,6 +1,6 @@
 # Änderungen
 
-## 0.10.23 – Wareneingang, Teil W1 (in Entwicklung)
+## 0.10.24 – Wareneingang, Teil W1 (in Entwicklung)
 
 Konzept `docs/wareneingang.md` (W1) und `docs/strichcode.md` Abschnitt 6.
 
