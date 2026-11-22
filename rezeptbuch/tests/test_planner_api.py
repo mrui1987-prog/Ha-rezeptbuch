@@ -61,7 +61,7 @@ def test_page_without_pin_and_base(client):
     assert res.headers["cache-control"] == "no-store"
     assert 'id="t-run"' in res.text and 'src="ui/common.js"' in res.text
     js = client.get("/ui/common.js").text
-    assert "|scannen|planer)?" in js
+    assert "|scannen|planer|" in js
 
 
 def test_admin_tab_and_station_button(client):
