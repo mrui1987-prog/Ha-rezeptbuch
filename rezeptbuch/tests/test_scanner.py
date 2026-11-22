@@ -150,7 +150,7 @@ def test_loss_with_reason_and_filter(conn):
     stock.scan_book(conn, rm, {"device_id": DEV, "reason": "breakage"}, mode="loss")
     stock.loss(conn, rm, {"amount_kg": "2,5", "reason": "merchandise", "source": "quick_entry"})
     rows = stock.movements_all(conn, kind="loss")
-    assert [r["reason_text"] for r in rows] == ["Handelsware", "Bruch"]
+    assert [r["reason_text"] for r in rows] == ["Handelsware", "Bruch/Verderb"]
     assert service.get_raw_material(conn, rm)["stock_g"] == 22500
 
 

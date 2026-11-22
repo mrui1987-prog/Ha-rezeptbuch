@@ -83,7 +83,7 @@ def test_locations_and_loss_by_hand(client, auth):
                     json={"amount_kg": "1,5", "reason": "spoilage", "source": "quick_entry"})
     assert r.status_code == 200 and r.json()["stock_g"] == 8500
     rows = client.get("/api/v1/admin/stock/movements", params={"kind": "loss"}, headers=auth).json()
-    assert rows[0]["reason_text"] == "Verderb"
+    assert rows[0]["reason_text"] == "Bruch/Verderb"   # alter Wert spoilage → zusammengefasst (M03-27)
 
 
 def test_scan_page_and_no_camera_test(client):

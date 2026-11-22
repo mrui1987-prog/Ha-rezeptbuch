@@ -19,7 +19,8 @@ KIND_TEXT = {"receipt": "Zugang", "inventory": "Bestand gesetzt", "consumption":
              "reversal": "Rückbuchung", "planner": "Planer", "planner_return": "Planer zurück",
              "loss": "Abgang", "return": "Rückgabe", "correction": "Korrektur", "undo": "Rückgängig"}
 # Abgangsgründe (K03-54, docs/strichcode.md 7)
-REASONS = {"breakage": "Bruch", "spoilage": "Verderb", "own_use": "Eigenverbrauch", "merchandise": "Handelsware",
+# M03-27 (22.11.2026): „Bruch“ und „Verderb“ zusammengefasst; alte Buchungen mit „spoilage“ zeigen denselben Text
+REASONS = {"breakage": "Bruch/Verderb", "own_use": "Eigenverbrauch", "merchandise": "Handelsware",
            "other": "Sonstiges"}
 SCAN = "scan"                    # Quelle der Scan-Buchungen (docs/strichcode.md 8)
 UNDO_MINUTES = 10                # Rückgängig nur eigene Scans der letzten 10 Minuten (docs/strichcode.md 3)
@@ -254,8 +255,10 @@ def _device(value, *, required: bool = True) -> str | None:
 
 def _reason(payload: dict) -> str:
     reason = payload.get("reason")
+    if reason == "spoilage":                      # alter Wert (0.10.21) → zusammengefasst (M03-27)
+        reason = "breakage"
     if reason not in REASONS:
-        raise ValidationError("Bitte einen Grund wählen (Bruch, Verderb, Eigenverbrauch, Handelsware, Sonstiges).",
+        raise ValidationError("Bitte einen Grund wählen (Bruch/Verderb, Eigenverbrauch, Handelsware, Sonstiges).",
                               field="reason")
     return reason
 
@@ -359,7 +362,8 @@ def movements(conn, raw_material_id: int, limit: int = 50) -> list[dict]:
 
 
 def _movement(r) -> dict:
-    return dict(r, kind_text=KIND_TEXT[r["kind"]], reason_text=REASONS.get(r["reason"]))
+    return dict(r, kind_text=KIND_TEXT[r["kind"]],
+                reason_text=REASONS.get("breakage" if r["reason"] == "spoilage" else r["reason"]))
 
 
 def movements_all(conn, *, date_from: str | None = None, date_to: str | None = None,

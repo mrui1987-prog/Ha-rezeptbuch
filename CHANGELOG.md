@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.22 – Scanner: Korrekturen aus der Praxisprüfung
+
+- Abgangsgründe „Bruch“ und „Verderb“ zusammengefasst zu **„Bruch/Verderb“** (M03-27); alte Buchungen zeigen den neuen Text
+- Kamera startet nach Drehen (hoch/quer) neu – Bild war vorher abgeschnitten
+- Auswahl-Tasten im Fenster „Code unbekannt“ größer, Text (auch „ohne Code“) bleibt in der Taste
+- Erste Nutzung wählt die beste Rückkamera (iPhone: Triple-Kamera), danach gilt die gemerkte Wahl
+
 ## 0.10.21 – Strichcode-Scanner, Teil S1 (in Entwicklung)
 
 Konzept `docs/strichcode.md`, freigegeben von Michael 22.11.2026, 08:09.
