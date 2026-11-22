@@ -115,7 +115,7 @@ def test_existing_rows_survive_migration(tmp_path):
     assert conn.execute("PRAGMA user_version").fetchone()[0] >= 9
     after = dict(conn.execute("SELECT * FROM raw_material WHERE id = ?", (rm,)).fetchone())
     assert after.pop("datenlink_id") is None
-    assert after == before
+    assert {k: after[k] for k in before} == before      # spätere Migrationen fügen Spalten an (0011)
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert conn.execute("SELECT COUNT(*) FROM stock_movement").fetchone()[0] == 1
     # Fremdschlüssel zeigen weiter auf die neue Tabelle

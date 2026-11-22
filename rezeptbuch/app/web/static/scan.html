@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scannen – HA-Rezeptbuch</title>
+<link rel="stylesheet" href="ui/common.css">
+<style>
+  /* Scan-Seite (Modul 03, docs/strichcode.md, Teil S1). Erst Modus wählen, dann startet die Kamera (K03-55). */
+  body { padding: 2vh 3vw; display: flex; flex-direction: column; gap: 1.6vh; min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 2vw; }
+  header h1 { margin: 0; font-size: 3.6vh; flex: 1; }
+  header a { color: var(--accent); font-size: 2.2vh; }
+  .hint { color: var(--muted); font-size: 2vh; margin: 0; }
+  #modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1.4vh; }
+  #modes button { min-height: 12vh; font-size: 2.8vh; font-weight: 700; }
+  #modes button.plus { border-color: var(--ok); }
+  #modes button.minus { border-color: var(--high); }
+  #modes button.last { outline: 4px solid var(--accent); outline-offset: 2px; }   /* O-6: hervorgehoben, nicht vorgewählt */
+  #modes button small { display: block; font-weight: 400; font-size: 1.8vh; color: var(--muted); }
+  #run { display: flex; flex-direction: column; gap: 1.4vh; }
+  .bar { display: flex; align-items: center; gap: 2vw; flex-wrap: wrap; }
+  .bar .mode { font-size: 3.2vh; font-weight: 700; flex: 1; }
+  .bar button { min-height: 6vh; font-size: 2.2vh; }
+  .cam { position: relative; background: #111; border-radius: var(--radius); overflow: hidden; max-height: 45vh; }
+  .cam video { width: 100%; max-height: 45vh; display: block; object-fit: cover; }
+  .cam .frame { position: absolute; left: 10%; right: 10%; top: 30%; bottom: 30%; border: 3px solid rgba(255,255,255,.85);
+                border-radius: 8px; pointer-events: none; }
+  .cam .flash { position: absolute; inset: 0; background: rgba(40, 170, 80, .55); opacity: 0; transition: opacity .35s; }
+  .cam .flash.on { opacity: 1; transition: none; }
+  .cam .flash.bad { background: rgba(200, 40, 40, .55); }
+  .cam .msg { position: absolute; left: 0; right: 0; bottom: 0; padding: 1vh 2vw; color: #fff; font-size: 2vh;
+              background: rgba(0,0,0,.55); }
+  .manual { display: flex; gap: 2vw; }
+  .manual input { flex: 1; font-size: 2.4vh; padding: 1vh 1vw; }
+  .manual button, .manual label { min-height: 6vh; font-size: 2.2vh; }
+  .manual label { display: inline-flex; align-items: center; padding: 0 1.2rem; border: 2px solid var(--line);
+                  border-radius: var(--radius); background: #f7f8f9; }
+  .manual input[type=file] { display: none; }
+  .last-scan { border: 2px solid var(--line); border-radius: var(--radius); padding: 1.4vh 2vw; min-height: 10vh; }
+  .last-scan .name { font-size: 3.4vh; font-weight: 700; }
+  .last-scan .line { font-size: 2.6vh; }
+  .last-scan.ok { border-color: var(--ok); }
+  .last-scan.warn { border-color: var(--high); }
+  .last-scan table { border-collapse: collapse; font-size: 2vh; margin-top: 1vh; }
+  .last-scan td { padding: .2vh 1.5vw .2vh 0; }
+  #undo { min-height: 9vh; font-size: 3vh; width: 100%; }
+  .dlg input, .dlg select { font-size: 2.6vh; padding: .8vh 1vw; width: 100%; box-sizing: border-box; margin: .6vh 0; }
+  .dlg .list { display: flex; flex-direction: column; gap: .8vh; max-height: 40vh; overflow: auto; margin-top: 1vh; }
+  .dlg .list button { text-align: left; min-height: 6vh; font-size: 2.4vh; }
+  .dlg .list button small { color: var(--muted); }
+  .dlg .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Scannen</h1>
+  <a href="./">Startseite</a>
+</header>
+<p class="hint" id="https-hint"></p>
+
+<section id="choose">
+  <p class="hint">Modus wählen – danach startet die Kamera. Der zuletzt benutzte Modus ist umrandet.</p>
+  <div id="modes"></div>
+</section>
+
+<section id="run" class="hidden">
+  <div class="bar">
+    <span class="mode" id="mode-label"></span>
+    <select id="cams" class="hidden" aria-label="Kamera"></select>
+    <button type="button" id="b-modes">Modus wechseln</button>
+  </div>
+  <div class="cam" id="cam">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="frame"></div>
+    <div class="flash" id="flash"></div>
+    <div class="msg" id="cam-msg">Kamera wird gestartet …</div>
+  </div>
+  <div class="manual">
+    <input id="manual" inputmode="text" autocomplete="off" placeholder="Code eintippen oder Handscanner">
+    <button type="button" id="b-manual">OK</button>
+    <label for="photo">Foto</label>
+    <input type="file" id="photo" accept="image/*" capture="environment">
+  </div>
+  <div class="last-scan" id="last"><div class="line">Noch kein Scan.</div></div>
+  <button type="button" id="undo" class="hidden">↶ Rückgängig</button>
+</section>
+
+<script src="ui/common.js"></script>
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const ZXING_URL = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";   // noch aus dem Netz (Abweichung S1)
+  const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
+  const GAP_MS = 800;              // derselbe Code zählt erst wieder nach 0,8 s außerhalb des Bilds (docs/strichcode.md 3)
+  const UNDO_MS = 10 * 60 * 1000;  // Rückgängig: eigene Scans der letzten 10 Minuten
+  const MODES = [
+    { id: "info", label: "Info", sub: "nur anzeigen" },
+    { id: "receipt", label: "+1 Einkauf", sub: "mit Beleg", cls: "plus" },
+    { id: "correction", label: "+1 Korrektur", sub: "🔒 PIN", cls: "plus", pin: true },
+    { id: "loss_breakage", label: "−1 Bruch", cls: "minus", reason: "breakage" },
+    { id: "loss_spoilage", label: "−1 Verderb", cls: "minus", reason: "spoilage" },
+    { id: "loss_own_use", label: "−1 Eigenverbrauch", cls: "minus", reason: "own_use" },
+    { id: "loss_merchandise", label: "−1 Handelsware", cls: "minus", reason: "merchandise" },
+    { id: "loss_other", label: "−1 Sonstiges", cls: "minus", reason: "other" },
+    { id: "stock", label: "Bestand setzen", sub: "🔒 PIN", pin: true },
+    { id: "assign", label: "Code zuordnen", sub: "umhängen 🔒" },
+  ];
+
+  // Gerätekennung für „Rückgängig nur eigenes Gerät“
+  let DEVICE = RB.store.get("rezeptbuch_device");
+  if (!DEVICE) {
+    DEVICE = "d-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    RB.store.set("rezeptbuch_device", DEVICE);
+  }
+
+  // ------------------------------------------------------------ Zähllogik (auch für Tests nachstellbar)
+  function makeGate(ms) {
+    const seen = new Map();
+    return { accept(code, now) { const last = seen.get(code); seen.set(code, now); return last === undefined || now - last >= ms; },
+             reset() { seen.clear(); } };
+  }
+  window.ScanGate = makeGate;
+  const gate = makeGate(GAP_MS);
+
+  // ------------------------------------------------------------ Zustand
+  const S = { mode: null, purchase: null, busy: false, undo: [], series: {} };
+  let stream = null, timer = null, detector = null, audio = null;
+
+  if (!window.isSecureContext) {
+    $("https-hint").textContent = "Live-Kamera nur über die https-Adresse (Nabu Casa). Hier geht „Foto“ oder Code eintippen.";
+  }
+
+  // ------------------------------------------------------------ Signale (K03-56)
+  function beep(ok) {
+    try {
+      if (!audio) return;
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = ok ? 1320 : 330; g.gain.value = 0.15;
+      o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.09 : 0.25));
+    } catch (e) { /* ohne Ton */ }
+  }
+  function signal(ok) {
+    const f = $("flash");
+    f.className = "flash on" + (ok ? "" : " bad");
+    setTimeout(() => { f.className = "flash" + (ok ? "" : " bad"); }, 60);
+    beep(ok);
+    if (navigator.vibrate) { try { navigator.vibrate(ok ? 80 : [60, 60, 60]); } catch (e) { /* iPhone: nein */ } }
+  }
+
+  // ------------------------------------------------------------ Anzeige
+  function isAid(m) { return m.type === "aid"; }
+  function qty(m, g) {
+    if (g === null || g === undefined) return "ohne Bestandsführung";
+    if (isAid(m)) return (g / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + (m.unit_label || "VE");
+    return RB.kg(g);
+  }
+  function packText(m) {
+    if (!m.pack_g) return "kein Gebinde";
+    return isAid(m) ? "1 " + m.pack_label : m.pack_label + " = " + RB.kg(m.pack_g);
+  }
+  function showLast(kind, name, lines, rows) {
+    const box = $("last");
+    box.className = "last-scan " + (kind || "");
+    box.textContent = "";
+    if (name) box.appendChild(RB.el("div", name, "name"));
+    (lines || []).forEach((l) => box.appendChild(RB.el("div", l, "line")));
+    if (rows && rows.length) {
+      const t = RB.el("table");
+      rows.forEach((r) => { const tr = RB.el("tr"); r.forEach((c) => tr.appendChild(RB.el("td", c))); t.appendChild(tr); });
+      box.appendChild(t);
+    }
+  }
+  function paintUndo() {
+    const now = Date.now();
+    S.undo = S.undo.filter((u) => now - u.at < UNDO_MS);
+    const u = S.undo[S.undo.length - 1];
+    $("undo").classList.toggle("hidden", !u);
+    if (u) $("undo").textContent = "↶ Rückgängig: " + u.text;
+  }
+  setInterval(paintUndo, 30000);
+
+  // ------------------------------------------------------------ Dialog-Hilfen
+  function input(label, value, attrs) {
+    const wrap = RB.el("div");
+    wrap.appendChild(RB.el("div", label));
+    const i = document.createElement("input");
+    i.value = value || "";
+    Object.assign(i, attrs || {});
+    wrap.appendChild(i);
+    return { wrap: wrap, el: i };
+  }
+  function kgToG(text) {
+    const t = String(text || "").trim().replace(/\s/g, "").replace(",", ".");
+    if (!/^\d+(\.\d{1,3})?$/.test(t)) return null;
+    return Math.round(parseFloat(t) * 1000);
+  }
+  async function ensurePin() {
+    try { await RB.api("admin/session"); return true; } catch (e) { /* anmelden */ }
+    const pin = await RB.numpad({ title: "PIN eingeben", secret: true, max: 12 });
+    if (pin === null || pin === "") return false;
+    try {
+      const data = await RB.api("admin/login", { method: "POST", body: { pin: pin } });
+      try { sessionStorage.setItem("rezeptbuch_admin_session", data.session); } catch (e) { /* ohne Speicher */ }
+      return true;
+    } catch (err) { await RB.dialog({ title: "Anmeldung", text: err.message }); return false; }
+  }
+  async function askPack(m) {
+    const aid = isAid(m);
+    const size = input(aid ? "" : "Ein Gebinde ist (kg):", "", { inputMode: "decimal", placeholder: "z. B. 25" });
+    const label = input(aid ? "Verpackungseinheit:" : "Bezeichnung:", aid ? (m.unit_label || "Karton") : "Sack");
+    const box = RB.el("div");
+    if (!aid) box.appendChild(size.wrap);
+    box.appendChild(label.wrap);
+    const ok = await RB.dialog({ title: "Gebinde für „" + m.name + "“", text: "Wird einmal am Rohstoff gespeichert.",
+      content: box, buttons: [{ label: "Abbrechen", value: false },
+        { label: "Speichern", value: true, kind: "primary", check: () => (aid || kgToG(size.el.value)) && label.el.value.trim() }] });
+    if (!ok) return null;
+    return { pack_g: aid ? null : kgToG(size.el.value), pack_label: label.el.value.trim() };
+  }
+
+  // Rohstoff wählen (unbekannter Code, Umhängen): ohne Code zuerst (O-7)
+  async function pickMaterial(title, text) {
+    const box = RB.el("div");
+    const search = input("Suchen:", "", { placeholder: "Name oder Nummer" });
+    const list = RB.el("div", null, "list");
+    box.appendChild(search.wrap); box.appendChild(list);
+    let chosen = null, closeBtn = null;
+    async function refresh() {
+      let rows = [];
+      try { rows = await RB.api("barcodes/candidates?search=" + encodeURIComponent(search.el.value)); } catch (e) { rows = []; }
+      list.textContent = "";
+      rows.forEach((r) => {
+        const b = RB.el("button", r.number + " " + r.name + " ", "keep");
+        b.type = "button";
+        b.appendChild(RB.el("small", r.has_code ? "hat schon Code" : "ohne Code"));
+        b.addEventListener("click", () => { chosen = r; if (closeBtn) closeBtn.click(); });
+        list.appendChild(b);
+      });
+    }
+    let t = null;
+    search.el.addEventListener("input", () => { clearTimeout(t); t = setTimeout(refresh, 250); });
+    refresh();
+    const p = RB.dialog({ title: title, text: text, content: box, buttons: [{ label: "Abbrechen", value: "x" }, { label: "ok", value: "pick" }] });
+    // Taste „ok“ dient nur zum Schließen nach einem Tipp in der Liste
+    setTimeout(() => {
+      const btns = document.querySelectorAll(".dlg .btns button");
+      closeBtn = btns[btns.length - 1];
+      closeBtn.classList.add("hidden");
+      search.el.focus();
+    }, 0);
+    const r = await p;
+    return r === "pick" ? chosen : null;
+  }
+
+  // ------------------------------------------------------------ Modus
+  function paintModes() {
+    const last = RB.store.get("rezeptbuch_scan_mode");
+    const box = $("modes");
+    box.textContent = "";
+    MODES.forEach((m) => {
+      const b = RB.el("button", m.label, (m.cls || "") + (m.id === last ? " last" : ""));
+      b.type = "button";
+      if (m.sub) b.appendChild(RB.el("small", m.sub));
+      b.addEventListener("click", () => chooseMode(m));
+      box.appendChild(b);
+    });
+  }
+  async function choosePurchase() {
+    let rows = [];
+    try { rows = await RB.api("purchases"); } catch (e) { rows = []; }
+    const buttons = [{ label: "Abbrechen", value: null }];
+    rows.slice(0, 5).forEach((p) => buttons.push({ label: p.label + (p.today ? " (heute)" : " (" + p.purchase_date + ")"), value: p }));
+    buttons.push({ label: "Neuer Einkauf", value: "new", kind: "primary" });
+    const r = await RB.dialog({ title: "Zu welchem Einkauf?", text: "Zugang nur mit Beleg. Lieferungen kommen mit dem Wareneingang.", buttons: buttons });
+    if (r !== "new") return r;
+    const label = input("Wo eingekauft?", "", { placeholder: "z. B. Metro" });
+    const ok = await RB.dialog({ title: "Neuer Einkauf", content: label.wrap, buttons: [{ label: "Abbrechen", value: false },
+      { label: "Anlegen", value: true, kind: "primary", check: () => label.el.value.trim() }] });
+    if (!ok) return null;
+    try { return await RB.api("purchases", { method: "POST", body: { label: label.el.value.trim(), device_id: DEVICE } }); }
+    catch (err) { await RB.dialog({ title: "Einkauf", text: err.message }); return null; }
+  }
+  async function chooseMode(m) {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } }
+    if (m.pin && !(await ensurePin())) return;
+    S.purchase = null;
+    if (m.id === "receipt") {
+      S.purchase = await choosePurchase();
+      if (!S.purchase) return;
+    }
+    S.mode = m; S.series = {};
+    RB.store.set("rezeptbuch_scan_mode", m.id);
+    $("mode-label").textContent = m.label + (S.purchase ? " · " + S.purchase.label : "");
+    $("choose").classList.add("hidden");
+    $("run").classList.remove("hidden");
+    showLast("", null, ["Bereit – Code in den Rahmen halten."]);
+    start();
+  }
+  $("b-modes").addEventListener("click", () => {
+    stop(); S.mode = null; gate.reset();
+    $("run").classList.add("hidden"); $("choose").classList.remove("hidden");
+    paintModes();
+  });
+
+  // ------------------------------------------------------------ Code verarbeiten
+  async function handle(raw, format) {
+    if (!S.mode || S.busy) return;
+    S.busy = true;
+    try { await process(String(raw).slice(0, 200), format || ""); }
+    catch (err) { signal(false); showLast("warn", "Fehler", [err.message]); }
+    finally { S.busy = false; }
+  }
+
+  async function process(raw, format) {
+    let r = await RB.api("barcodes/lookup?code=" + encodeURIComponent(raw) + "&format=" + encodeURIComponent(format));
+    if (r.status === "location") { signal(true); showLast("", "Lagerort " + r.location.name, ["Ort-Codes nutzt die Inventur."]); return; }
+    if (r.status === "unknown") {
+      const m = await pickMaterial("Code " + r.code_text + " unbekannt", "Welcher Rohstoff ist das? Der Code wird gespeichert.");
+      if (!m) { showLast("warn", "Code " + r.code_text, ["nicht zugeordnet"]); return; }
+      const body = { code: raw, format: format, raw_material_id: m.id };
+      if (!m.unit_size_g && !m.delivery_pack_g && S.mode.id !== "info" && S.mode.id !== "assign") {
+        const pack = await askPack({ name: m.name, type: m.type, unit_label: m.unit_label });
+        if (!pack) return;
+        Object.assign(body, pack);
+      }
+      r = await RB.api("barcodes", { method: "POST", body: body });
+      signal(true);
+      if (S.mode.id === "assign") { showLast("ok", r.raw_material.name, ["Code " + r.code_text + " zugeordnet"]); return; }
+    }
+    let m = r.raw_material;
+    if (S.mode.id === "info") return info(r);
+    if (S.mode.id === "assign") return reassign(r);
+    if (m.archived) { signal(false); showLast("warn", m.name, ["archiviert – keine Buchung"]); return; }
+    if (!m.pack_g) {
+      const pack = await askPack(m);
+      if (!pack) return;
+      m = await RB.api("raw-materials/" + m.id + "/pack", { method: "POST", body: pack });
+    }
+    if (S.mode.id === "stock") return setStock(m);
+    return book(m, false);
+  }
+
+  function info(r) {
+    const m = r.raw_material;
+    signal(true);
+    const lines = ["Bestand " + qty(m, m.stock_g) + (m.stock_alert_g !== null ? " · Meldewert " + qty(m, m.stock_alert_g) : ""),
+      "Gebinde " + packText(m) + (m.price_cents_per_kg !== null ? " · Preis " + (m.price_cents_per_kg / 100).toFixed(2).replace(".", ",")
+        + " € je " + (isAid(m) ? m.unit_label : "kg") : ""),
+      m.locations.length ? "Lagerort " + m.locations.join(", ") : "kein Lagerort"];
+    if (m.archived) lines.unshift("archiviert");
+    const rows = (m.movements || []).map((x) => [x.created_at.slice(0, 16).replace("T", " "), x.kind_text + (x.reason_text ? " " + x.reason_text : ""),
+      x.delta_g === null ? "" : (x.delta_g > 0 ? "+" : "") + qty(m, x.delta_g)]);
+    showLast(m.archived ? "warn" : "ok", m.number + " " + m.name, lines, rows);
+  }
+
+  async function reassign(r) {
+    const m = r.raw_material;
+    signal(true);
+    const c = await RB.dialog({ title: "Code " + r.code_text, text: "Gehört zu „" + m.name + "“.", buttons: [
+      { label: "Passt", value: false }, { label: "Umhängen 🔒", value: true, kind: "primary" }] });
+    if (!c || !(await ensurePin())) { showLast("ok", m.name, ["Code " + r.code_text]); return; }
+    const to = await pickMaterial("Umhängen", "Zu welchem Rohstoff gehört der Code?");
+    if (!to) return;
+    const res = await RB.api("admin/barcodes/reassign", { method: "POST", body: { code: r.code, raw_material_id: to.id } });
+    showLast("ok", res.raw_material.name, ["Code " + r.code_text + " umgehängt (vorher " + m.name + ")"]);
+  }
+
+  async function setStock(m) {
+    const aid = isAid(m);
+    const packs = input("Volle " + (m.pack_label || "Gebinde") + ":", "", { inputMode: "numeric", placeholder: "0" });
+    const rest = input("+ Rest in kg:", "", { inputMode: "decimal", placeholder: "0" });
+    const box = RB.el("div");
+    box.appendChild(RB.el("p", "Bisher " + qty(m, m.stock_g) + (aid ? "" : " · 1 " + packText(m))));
+    const grid = RB.el("div", null, aid ? "" : "row2");
+    grid.appendChild(packs.wrap); if (!aid) grid.appendChild(rest.wrap);
+    box.appendChild(grid);
+    const ok = await RB.dialog({ title: "Bestand " + m.name, content: box, buttons: [{ label: "Abbrechen", value: false },
+      { label: "Setzen", value: true, kind: "primary", check: () => /^\d{0,3}$/.test(packs.el.value.trim())
+        && (rest.el.value.trim() === "" || kgToG(rest.el.value) !== null) }] });
+    if (!ok) { showLast("", m.name, ["nicht geändert"]); return; }
+    const body = { packs: parseInt(packs.el.value || "0", 10), rest_kg: aid ? "" : rest.el.value.trim(), source: "scan", device_id: DEVICE };
+    const res = await RB.api("admin/raw-materials/" + m.id + "/stock/inventory", { method: "POST", body: body });
+    signal(true);
+    showLast("ok", m.name, ["Bestand gesetzt: " + qty(m, res.stock_g)]);
+    if (res.movement_id) { S.undo.push({ id: res.movement_id, at: Date.now(), text: "Bestand " + m.name, m: m }); paintUndo(); }
+  }
+
+  async function book(m, startTracking) {
+    const mode = S.mode;
+    const body = { device_id: DEVICE, packs: 1 };
+    let path;
+    if (mode.reason) { path = "raw-materials/" + m.id + "/scan/loss"; body.reason = mode.reason; }
+    else if (mode.id === "receipt") { path = "raw-materials/" + m.id + "/scan/receipt"; body.purchase_id = S.purchase.id; }
+    else { path = "admin/raw-materials/" + m.id + "/scan/correction"; }
+    if (startTracking) body.start_tracking = true;
+    let res;
+    try { res = await RB.api(path, { method: "POST", body: body }); }
+    catch (err) {
+      if (err.code === "not_tracked" && !mode.reason) {
+        const go = await RB.dialog({ title: m.name, text: "Keine Bestandsführung. Bestand ab jetzt führen (ab 0)?",
+          buttons: [{ label: "Nein", value: false }, { label: "Ja, ab 0", value: true, kind: "primary" }] });
+        if (go) return book(m, true);
+        return;
+      }
+      throw err;
+    }
+    signal(true);
+    const sign = mode.reason ? -1 : 1;
+    S.series[m.id] = (S.series[m.id] || 0) + sign;
+    const n = S.series[m.id];
+    const one = (sign > 0 ? "+1 " : "−1 ") + res.pack_label;
+    const series = (n > 0 ? "+" : "−") + Math.abs(n) + " " + res.pack_label + " = " + qty(m, Math.abs(n) * res.pack_g);
+    showLast("ok", m.name, [one + (mode.reason ? " (" + mode.label.slice(3) + ")" : "") + " · Serie " + series,
+      "Bestand " + qty(m, res.stock_g)]);
+    S.undo.push({ id: res.movement_id, at: Date.now(), text: one + " " + m.name, rm: m.id, sign: sign, m: m });
+    paintUndo();
+  }
+
+  $("undo").addEventListener("click", async () => {
+    const u = S.undo[S.undo.length - 1];
+    if (!u || S.busy) return;
+    S.busy = true;
+    try {
+      const res = await RB.api("stock/movements/" + u.id + "/undo", { method: "POST", body: { device_id: DEVICE } });
+      S.undo.pop();
+      if (u.rm && S.series[u.rm]) S.series[u.rm] -= u.sign;
+      showLast("", res.name, ["Rückgängig: " + u.text, "Bestand " + qty(u.m, res.stock_g)]);
+    } catch (err) {
+      S.undo.pop();
+      showLast("warn", "Rückgängig", [err.message]);
+    } finally { S.busy = false; paintUndo(); }
+  });
+
+  function detected(text, format) {
+    text = String(text).replace(/[\x00-\x1f\x7f]/g, (c) => (c === "\x1d" ? c : ""));
+    if (!gate.accept(text, Date.now())) return;     // gleicher Code noch im Bild → nicht erneut zählen
+    handle(text, format);
+  }
+  $("b-manual").addEventListener("click", () => { const v = $("manual").value.trim(); $("manual").value = ""; if (v) handle(v, ""); });
+  $("manual").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("b-manual").click(); } });
+
+  // ------------------------------------------------------------ Kamera
+  if ("BarcodeDetector" in window && BarcodeDetector.getSupportedFormats) {
+    BarcodeDetector.getSupportedFormats().then((f) => {
+      const use = FORMATS.filter((x) => f.includes(x));
+      if (use.length) detector = new BarcodeDetector({ formats: use });
+    }).catch(() => {});
+  }
+  let zxLoad = null;
+  function loadZxing() {
+    if (window.ZXing) return Promise.resolve(window.ZXing);
+    if (zxLoad) return zxLoad;
+    zxLoad = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = ZXING_URL;
+      s.onload = () => resolve(window.ZXing);
+      s.onerror = () => { zxLoad = null; reject(new Error("Leser (ZXing) nicht ladbar – Internet?")); };
+      document.head.appendChild(s);
+    });
+    return zxLoad;
+  }
+  function zxReader(ZX) {
+    const hints = new Map();
+    hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+    const F = ZX.BarcodeFormat;
+    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE]);
+    const reader = new ZX.MultiFormatReader();
+    reader.setHints(hints);
+    return reader;
+  }
+  function zxFormat(ZX, r) { try { return String(ZX.BarcodeFormat[r.getBarcodeFormat()]).toLowerCase(); } catch (e) { return ""; } }
+  function zxDecode(ZX, reader, canvas) {
+    for (const B of [ZX.HybridBinarizer, ZX.GlobalHistogramBinarizer]) {
+      try { const r = reader.decode(new ZX.BinaryBitmap(new B(new ZX.HTMLCanvasElementLuminanceSource(canvas)))); if (r) return r; }
+      catch (e) { /* kein Code */ }
+    }
+    return null;
+  }
+  function camMsg(t) { $("cam-msg").textContent = t; $("cam-msg").classList.toggle("hidden", !t); }
+
+  async function listCams() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+    const sel = $("cams");
+    if (devs.length > 1) {
+      const current = sel.value || RB.store.get("rezeptbuch_scan_cam") || "";
+      sel.textContent = "";
+      devs.forEach((d, i) => { const o = RB.el("option", d.label || ("Kamera " + (i + 1))); o.value = d.deviceId; sel.appendChild(o); });
+      if (current) sel.value = current;
+      sel.classList.remove("hidden");
+    }
+  }
+  $("cams").addEventListener("change", () => { RB.store.set("rezeptbuch_scan_cam", $("cams").value); if (stream) start(); });
+
+  async function start() {
+    stop();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) {
+      camMsg("Keine Live-Kamera (nur über https). „Foto“ oder Code eintippen."); return;
+    }
+    camMsg("Kamera wird gestartet …");
+    const devId = $("cams").value || RB.store.get("rezeptbuch_scan_cam") || "";
+    const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    const video = $("video");
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: devId
+        ? Object.assign({ deviceId: { exact: devId } }, size) : Object.assign({ facingMode: { ideal: "environment" } }, size) });
+    } catch (e) { camMsg("Kamera nicht verfügbar: " + (e.message || e.name)); return; }
+    const track = stream.getVideoTracks()[0];
+    try {
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.focusMode && caps.focusMode.includes("continuous")) await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+    } catch (e) { /* Gerätestandard */ }
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) { /* autoplay */ }
+    listCams().catch(() => {});
+    camMsg("");
+    if (detector) {
+      const tick = async () => {
+        if (!stream) return;
+        try { if (video.readyState >= 2) { const c = await detector.detect(video); if (c.length) detected(c[0].rawValue, c[0].format); } }
+        catch (e) { /* weiter */ }
+        timer = setTimeout(tick, 200);
+      };
+      tick();
+      return;
+    }
+    let ZX;
+    try { ZX = await loadZxing(); } catch (e) { camMsg(e.message + " „Foto“ oder Code eintippen."); return; }
+    const reader = zxReader(ZX);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    let n = 0;
+    const tick = () => {
+      if (!stream) return;
+      if (video.readyState >= 2 && video.videoWidth) {
+        const W = video.videoWidth, H = video.videoHeight, band = (n++ % 3) !== 2;
+        const sw = band ? W * 0.8 : W, sh = band ? H * 0.4 : H, k = Math.min(1, 1280 / sw);
+        canvas.width = Math.round(sw * k); canvas.height = Math.round(sh * k);
+        ctx.drawImage(video, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+        const r = zxDecode(ZX, reader, canvas);
+        if (r) detected(r.getText(), zxFormat(ZX, r));
+      }
+      timer = setTimeout(tick, 120);
+    };
+    tick();
+  }
+  function stop() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    $("video").srcObject = null;
+  }
+
+  // Foto-Weg (iPhone im eigenen WLAN über http)
+  $("photo").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("Bild nicht lesbar")); img.src = url; });
+      if (detector) { const c = await detector.detect(img); if (c.length) { handle(c[0].rawValue, c[0].format); return; } }
+      const ZX = await loadZxing();
+      const reader = zxReader(ZX);
+      const W = img.naturalWidth, H = img.naturalHeight;
+      for (const t of [{ m: 1600, c: 1 }, { m: 1000, c: 1 }, { m: 1600, c: 0.6 }, { m: 1000, c: 0.4 }, { m: 2400, c: 1 }]) {
+        const sw = W * t.c, sh = H * t.c, k = Math.min(1, t.m / Math.max(sw, sh));
+        const c = document.createElement("canvas");
+        c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+        c.getContext("2d", { willReadFrequently: true }).drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+        const r = zxDecode(ZX, reader, c);
+        if (r) { handle(r.getText(), zxFormat(ZX, r)); return; }
+        await new Promise((res) => setTimeout(res, 0));
+      }
+      signal(false); showLast("warn", "Foto", ["kein Code gefunden – Code bildfüllend und scharf fotografieren"]);
+    } catch (err) { signal(false); showLast("warn", "Foto", [err.message]); }
+    finally { URL.revokeObjectURL(url); $("photo").value = ""; }
+  });
+
+  window.addEventListener("pagehide", stop);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else if (S.mode) start(); });
+  paintModes();
+})();
+</script>
+</body>
+</html>

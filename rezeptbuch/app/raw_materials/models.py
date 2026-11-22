@@ -16,7 +16,8 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from ..errors import ValidationError
 from ..text_rules import check_no_formula_start
 
-TYPES = ("standard", "flour")
+TYPES = ("standard", "flour", "aid")       # aid = Hilfs- und Betriebsstoff (M03-26)
+AID_UNIT = 1000                            # intern 1 Verpackungseinheit = 1000 (wie 1 kg, Strichcode S1)
 TOLERANCE_UNITS = ("g", "percent")
 
 MAX_NAME = 100
@@ -184,7 +185,7 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
         raise ValidationError("Ungültige Eingabe.")
     merged = dict(base) if base else {}
     for key in ("number", "name", "display_name", "type", "tolerance_unit", "tolerance",
-                "unit_size_g", "unit_label"):
+                "unit_size_g", "unit_label", "delivery_pack_g", "delivery_pack_label"):
         if key in data:
             merged[key] = data[key]
 
@@ -209,7 +210,22 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
 
     type_ = merged.get("type") or "standard"
     if type_ not in TYPES:
-        raise ValidationError("Typ muss „standard“ oder „flour“ (Mehl) sein.", field="type")
+        raise ValidationError("Typ muss „standard“, „flour“ (Mehl) oder „aid“ (Hilfs- und Betriebsstoff) sein.",
+                              field="type")
+
+    if type_ == "aid":
+        # Hilfs- und Betriebsstoff (M03-26, S8): keine Toleranz, gezählt in Verpackungseinheiten
+        unit_label = _text(merged.get("unit_label"), "unit_label", "Verpackungseinheit", required=True,
+                           max_len=MAX_UNIT_LABEL)
+        if merged.get("delivery_pack_g") not in (None, "") or merged.get("delivery_pack_label") not in (None, ""):
+            if base is None or "delivery_pack_g" in data or "delivery_pack_label" in data:
+                raise ValidationError("Hilfs- und Betriebsstoffe haben kein Liefergebinde; gezählt wird je "
+                                      "Verpackungseinheit.", field="delivery_pack_g")
+        return {
+            "number": number, "name": name, "display_name": display_name, "type": type_,
+            "tolerance_unit": "g", "tolerance_value": 0, "unit_size_g": AID_UNIT, "unit_label": unit_label,
+            "delivery_pack_g": None, "delivery_pack_label": None,
+        }
 
     unit = merged.get("tolerance_unit") or "g"
     if unit not in TOLERANCE_UNITS:
@@ -219,6 +235,14 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
     unit_size = _whole_number(merged.get("unit_size_g"), "unit_size_g", "Gebindegröße")
     unit_label = _text(merged.get("unit_label"), "unit_label", "Gebindebezeichnung", required=False,
                        max_len=MAX_UNIT_LABEL)
+    pack_size = _whole_number(merged.get("delivery_pack_g"), "delivery_pack_g", "Liefergebinde")
+    pack_label = _text(merged.get("delivery_pack_label"), "delivery_pack_label", "Liefergebinde-Bezeichnung",
+                       required=False, max_len=MAX_UNIT_LABEL)
+    if pack_size is not None and not 0 < pack_size <= MAX_GRAMS:
+        raise ValidationError(f"Liefergebinde muss zwischen 1 und {MAX_GRAMS} g liegen.", field="delivery_pack_g")
+    if (pack_size is None) != (pack_label is None):
+        raise ValidationError("Liefergebinde und Bezeichnung gehören zusammen (z. B. 9900 g „Karton“).",
+                              field="delivery_pack_label" if pack_size is not None else "delivery_pack_g")
     if unit_size is not None and not 0 < unit_size <= MAX_GRAMS:
         raise ValidationError(f"Gebindegröße muss zwischen 1 und {MAX_GRAMS} g liegen.", field="unit_size_g")
     if (unit_size is None) != (unit_label is None):
@@ -234,4 +258,6 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
         "tolerance_value": tolerance_value,
         "unit_size_g": unit_size,
         "unit_label": unit_label,
+        "delivery_pack_g": pack_size,
+        "delivery_pack_label": pack_label,
     }

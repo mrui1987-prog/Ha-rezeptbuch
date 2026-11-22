@@ -1,5 +1,19 @@
 # Änderungen
 
+## 0.10.21 – Strichcode-Scanner, Teil S1 (in Entwicklung)
+
+Konzept `docs/strichcode.md`, freigegeben von Michael 22.11.2026, 08:09.
+
+- **Scan-Seite `/scannen`** (Kachel „Scannen“ auf der Startseite, Menü 🔒 an der Station): erst Modus wählen, dann startet die Kamera; zuletzt benutzter Modus umrandet, nicht vorgewählt
+- Modi: Info, **+1 Einkauf** (nur mit Beleg „Einkauf“), **+1 Korrektur** (PIN), **−1 Bruch / Verderb / Eigenverbrauch / Handelsware / Sonstiges**, **Bestand setzen** (PIN, „3 Sack + 12,5 kg“), **Code zuordnen** (Umhängen mit PIN)
+- Jeder Scan bucht sofort; **Rückgängig** für eigene Scans der letzten 10 Minuten; derselbe Code zählt erst wieder nach 0,8 s außerhalb des Bilds; Aufleuchten, Ton, Vibration (Android)
+- Unbekannter Code: Rohstoff suchen (ohne Code zuerst), Gebinde einmal abfragen und am Rohstoff speichern
+- Codes: EAN/UPC/GTIN-14 gemeinsam auf 14 Stellen, GS1 nur GTIN (Charge/MHD weggelassen); Eingabefeld für Handscanner, Foto-Weg ohne https
+- Rohstoff: **Liefergebinde** (z. B. Karton Eier), **Lagerort 1/2** mit Beschriftung, Art **Hilfs- und Betriebsstoff** (Verpackungseinheiten, nie in Rezept/Waage/Planer), Codes mit „entfernen“
+- Unterreiter Bestand: **Lagerorte** pflegen; Schnellerfassung mit dritter Art **Abgang** und Grund; Verlauf mit Abgang/Korrektur/Rückgängig, Grund und Einkauf
+- Migration 0011 (Lagerorte, Codes, Einkäufe, Neuaufbau `raw_material` und `stock_movement`, Inhalt unverändert)
+- Prüfseite `/kameratest` entfällt
+
 ## 0.10.20 – Kameratest: Absturz durch DataMatrix vermeiden (in Entwicklung)
 
 Befund 19:15 (Galaxy Tab A, HA-App, https): Live-Scan mit eingebautem Leser funktioniert (EAN-13, UPC-A, CODE_128); ein DataMatrix-Code der Post bringt die App zum Absturz.

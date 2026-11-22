@@ -71,7 +71,8 @@ COLUMN_LABEL = {
     "stock_kg": "Bestand kg", "stock_alert_kg": "Meldewert kg",
 }
 
-TYPE_VALUES = {"standard": "standard", "mehl": "flour", "flour": "flour"}
+TYPE_VALUES = {"standard": "standard", "mehl": "flour", "flour": "flour", "aid": "aid",
+               "hilfs- und betriebsstoff": "aid", "hbs": "aid"}
 UNIT_VALUES = {"g": "g", "%": "percent", "percent": "percent", "prozent": "percent"}
 ARCHIVED_VALUES = {"ja": True, "1": True, "nein": False, "0": False}
 
@@ -241,7 +242,7 @@ def _row_input(row: SourceRow, existing: bool) -> tuple[dict, bool | None, bool]
     if row.has("unit_size_g"):
         data["unit_size_g"] = _int_text(row.get("unit_size_g")) or None
     if row.get("type"):
-        data["type"] = _choice(row.get("type"), TYPE_VALUES, "type", "Typ muss „Standard“ oder „Mehl“ sein.")
+        data["type"] = _choice(row.get("type"), TYPE_VALUES, "type", "Typ muss „Standard“, „Mehl“ oder „Hilfs- und Betriebsstoff“ sein.")
     if row.get("tolerance_unit"):
         data["tolerance_unit"] = _choice(row.get("tolerance_unit"), UNIT_VALUES, "tolerance_unit",
                                          "Toleranzeinheit muss „g“ oder „%“ sein.")
@@ -270,7 +271,7 @@ def _show(item: dict) -> dict:
     return {
         "Name": item["name"],
         "Kurzname": item["display_name"] or "(leer)",
-        "Typ": "Mehl" if item["type"] == "flour" else "Standard",
+        "Typ": {"flour": "Mehl", "aid": "Hilfs- und Betriebsstoff"}.get(item["type"], "Standard"),
         "Toleranz": tolerance,
         "Gebinde": f"{item['unit_size_g']} g {item['unit_label']}" if item["unit_size_g"] else "(leer)",
         "archiviert": "ja" if item["archived"] else "nein",

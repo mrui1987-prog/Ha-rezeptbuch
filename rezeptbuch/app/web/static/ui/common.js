@@ -4,8 +4,8 @@
 "use strict";
 
 (function () {
-  // Basis: alles vor /station/…, /admin… bzw. die Startseite selbst (Ingress-Präfix bleibt erhalten)
-  const BASE = location.pathname.replace(/\/(station\/[^\/]*|admin(\/[^\/]*)?)?\/?$/, "/");
+  // Basis: alles vor /station/…, /admin…, /scannen bzw. die Startseite selbst (Ingress-Präfix bleibt erhalten)
+  const BASE = location.pathname.replace(/\/(station\/[^\/]*|admin(\/[^\/]*)?|scannen)?\/?$/, "/");
   const API = BASE + "api/v1/";
 
   function el(tag, text, cls) {

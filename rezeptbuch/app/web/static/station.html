@@ -880,8 +880,10 @@
     catch (err) { await RB.dialog({ title: "Anmeldung", text: err.message }); return; }
     try { sessionStorage.setItem("rezeptbuch_admin_session", data.session); } catch (e) { /* ohne Speicher */ }
     const choice = await RB.dialog({ title: "Menü", buttons: [{ label: "Zurück", value: null },
-      { label: "Station dieses Geräts ändern", value: "station" }, { label: "Admin-Bereich", value: "admin", kind: "primary" }] });
+      { label: "Station dieses Geräts ändern", value: "station" }, { label: "Scannen", value: "scan" },
+      { label: "Admin-Bereich", value: "admin", kind: "primary" }] });
     if (choice === "admin") location.href = RB.BASE + "admin/rohstoffe";
+    if (choice === "scan") location.href = RB.BASE + "scannen";
     if (choice === "station") { RB.store.del("rezeptbuch_station"); location.href = RB.BASE + "?wahl=1"; }
   });
 

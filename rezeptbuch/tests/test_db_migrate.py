@@ -36,6 +36,8 @@ EXPECTED_TABLES = {
     # Modul 10, Planer Teil P-A (0010)
     "sales_article", "sales_article_line", "sales_plan", "sales_plan_line", "plan_run", "plan_run_order",
     "order_article_source", "plan_stock_booking",
+    # Modul 03, Strichcode-Scanner Teil S1 (0011)
+    "storage_location", "raw_material_barcode", "purchase",
 }
 
 

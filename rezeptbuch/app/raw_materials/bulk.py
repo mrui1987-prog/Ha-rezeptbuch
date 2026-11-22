@@ -21,7 +21,7 @@ from .models import tolerance_display
 
 MAX_BULK = 1000
 ACTIONS = ("archive", "restore", "tolerance", "type", "alert", "stock", "active_source")
-TYPE_TEXT = {"standard": "Standard", "flour": "Mehl"}
+TYPE_TEXT = {"standard": "Standard", "flour": "Mehl", "aid": "Hilfs- und Betriebsstoff"}
 NOTE = "Sammelaktion"
 
 
@@ -114,7 +114,7 @@ def _check(data: dict) -> tuple[str, list[int], dict]:
     if len(ids) > MAX_BULK:
         raise ValidationError(f"Höchstens {MAX_BULK} Rohstoffe auf einmal.", field="ids")
     value = data.get("value") if isinstance(data.get("value"), dict) else {}
-    if action == "type" and value.get("type") not in TYPE_TEXT:
+    if action == "type" and value.get("type") not in ("standard", "flour"):
         raise ValidationError("Bitte den Typ wählen.", field="type")
     if action == "tolerance" and (value.get("tolerance") in (None, "") or value.get("tolerance_unit") not in ("g", "percent")):
         raise ValidationError("Bitte Toleranz und Einheit angeben.", field="tolerance")

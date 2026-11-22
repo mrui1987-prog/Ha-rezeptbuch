@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, Depends, Response
 from ..auth.dependencies import require_admin
 from ..deps import get_db
 from ..errors import ValidationError
-from . import bulk, service, sources, stock
+from . import bulk, scanner, service, sources, stock
 from .export import build_csv
 
 router = APIRouter(prefix="/api/v1", tags=["raw-materials"])
@@ -62,6 +62,103 @@ def stock_receipt(raw_material_id: int, payload: dict = Body(...), db: sqlite3.C
     """„Zugang buchen“ – bewusst ohne PIN, auch an der Station (M03-13)."""
     stock.receipt(db, raw_material_id, payload)
     return service.get_raw_material(db, raw_material_id)
+
+
+@router.post("/raw-materials/{raw_material_id}/stock/loss")
+def stock_loss(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Abgang mit Grund (docs/strichcode.md 7), ohne PIN wie der Zugang."""
+    stock.loss(db, raw_material_id, payload)
+    return service.get_raw_material(db, raw_material_id)
+
+
+# -- Scanner (docs/strichcode.md 10, Teil S1) --------------------------------------------
+
+@router.get("/barcodes/candidates")
+def barcode_candidates(search: str = "", location_id: int | None = None, db: sqlite3.Connection = Depends(get_db)):
+    return scanner.candidates(db, search, location_id)
+
+
+@router.get("/barcodes/lookup")
+def barcode_lookup(code: str, format: str | None = None, db: sqlite3.Connection = Depends(get_db)):
+    """Code nachschlagen (Code als Abfragewert, weil Codes Schrägstriche enthalten können)."""
+    return scanner.lookup(db, code, format)
+
+
+@router.post("/barcodes", status_code=201)
+def barcode_assign(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Erstes Zuordnen ohne PIN (S4), Gebinde beim ersten Scan."""
+    return scanner.assign(db, payload)
+
+
+@router.get("/raw-materials/{raw_material_id}/barcodes")
+def barcodes_of(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
+    return scanner.list_for(db, raw_material_id)
+
+
+@router.post("/raw-materials/{raw_material_id}/pack")
+def set_pack(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Gebinde einmal abfragen (nur wenn leer, H-F)."""
+    return scanner.set_pack(db, raw_material_id, payload)
+
+
+@router.post("/raw-materials/{raw_material_id}/scan/receipt")
+def scan_receipt(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """+1 Einkauf – nur mit Beleg (O-1 geändert, Michael 22.11.2026)."""
+    return stock.scan_book(db, raw_material_id, payload, mode="receipt")
+
+
+@router.post("/raw-materials/{raw_material_id}/scan/loss")
+def scan_loss(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return stock.scan_book(db, raw_material_id, payload, mode="loss")
+
+
+@router.post("/stock/movements/{movement_id}/undo")
+def undo_movement(movement_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Rückgängig: eigenes Gerät, 10 Minuten (docs/strichcode.md 3)."""
+    return stock.undo(db, movement_id, payload)
+
+
+@router.get("/purchases")
+def purchases(db: sqlite3.Connection = Depends(get_db)):
+    return scanner.list_purchases(db)
+
+
+@router.post("/purchases", status_code=201)
+def purchase_create(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return scanner.create_purchase(db, payload)
+
+
+@router.get("/storage-locations")
+def storage_locations(include_archived: bool = False, db: sqlite3.Connection = Depends(get_db)):
+    return scanner.list_locations(db, include_archived)
+
+
+@router.post("/admin/storage-locations", status_code=201, dependencies=admin)
+def storage_location_create(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return scanner.create_location(db, payload)
+
+
+@router.patch("/admin/storage-locations/{location_id}", dependencies=admin)
+def storage_location_update(location_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return scanner.update_location(db, location_id, payload)
+
+
+@router.post("/admin/barcodes/reassign", dependencies=admin)
+def barcode_reassign(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Code umhängen (PIN, S4)."""
+    return scanner.reassign(db, payload.get("code"), payload)
+
+
+@router.delete("/admin/barcodes/{barcode_id}", status_code=204, dependencies=admin)
+def barcode_delete(barcode_id: int, db: sqlite3.Connection = Depends(get_db)):
+    scanner.delete_code(db, barcode_id)
+    return Response(status_code=204)
+
+
+@router.post("/admin/raw-materials/{raw_material_id}/scan/correction", dependencies=admin)
+def scan_correction(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """+1 Korrektur ohne Beleg, mit PIN (O-1 geändert)."""
+    return stock.scan_book(db, raw_material_id, payload, mode="correction")
 
 
 @router.get("/raw-materials/{raw_material_id}/sources")
@@ -136,9 +233,9 @@ def archive(raw_material_id: int, payload: dict | None = Body(None), db: sqlite3
 
 @router.post("/admin/raw-materials/{raw_material_id}/stock/inventory", dependencies=admin)
 def stock_inventory(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
-    """„Bestand setzen“ (Inventur, leer = Bestandsführung beenden), mit PIN (M03-13)."""
-    stock.inventory(db, raw_material_id, payload)
-    return service.get_raw_material(db, raw_material_id)
+    """„Bestand setzen“ (Inventur, leer = Bestandsführung beenden), mit PIN (M03-13); auch „3 Sack + 12,5 kg“."""
+    movement_id = stock.inventory(db, raw_material_id, payload)
+    return dict(service.get_raw_material(db, raw_material_id), movement_id=movement_id)
 
 
 @router.post("/admin/raw-materials/{raw_material_id}/restore", dependencies=admin)

@@ -491,11 +491,15 @@ def _check_references(conn, recipe_id: int | None, clean: dict, current_items: l
     for item in clean["items"]:
         where = f"Zeile {item['position']}"
         if item["item_type"] == "raw_material":
-            rm = conn.execute("SELECT name, archived FROM raw_material WHERE id = ?",
+            rm = conn.execute("SELECT name, archived, type FROM raw_material WHERE id = ?",
                               (item["raw_material_id"],)).fetchone()
             if rm is None:
                 raise ValidationError(f"{where}: Rohstoff nicht gefunden.",
                                       field=f"items.{item['position']}.raw_material_id", code="not_found")
+            if rm["type"] == "aid":
+                raise ValidationError(
+                    f"{where}: „{rm['name']}“ ist ein Hilfs- und Betriebsstoff und gehört nicht ins Rezept.",
+                    field=f"items.{item['position']}.raw_material_id", code="raw_material_aid")
             if rm["archived"] and item["raw_material_id"] not in kept_rm:
                 raise ValidationError(
                     f"{where}: Der Rohstoff „{rm['name']}“ ist archiviert und kann nicht neu verwendet werden.",

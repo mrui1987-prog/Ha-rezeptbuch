@@ -23,17 +23,24 @@ from .models import normalize_text, parse_price, tolerance_display, validate
 SIMILARITY_THRESHOLD = 0.8
 
 _COLUMNS = ("number", "name", "display_name", "type", "tolerance_unit", "tolerance_value",
-            "unit_size_g", "unit_label")
+            "unit_size_g", "unit_label", "delivery_pack_g", "delivery_pack_label")
+# Lagerorte (M03-25, Strichcode S1): Ort 1 und optional Ort 2 mit eigener Beschriftung
+_LOCATION_COLUMNS = ("location1_id", "location1_label", "location2_id", "location2_label")
 # Abgeleitete Tabelle mit der aktiven Bezugsquelle (Modul 04, K04-4); Bedingungen wie „id = ?“
 # und „archived = 0“ beziehen sich so weiter eindeutig auf den Rohstoff.
 _SELECT = ("SELECT * FROM (SELECT r.id, r.number, r.name, r.display_name, r.type, r.tolerance_unit, "
            "r.tolerance_value, r.unit_size_g, r.unit_label, r.source, r.archived, r.created_at, r.updated_at, "
            "r.price_cents_per_kg, r.price_changed_at, r.stock_g, r.stock_alert_g, r.datenlink_id, "
+           "r.delivery_pack_g, r.delivery_pack_label, r.location1_id, r.location1_label, r.location2_id, "
+           "r.location2_label, l1.name AS location1_name, l2.name AS location2_name, "
+           "(SELECT count(*) FROM raw_material_barcode c WHERE c.raw_material_id = r.id) AS barcode_count, "
            "s.id AS active_source_id, s.article_no AS active_article_no, d.id AS active_dealer_id, "
            "d.name AS active_dealer_name "
            "FROM raw_material r "
            "LEFT JOIN raw_material_source s ON s.raw_material_id = r.id AND s.is_active = 1 "
-           "LEFT JOIN dealer d ON d.id = s.dealer_id)")
+           "LEFT JOIN dealer d ON d.id = s.dealer_id "
+           "LEFT JOIN storage_location l1 ON l1.id = r.location1_id "
+           "LEFT JOIN storage_location l2 ON l2.id = r.location2_id)")
 
 _NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
@@ -53,6 +60,16 @@ def _to_dict(row: sqlite3.Row) -> dict:
         "tolerance": tolerance_display(row["tolerance_unit"], row["tolerance_value"]),
         "unit_size_g": row["unit_size_g"],
         "unit_label": row["unit_label"],
+        # Liefergebinde (F-1): leer = Gebinde; der Scanner zählt in Liefergebinden
+        "delivery_pack_g": row["delivery_pack_g"],
+        "delivery_pack_label": row["delivery_pack_label"],
+        "location1_id": row["location1_id"],
+        "location1_name": row["location1_name"],
+        "location1_label": row["location1_label"],
+        "location2_id": row["location2_id"],
+        "location2_name": row["location2_name"],
+        "location2_label": row["location2_label"],
+        "barcode_count": row["barcode_count"],
         "source": row["source"],
         "archived": bool(row["archived"]),
         "created_at": row["created_at"],
@@ -108,6 +125,8 @@ def _display_values(row: sqlite3.Row) -> dict:
         "tolerance": tolerance_display(row["tolerance_unit"], row["tolerance_value"]),
         "unit_size_g": row["unit_size_g"],
         "unit_label": row["unit_label"],
+        "delivery_pack_g": row["delivery_pack_g"],
+        "delivery_pack_label": row["delivery_pack_label"],
     }
 
 
@@ -148,6 +167,11 @@ def usage(conn: sqlite3.Connection, raw_material_id: int) -> dict:
         "SELECT count(*) FROM batch_item WHERE raw_material_id = ?", (raw_material_id,)).fetchone()[0]
     return {"recipes": recipes, "orders": orders, "batch_items": batch_items,
             "used": bool(recipes or orders or batch_items)}
+
+
+def _in_articles(conn: sqlite3.Connection, raw_material_id: int) -> bool:
+    return conn.execute("SELECT 1 FROM sales_article_line WHERE raw_material_id = ? LIMIT 1",
+                        (raw_material_id,)).fetchone() is not None
 
 
 def _used_message(raw_material_id: int, use: dict) -> str:
@@ -204,7 +228,7 @@ def list_raw_materials(conn: sqlite3.Connection, search: str | None = None,
         where.append("archived = 0 AND stock_g IS NOT NULL AND stock_alert_g IS NOT NULL "
                      "AND stock_g <= stock_alert_g")
     if type_ is not None:
-        if type_ not in ("standard", "flour"):
+        if type_ not in ("standard", "flour", "aid"):
             raise ValidationError("Unbekannter Typ-Filter.", field="type")
         where.append("type = ?")
         params.append(type_)
@@ -293,6 +317,38 @@ def _alert(data: dict) -> tuple[bool, int | None]:
                                     allow_negative=False)
 
 
+def _locations(conn: sqlite3.Connection, data: dict, row=None) -> dict:
+    """Lagerorte aus der Eingabe (M03-25): nur mitgeschickte Felder; Ort muss in der Liste stehen (H-C)."""
+    current = {c: (row[c] if row is not None else None) for c in _LOCATION_COLUMNS}
+    merged = dict(current)
+    for c in _LOCATION_COLUMNS:
+        if c in data:
+            value = data[c]
+            if c.endswith("_id"):
+                if value in (None, ""):
+                    value = None
+                elif isinstance(value, bool) or not isinstance(value, int):
+                    raise ValidationError("Ungültiger Lagerort.", field=c)
+                elif not conn.execute("SELECT 1 FROM storage_location WHERE id = ?", (value,)).fetchone():
+                    raise ValidationError("Lagerort nicht gefunden.", field=c, code="not_found")
+            else:
+                if value is not None and not isinstance(value, str):
+                    raise ValidationError("Beschriftung muss ein Text sein.", field=c)
+                value = normalize_text(value or "") or None
+                if value is not None and len(value) > 40:
+                    raise ValidationError("Beschriftung höchstens 40 Zeichen.", field=c)
+            merged[c] = value
+    for n in ("1", "2"):
+        if merged[f"location{n}_id"] is None:
+            merged[f"location{n}_label"] = None
+    if merged["location1_id"] is None and merged["location2_id"] is not None:
+        merged["location1_id"], merged["location1_label"] = merged["location2_id"], merged["location2_label"]
+        merged["location2_id"] = merged["location2_label"] = None
+    if merged["location1_id"] is not None and merged["location1_id"] == merged["location2_id"]:
+        raise ValidationError("Lagerort 2 muss ein anderer Ort sein.", field="location2_id")
+    return {c: merged[c] for c in _LOCATION_COLUMNS if merged[c] != current[c]}
+
+
 def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
                  warnings: list | None = None) -> int:
     """Legt einen eigenen Rohstoff an (R03-1, R03-2, R03-5, R03-6, R03-8, R03-12, R03-13) und liefert die ID.
@@ -314,10 +370,15 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
             field="name", code="name_taken")
     cur = conn.execute(
         "INSERT INTO raw_material (number, name, display_name, type, tolerance_unit, tolerance_value, "
-        "unit_size_g, unit_label, source, price_cents_per_kg, price_changed_at, stock_alert_g) "
-        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'own', ?, CASE WHEN ? IS NULL THEN NULL ELSE {_NOW} END, ?)",
+        "unit_size_g, unit_label, delivery_pack_g, delivery_pack_label, source, price_cents_per_kg, "
+        "price_changed_at, stock_alert_g) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'own', ?, CASE WHEN ? IS NULL THEN NULL ELSE {_NOW} END, ?)",
         (*(clean[c] for c in _COLUMNS), price, price, alert))
     new_id = cur.lastrowid
+    locs = _locations(conn, data)
+    if locs:
+        conn.execute("UPDATE raw_material SET " + ", ".join(f"{c} = ?" for c in locs) + " WHERE id = ?",
+                     (*locs.values(), new_id))
     _log(conn, "create", new_id, None, _snapshot(_fetch(conn, new_id)), source)
     return new_id
 
@@ -351,6 +412,7 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
     alert_given, alert = _alert(data)
     if alert_given and alert != row["stock_alert_g"]:
         changes["stock_alert_g"] = alert
+    changes.update(_locations(conn, data, row))
     if not changes:
         return {"price_cents_per_kg": price_routed} if price_routed else {}
 
@@ -369,6 +431,10 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
             raise ConflictError(
                 f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
                 field="name", code="name_taken")
+    if "type" in changes and "aid" in (row["type"], changes["type"]) and (use["used"] or _in_articles(conn, raw_material_id)):
+        # Hilfs- und Betriebsstoffe stehen nie in Rezepten, an der Waage oder im Planer (S8, W-6)
+        raise ConflictError("Der Wechsel von/zu „Hilfs- und Betriebsstoff“ geht nicht, solange der Eintrag in "
+                            "Rezepten, Aufträgen oder Verkaufsartikeln steht.", field="type", code="type_locked_aid")
     if "type" in changes and use["recipes"] and not confirm_type_change:
         n = use["recipes"]
         raise ConflictError(

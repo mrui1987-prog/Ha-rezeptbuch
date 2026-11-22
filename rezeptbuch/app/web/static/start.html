@@ -13,6 +13,10 @@
   .choice { display: flex; gap: 3vw; }
   .choice button { font-size: 4vh; font-weight: 700; min-width: 26vw; min-height: 18vh; }
   a.admin { font-size: 2.4vh; color: var(--accent); }
+  /* Kachel „Scannen“ (Strichcode S1): ohne Station nutzbar, z. B. am iPhone */
+  a.tile { display: flex; align-items: center; justify-content: center; font-size: 4vh; font-weight: 700;
+           min-width: 26vw; min-height: 18vh; border-radius: var(--radius); background: var(--ok); color: #fff;
+           text-decoration: none; }
 </style>
 </head>
 <body>
@@ -24,10 +28,10 @@
   <div class="choice" style="margin-top:3vh">
     <button type="button" class="primary" data-station="1">Waage 1</button>
     <button type="button" class="primary" data-station="2">Waage 2</button>
+    <a class="tile" href="scannen">Scannen</a>
   </div>
 </div>
 <a class="admin" href="admin/login">Admin-Bereich (Rohstoffe, Rezepte, Berechnung, Waagen, Ablauf)</a>
-<a class="admin" href="kameratest">Kameratest (Strichcode)</a>
 <p id="version"></p>
 <script src="ui/common.js"></script>
 <script>

@@ -12,11 +12,18 @@ import sqlite3
 from decimal import Decimal, InvalidOperation
 
 from ..db import transaction
-from ..errors import NotFoundError, ValidationError
+from ..errors import ConflictError, NotFoundError, ValidationError
 
 MAX_KG = Decimal("1000000")          # Plausibilitätsgrenze je Eingabe (1 000 t)
 KIND_TEXT = {"receipt": "Zugang", "inventory": "Bestand gesetzt", "consumption": "Verwiegung",
-             "reversal": "Rückbuchung", "planner": "Planer", "planner_return": "Planer zurück"}
+             "reversal": "Rückbuchung", "planner": "Planer", "planner_return": "Planer zurück",
+             "loss": "Abgang", "return": "Rückgabe", "correction": "Korrektur", "undo": "Rückgängig"}
+# Abgangsgründe (K03-54, docs/strichcode.md 7)
+REASONS = {"breakage": "Bruch", "spoilage": "Verderb", "own_use": "Eigenverbrauch", "merchandise": "Handelsware",
+           "other": "Sonstiges"}
+SCAN = "scan"                    # Quelle der Scan-Buchungen (docs/strichcode.md 8)
+UNDO_MINUTES = 10                # Rückgängig nur eigene Scans der letzten 10 Minuten (docs/strichcode.md 3)
+MAX_PACKS = 999
 
 _NUMBER = re.compile(r"^[+-]?\d+([.,]\d+)?$")
 
@@ -72,7 +79,8 @@ def status(stock_g: int | None, alert_g: int | None, need_g: int = 0) -> str | N
 # -- Buchungen -----------------------------------------------------------------------
 
 def _row(conn: sqlite3.Connection, raw_material_id: int) -> sqlite3.Row:
-    row = conn.execute("SELECT id, name, stock_g, stock_alert_g, archived FROM raw_material WHERE id = ?",
+    row = conn.execute("SELECT id, name, type, stock_g, stock_alert_g, archived, unit_size_g, unit_label, "
+                       "delivery_pack_g, delivery_pack_label FROM raw_material WHERE id = ?",
                        (raw_material_id,)).fetchone()
     if row is None:
         raise NotFoundError("Rohstoff nicht gefunden.", code="not_found")
@@ -80,15 +88,19 @@ def _row(conn: sqlite3.Connection, raw_material_id: int) -> sqlite3.Row:
 
 
 def _book(conn, raw_material_id: int, kind: str, before: int | None, after: int | None, *, source: str,
-          note: str | None = None, batch_id=None, batch_item_id=None, station=None) -> None:
+          note: str | None = None, batch_id=None, batch_item_id=None, station=None, reason=None,
+          purchase_id=None, device_id=None, undo_of_id=None) -> int:
     delta = None if before is None or after is None else after - before
-    if kind in ("receipt", "consumption", "reversal") and before is None and after is not None:
+    if kind in ("receipt", "consumption", "reversal", "correction") and before is None and after is not None:
         delta = after                               # erste Buchung schaltet die Führung ein
     conn.execute("UPDATE raw_material SET stock_g = ? WHERE id = ?", (after, raw_material_id))
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO stock_movement (raw_material_id, kind, delta_g, stock_after_g, batch_id, batch_item_id, "
-        "station_id, source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (raw_material_id, kind, delta, after, batch_id, batch_item_id, station, source, note))
+        "station_id, source, note, reason, purchase_id, device_id, undo_of_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (raw_material_id, kind, delta, after, batch_id, batch_item_id, station, source, note, reason,
+         purchase_id, device_id, undo_of_id))
+    return cur.lastrowid
 
 
 def _note(note) -> str | None:
@@ -183,22 +195,171 @@ def receipt(conn, raw_material_id: int, payload: dict) -> None:
         receipt_in_tx(conn, raw_material_id, grams, note=payload.get("note"), station=station, source=source)
 
 
-def inventory(conn, raw_material_id: int, payload: dict) -> None:
-    if "stock_kg" not in payload:
-        raise ValidationError("Bitte den Bestand angeben (leer = Bestandsführung beenden).", field="stock_kg")
-    grams = parse_kg(payload.get("stock_kg"), "stock_kg", allow_empty=True)
+def inventory(conn, raw_material_id: int, payload: dict) -> int | None:
+    """Bestand setzen; mit ``packs`` (+ ``rest_kg``) als „3 Sack + 12,5 kg“ (O-5). Gibt die Buchungs-ID zurück."""
+    source = SCAN if payload.get("source") == SCAN else (QUICK_ENTRY if _quick(payload) else "admin")
+    device = _device(payload.get("device_id"), required=False)
     with transaction(conn):
-        inventory_in_tx(conn, raw_material_id, grams, note=payload.get("note"),
-                        source=QUICK_ENTRY if _quick(payload) else "admin")
+        if "packs" in payload:
+            row = _row(conn, raw_material_id)
+            pack_g, _ = pack_of(row)
+            packs = _packs(payload.get("packs"), allow_zero=True)
+            if packs and pack_g is None:
+                raise ConflictError("Für diesen Rohstoff ist kein Gebinde hinterlegt.", code="pack_missing")
+            rest = parse_kg(payload.get("rest_kg"), "rest_kg", allow_empty=True, allow_negative=False) or 0
+            grams = packs * (pack_g or 0) + rest
+        else:
+            if "stock_kg" not in payload:
+                raise ValidationError("Bitte den Bestand angeben (leer = Bestandsführung beenden).",
+                                      field="stock_kg")
+            grams = parse_kg(payload.get("stock_kg"), "stock_kg", allow_empty=True)
+        row = _row(conn, raw_material_id)
+        if row["stock_g"] is None and grams is None:
+            return None
+        return _book(conn, raw_material_id, "inventory", row["stock_g"], grams, source=source,
+                     note=_note(payload.get("note")), device_id=device)
+
+
+# -- Scanner (docs/strichcode.md, Teil S1) ---------------------------------------------
+
+def pack_of(row) -> tuple[int | None, str | None]:
+    """Gebinde für Scan-Buchungen: Liefergebinde (F-1), sonst Gebinde am Rohstoff (K03-51)."""
+    if row["delivery_pack_g"] is not None:
+        return row["delivery_pack_g"], row["delivery_pack_label"]
+    return row["unit_size_g"], row["unit_label"]
+
+
+def _packs(value, *, allow_zero: bool = False) -> int:
+    if value is None or value == "":
+        value = 1 if not allow_zero else 0
+    if isinstance(value, bool) or not isinstance(value, int):
+        if isinstance(value, str) and value.strip().isdigit():
+            value = int(value.strip())
+        else:
+            raise ValidationError("Anzahl Gebinde als ganze Zahl.", field="packs")
+    if value < (0 if allow_zero else 1) or value > MAX_PACKS:
+        raise ValidationError(f"Anzahl Gebinde zwischen {0 if allow_zero else 1} und {MAX_PACKS}.", field="packs")
+    return value
+
+
+def _device(value, *, required: bool = True) -> str | None:
+    if value is None or value == "":
+        if required:
+            raise ValidationError("Gerät fehlt.", field="device_id")
+        return None
+    if not isinstance(value, str) or len(value) > 64 or not value.strip():
+        raise ValidationError("Ungültiges Gerät.", field="device_id")
+    return value.strip()
+
+
+def _reason(payload: dict) -> str:
+    reason = payload.get("reason")
+    if reason not in REASONS:
+        raise ValidationError("Bitte einen Grund wählen (Bruch, Verderb, Eigenverbrauch, Handelsware, Sonstiges).",
+                              field="reason")
+    return reason
+
+
+def _bookable(row) -> None:
+    if row["archived"]:
+        raise ConflictError(f"„{row['name']}“ ist archiviert – keine Buchung.", code="archived")
+
+
+def scan_book(conn, raw_material_id: int, payload: dict, *, mode: str) -> dict:
+    """Scan-Buchung je Gebinde: ``receipt`` (+1 Einkauf, Beleg Pflicht, O-1), ``correction`` (+1 Korrektur, PIN
+    im Router), ``loss`` (−1 Abgang mit Grund). Regeln S2, S5, S6."""
+    packs = _packs(payload.get("packs"))
+    device = _device(payload.get("device_id"))
+    note = _note(payload.get("note"))
+    with transaction(conn):
+        row = _row(conn, raw_material_id)
+        _bookable(row)
+        pack_g, pack_label = pack_of(row)
+        if pack_g is None:
+            raise ConflictError("Für diesen Rohstoff ist kein Gebinde hinterlegt.", code="pack_missing")
+        grams = packs * pack_g
+        before = row["stock_g"]
+        purchase_id = reason = None
+        if mode == "loss":
+            reason = _reason(payload)
+            if before is None:
+                raise ConflictError(f"„{row['name']}“ wird ohne Bestand geführt – Abgang nicht möglich.",
+                                    code="not_tracked")
+            after = before - grams
+        else:
+            if before is None and payload.get("start_tracking") is not True:
+                raise ConflictError(f"„{row['name']}“ hat keine Bestandsführung. Ab jetzt führen (ab 0)?",
+                                    code="not_tracked")
+            if mode == "receipt":
+                purchase_id = payload.get("purchase_id")
+                if isinstance(purchase_id, bool) or not isinstance(purchase_id, int) or not conn.execute(
+                        "SELECT 1 FROM purchase WHERE id = ?", (purchase_id,)).fetchone():
+                    raise ValidationError("Zugang nur mit Beleg: bitte einen Einkauf wählen.", field="purchase_id",
+                                          code="purchase_required")
+            after = (before or 0) + grams
+        movement_id = _book(conn, raw_material_id, mode, before, after, source=SCAN, note=note, reason=reason,
+                            purchase_id=purchase_id, device_id=device)
+    return {"movement_id": movement_id, "raw_material_id": raw_material_id, "name": row["name"],
+            "packs": packs, "pack_g": pack_g, "pack_label": pack_label, "delta_g": after - (before or 0),
+            "stock_g": after}
+
+
+def loss(conn, raw_material_id: int, payload: dict) -> int:
+    """Abgang von Hand (Schnellerfassung, docs/strichcode.md 7): Menge in kg mit Grund."""
+    grams = parse_kg(payload.get("amount_kg"), "amount_kg", allow_empty=False, allow_negative=False)
+    if grams == 0:
+        raise ValidationError("Bitte eine Menge größer 0 eingeben.", field="amount_kg")
+    reason = _reason(payload)
+    with transaction(conn):
+        row = _row(conn, raw_material_id)
+        _bookable(row)
+        if row["stock_g"] is None:
+            raise ConflictError(f"„{row['name']}“ wird ohne Bestand geführt – Abgang nicht möglich.",
+                                code="not_tracked")
+        return _book(conn, raw_material_id, "loss", row["stock_g"], row["stock_g"] - grams,
+                     source=QUICK_ENTRY if _quick(payload) else "admin", note=_note(payload.get("note")),
+                     reason=reason)
+
+
+def undo(conn, movement_id: int, payload: dict) -> dict:
+    """Rückgängig (docs/strichcode.md 3): Gegenbuchung, nur eigene Scans dieses Geräts der letzten 10 Minuten."""
+    device = _device(payload.get("device_id"))
+    with transaction(conn):
+        m = conn.execute(
+            "SELECT m.*, (m.created_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?)) AS fresh, "
+            "EXISTS (SELECT 1 FROM stock_movement u WHERE u.undo_of_id = m.id) AS undone "
+            "FROM stock_movement m WHERE m.id = ?", (f"-{UNDO_MINUTES} minutes", movement_id)).fetchone()
+        if m is None:
+            raise NotFoundError("Buchung nicht gefunden.", code="not_found")
+        if m["source"] != SCAN or m["device_id"] != device or m["kind"] == "undo":
+            raise ConflictError("Rückgängig geht nur für eigene Scans dieses Geräts.", code="undo_not_allowed")
+        if m["undone"]:
+            raise ConflictError("Diese Buchung ist schon zurückgenommen.", code="undo_done")
+        if not m["fresh"]:
+            raise ConflictError(f"Rückgängig geht nur in den ersten {UNDO_MINUTES} Minuten.", code="undo_expired")
+        row = _row(conn, m["raw_material_id"])
+        if row["stock_g"] is None or m["delta_g"] is None:
+            raise ConflictError("Der Bestand wird nicht mehr geführt – nichts zurückzunehmen.", code="not_tracked")
+        after = row["stock_g"] - m["delta_g"]
+        new_id = _book(conn, m["raw_material_id"], "undo", row["stock_g"], after, source=SCAN,
+                       note=f"Rückgängig: {KIND_TEXT[m['kind']]}", device_id=device, undo_of_id=movement_id)
+    return {"movement_id": new_id, "raw_material_id": m["raw_material_id"], "name": row["name"],
+            "stock_g": after}
 
 
 def movements(conn, raw_material_id: int, limit: int = 50) -> list[dict]:
     _row(conn, raw_material_id)
     rows = conn.execute(
         "SELECT m.id, m.kind, m.delta_g, m.stock_after_g, m.batch_id, b.batch_no, m.station_id, m.source, "
-        "m.note, m.created_at FROM stock_movement m LEFT JOIN batch b ON b.id = m.batch_id "
+        "m.note, m.created_at, m.reason, m.purchase_id, p.label AS purchase_label, m.undo_of_id "
+        "FROM stock_movement m LEFT JOIN batch b ON b.id = m.batch_id "
+        "LEFT JOIN purchase p ON p.id = m.purchase_id "
         "WHERE m.raw_material_id = ? ORDER BY m.id DESC LIMIT ?", (raw_material_id, limit)).fetchall()
-    return [dict(r, kind_text=KIND_TEXT[r["kind"]]) for r in rows]
+    return [_movement(r) for r in rows]
+
+
+def _movement(r) -> dict:
+    return dict(r, kind_text=KIND_TEXT[r["kind"]], reason_text=REASONS.get(r["reason"]))
 
 
 def movements_all(conn, *, date_from: str | None = None, date_to: str | None = None,
@@ -225,11 +386,13 @@ def movements_all(conn, *, date_from: str | None = None, date_to: str | None = N
         params.append(kind)
     limit = max(1, min(int(limit), 2000))
     sql = ("SELECT m.id, m.raw_material_id, rm.number, rm.name, m.kind, m.delta_g, m.stock_after_g, m.batch_id, "
-           "b.batch_no, m.station_id, m.source, m.note, m.created_at FROM stock_movement m "
-           "JOIN raw_material rm ON rm.id = m.raw_material_id LEFT JOIN batch b ON b.id = m.batch_id"
+           "b.batch_no, m.station_id, m.source, m.note, m.created_at, m.reason, m.purchase_id, "
+           "p.label AS purchase_label, m.undo_of_id FROM stock_movement m "
+           "JOIN raw_material rm ON rm.id = m.raw_material_id LEFT JOIN batch b ON b.id = m.batch_id "
+           "LEFT JOIN purchase p ON p.id = m.purchase_id"
            + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY m.id DESC LIMIT ?")
     rows = conn.execute(sql, (*params, limit)).fetchall()
-    return [dict(r, kind_text=KIND_TEXT[r["kind"]]) for r in rows]
+    return [_movement(r) for r in rows]
 
 
 def need_status(conn, needs: dict[int, int]) -> list[dict]:

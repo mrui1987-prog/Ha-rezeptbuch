@@ -89,7 +89,7 @@
 </style>
 </head>
 <body>
-<div id="confirm-box"><div class="dlg"><p id="confirm-text"></p>
+<div id="confirm-box"><div class="dlg"><p id="confirm-text"></p><input id="confirm-input" class="hidden" maxlength="100" style="width:100%">
   <div class="row"><button type="button" id="confirm-ok">OK</button><button type="button" id="confirm-cancel">Abbrechen</button></div></div></div>
 <div id="probe" class="hidden" role="status">Probebetrieb – PIN 1234</div>
 <main>
@@ -131,7 +131,7 @@
       </div>
       <div class="filters">
         <select id="f-status" aria-label="Status"><option value="active">aktive</option><option value="archived">archivierte</option><option value="all">alle</option></select>
-        <select id="f-ftype" aria-label="Typ"><option value="">alle Typen</option><option value="flour">nur Mehl</option><option value="standard">nur Standard</option></select>
+        <select id="f-ftype" aria-label="Typ"><option value="">alle Typen</option><option value="flour">nur Mehl</option><option value="standard">nur Standard</option><option value="aid">nur Hilfs- und Betriebsstoffe</option></select>
         <select id="f-stock" aria-label="Bestand"><option value="">Bestand: alle</option><option value="below_alert">am/unter Meldewert</option><option value="negative">im Minus</option><option value="none">ohne Bestandsführung</option></select>
         <select id="f-dealer" aria-label="Händler"><option value="">alle Händler</option></select>
         <label class="inline"><input id="only-zero" type="checkbox"> Toleranz 0 %</label>
@@ -206,16 +206,29 @@
             <div><label for="f-display">Kurzname (Anzeige an der Station, optional)</label>
                  <input id="f-display" maxlength="60" style="width:100%"></div>
             <div><label for="f-type">Typ</label>
-                 <select id="f-type" style="width:100%"><option value="standard">Standard</option><option value="flour">Mehl</option></select></div>
-            <div><label for="f-tol">Toleranz (±, Pflichtfeld)</label>
+                 <select id="f-type" style="width:100%"><option value="standard">Standard</option><option value="flour">Mehl</option><option value="aid">Hilfs- und Betriebsstoff</option></select></div>
+            <div class="no-aid"><label for="f-tol">Toleranz (±, Pflichtfeld)</label>
                  <div style="display:flex;gap:.4rem">
                    <input id="f-tol" inputmode="decimal" style="flex:1;min-width:0">
                    <select id="f-tol-unit"><option value="g">g</option><option value="percent">%</option></select>
                  </div></div>
-            <div><label for="f-unit-size">Gebinde-/Stückgröße in g (optional)</label>
+            <div class="no-aid"><label for="f-unit-size">Gebinde-/Stückgröße in g (optional)</label>
                  <input id="f-unit-size" inputmode="numeric" style="width:100%"></div>
-            <div><label for="f-unit-label">Gebinde-/Stückbezeichnung (z. B. Ei, Sack)</label>
+            <div><label for="f-unit-label" id="f-unit-label-text">Gebinde-/Stückbezeichnung (z. B. Ei, Sack)</label>
                  <input id="f-unit-label" maxlength="30" style="width:100%"></div>
+            <div class="no-aid"><label for="f-pack-size">Liefergebinde in g (optional, z. B. Karton Eier 9900)</label>
+                 <input id="f-pack-size" inputmode="numeric" style="width:100%">
+                 <div class="small">Nur wenn anders als das Gebinde oben; der Scanner zählt dann in Liefergebinden.</div></div>
+            <div class="no-aid"><label for="f-pack-label">Liefergebinde-Bezeichnung (z. B. Karton)</label>
+                 <input id="f-pack-label" maxlength="30" style="width:100%"></div>
+            <div><label for="f-loc1">Lagerort 1 (optional)</label>
+                 <div style="display:flex;gap:.4rem"><select id="f-loc1" class="loc-sel" style="flex:1;min-width:0"></select>
+                   <input id="f-loc1-label" maxlength="40" placeholder="Beschriftung" style="width:8rem" aria-label="Beschriftung Lagerort 1"></div>
+                 <input id="f-loc1-new" class="hidden" maxlength="40" placeholder="Name des neuen Lagerorts" style="width:100%"></div>
+            <div><label for="f-loc2">Lagerort 2 (optional, z. B. Anbruch)</label>
+                 <div style="display:flex;gap:.4rem"><select id="f-loc2" class="loc-sel" style="flex:1;min-width:0"></select>
+                   <input id="f-loc2-label" maxlength="40" placeholder="Beschriftung" style="width:8rem" aria-label="Beschriftung Lagerort 2"></div>
+                 <input id="f-loc2-new" class="hidden" maxlength="40" placeholder="Name des neuen Lagerorts" style="width:100%"></div>
             <div><label for="f-price">Preis je kg (€ netto, optional)</label>
                  <input id="f-price" inputmode="decimal" style="width:100%" placeholder="z. B. 2,35">
                  <div class="small" id="f-price-date"></div>
@@ -225,7 +238,9 @@
                  <input id="f-alert" inputmode="decimal" style="width:100%" placeholder="z. B. 25">
                  <div class="small">Den Bestand selbst im Reiter „Bestand“ buchen.</div></div>
           </div>
-          <p class="small">0 g = Handzugabe (nur quittieren, nicht wiegen). 0 % wird gewogen; bei der Verwiegung nie enger als 1 g.</p>
+          <p class="small no-aid">0 g = Handzugabe (nur quittieren, nicht wiegen). 0 % wird gewogen; bei der Verwiegung nie enger als 1 g.</p>
+          <p class="small aid-only hidden">Hilfs- und Betriebsstoff: gezählt in Verpackungseinheiten, Preis und Meldewert je Einheit; nie in Rezepten, an der Waage oder im Planer.</p>
+          <p class="small" id="f-codes"></p>
           <p class="small" id="f-info"></p>
           <div id="similar-msg" class="msg info hidden"></div>
           <div id="form-msg" class="msg error hidden" role="alert"></div>
@@ -286,8 +301,11 @@
         <p class="small">Rohstoff suchen (Name, Kurzname oder Nummer) → Enter nimmt den ersten Treffer (Pfeiltasten für
           andere) → Menge in kg → Enter bucht sofort. Korrektur = neue Zeile.</p>
         <div class="toolbar mode" id="q-mode" role="group" aria-label="Art der Erfassung">
-          <button type="button" data-mode="receipt" class="active">Zugang</button><button type="button" data-mode="inventory">Gesamtbestand</button>
+          <button type="button" data-mode="receipt" class="active">Zugang</button><button type="button" data-mode="inventory">Gesamtbestand</button><button type="button" data-mode="loss">Abgang</button>
         </div>
+        <select id="q-reason" class="hidden" aria-label="Grund"><option value="breakage">Bruch</option><option value="spoilage">Verderb</option>
+          <option value="own_use">Eigenverbrauch</option><option value="merchandise">Handelsware</option><option value="other">Sonstiges</option></select>
+        <input id="q-note" class="hidden" maxlength="200" placeholder="Freitext (optional)" style="width:16rem" aria-label="Freitext">
         <input id="q-search" type="search" autocomplete="off" placeholder="Rohstoff suchen …" style="width:100%" aria-label="Rohstoff suchen">
         <ul id="q-hits" class="hidden"></ul>
         <div id="q-now" class="small"></div>
@@ -304,6 +322,21 @@
       </div>
 
       <div class="panel">
+        <h2>Lagerorte</h2>
+        <p class="small">Lagerorte zum Finden und für die Inventur (der Bestand bleibt eine Summe je Rohstoff). Code optional,
+          z. B. ein ausgedruckter QR-Code am Regal. Zuordnen am Rohstoff (Grunddaten). <a href="../scannen">Zur Scan-Seite</a></p>
+        <div class="scroll"><table><thead><tr><th>Name</th><th>Code</th><th class="num">Rohstoffe</th><th>Aktionen</th></tr></thead>
+          <tbody id="loc-rows"></tbody></table></div>
+        <div class="toolbar">
+          <input id="loc-name" maxlength="40" placeholder="Neuer Lagerort, z. B. Mehllager" aria-label="Name">
+          <input id="loc-code" maxlength="100" placeholder="Code (optional)" aria-label="Code">
+          <button type="button" id="loc-add">Anlegen</button>
+          <label class="inline"><input type="checkbox" id="loc-archived"> archivierte zeigen</label>
+        </div>
+        <div id="loc-msg" class="msg error hidden" role="alert"></div>
+      </div>
+
+      <div class="panel">
         <h2>Meldeliste</h2>
         <p class="small">Aktive Rohstoffe am/unter dem Meldewert oder im Minus; Tipp öffnet den Rohstoff.</p>
         <div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Name</th><th class="num">Bestand kg</th><th class="num">Meldewert kg</th><th class="num">Abstand kg</th></tr></thead>
@@ -316,7 +349,7 @@
         <div class="filters">
           <label class="inline">von <input id="h-from" type="date"></label>
           <label class="inline">bis <input id="h-to" type="date"></label>
-          <select id="h-kind" aria-label="Art"><option value="">alle Arten</option><option value="receipt">Zugang</option><option value="inventory">Bestand gesetzt</option><option value="consumption">Verwiegung</option><option value="reversal">Rückbuchung</option><option value="planner">Planer</option><option value="planner_return">Planer zurück</option></select>
+          <select id="h-kind" aria-label="Art"><option value="">alle Arten</option><option value="receipt">Zugang</option><option value="inventory">Bestand gesetzt</option><option value="consumption">Verwiegung</option><option value="reversal">Rückbuchung</option><option value="planner">Planer</option><option value="planner_return">Planer zurück</option><option value="loss">Abgang</option><option value="correction">Korrektur</option><option value="undo">Rückgängig</option></select>
           <select id="h-rm" aria-label="Rohstoff"><option value="">alle Rohstoffe</option></select>
           <button type="button" id="h-load">Anzeigen</button>
         </div>
@@ -470,6 +503,15 @@ async function goTab(ev) {
 window.addEventListener("pageshow", (ev) => { if (ev.persisted && token) checkSession(); });
 
 // Eigene Rückfrage statt confirm(): In der HA-App (iOS) fehlt dort die Taste „Abbrechen“
+// Texteingabe im selben Fenster (Lagerorte): Promise mit Text oder null
+async function askText(text, value) {
+  $("confirm-input").value = value || "";
+  show("confirm-input", true);
+  setTimeout(() => $("confirm-input").focus(), 0);
+  const ok = await askConfirm(text, "Speichern");
+  show("confirm-input", false);
+  return ok ? $("confirm-input").value.trim() : null;
+}
 function askConfirm(text, okLabel, cancelLabel) {
   return new Promise((resolve) => {
     const box = $("confirm-box");
@@ -741,7 +783,7 @@ function renderRows() {
     cell(tr, String(it.number), "num");
     cell(tr, it.name + (it.archived ? " (archiviert)" : ""), "name");
     cell(tr, it.display_name || "");
-    cell(tr, it.type === "flour" ? "Mehl" : "Standard");
+    cell(tr, it.type === "flour" ? "Mehl" : it.type === "aid" ? "Hilfs-/Betriebsstoff" : "Standard");
     cell(tr, toleranceText(it));
     const st = cell(tr, kgText(it.stock_g), "num");
     if (it.stock_g !== null && it.stock_g < 0) st.classList.add("stock-neg");
@@ -922,6 +964,7 @@ async function openItem(it, fromRoute, tab) {
   if (!fromRoute) navigate("item", item);
   showSub("item");
   showMsg("item-msg", "");
+  await loadLocations();
   fillForm();
   show("item-tabs", Boolean(item));
   setItemTab(item ? (tab || "base") : "base");
@@ -944,6 +987,11 @@ function fillForm() {
   $("f-tol").value = item ? String(item.tolerance).replace(".", ",") : "";      // neu: leer, Pflichtfeld
   $("f-unit-size").value = item && item.unit_size_g ? String(item.unit_size_g) : "";
   $("f-unit-label").value = item && item.unit_label ? item.unit_label : "";
+  $("f-pack-size").value = item && item.delivery_pack_g ? String(item.delivery_pack_g) : "";
+  $("f-pack-label").value = item && item.delivery_pack_label ? item.delivery_pack_label : "";
+  fillLocations(item);
+  fillCodes(item);
+  typeUi();
   $("f-price").value = item ? priceText(item.price_cents_per_kg) : "";
   $("f-alert").value = item ? kgText(item.stock_alert_g) : "";
   $("f-price-date").textContent = item && item.price_changed_at ? "Preis geändert am " + dateText(item.price_changed_at) : "";
@@ -992,15 +1040,100 @@ function formPayload() {
     tolerance: emptyToNull($("f-tol").value),
     unit_size_g: emptyToNull($("f-unit-size").value),
     unit_label: $("f-unit-label").value,
+    delivery_pack_g: $("f-type").value === "aid" ? null : emptyToNull($("f-pack-size").value),
+    delivery_pack_label: $("f-type").value === "aid" ? null : $("f-pack-label").value,
     stock_alert_kg: emptyToNull($("f-alert").value),
   };
+  ["1", "2"].forEach((n) => {
+    const v = $("f-loc" + n).value;
+    payload["location" + n + "_id"] = v && v !== "new" ? Number(v) : null;
+    payload["location" + n + "_label"] = $("f-loc" + n + "-label").value;
+  });
   // Mit aktiver Bezugsquelle gehört der Preis ihr (M04-14): Feld ist dann nur Anzeige und wird nicht geschickt
   if (!$("f-price").readOnly) payload.price_per_kg = emptyToNull($("f-price").value);
   const number = emptyToNull($("f-number").value);
   if (number !== null) payload.number = number;
   return payload;
 }
+// ---- Hilfs- und Betriebsstoff, Lagerorte, Codes (Strichcode S1) ------------------------
+let locations = [];
+async function loadLocations() {
+  try { locations = await api("storage-locations"); } catch (err) { locations = []; }
+  return locations;
+}
+function fillLocations(it) {
+  ["1", "2"].forEach((n) => {
+    const sel = $("f-loc" + n);
+    sel.textContent = "";
+    const none = document.createElement("option"); none.value = ""; none.textContent = "–"; sel.appendChild(none);
+    locations.forEach((l) => { const o = document.createElement("option"); o.value = String(l.id); o.textContent = l.name; sel.appendChild(o); });
+    const id = it ? it["location" + n + "_id"] : null;
+    if (id && !locations.some((l) => l.id === id)) {
+      const o = document.createElement("option"); o.value = String(id); o.textContent = it["location" + n + "_name"] || "Lagerort " + id; sel.appendChild(o);
+    }
+    const add = document.createElement("option"); add.value = "new"; add.textContent = "+ neuer Lagerort …"; sel.appendChild(add);
+    sel.value = id ? String(id) : "";
+    $("f-loc" + n + "-label").value = it && it["location" + n + "_label"] ? it["location" + n + "_label"] : "";
+    $("f-loc" + n + "-new").value = "";
+    show("f-loc" + n + "-new", false);
+  });
+}
+document.querySelectorAll(".loc-sel").forEach((sel) => sel.addEventListener("change", () => {
+  const n = sel.id.slice(-1);
+  show("f-loc" + n + "-new", sel.value === "new");
+  if (sel.value === "new") $("f-loc" + n + "-new").focus();
+}));
+async function createNewLocations() {
+  for (const n of ["1", "2"]) {
+    if ($("f-loc" + n).value !== "new") continue;
+    const name = $("f-loc" + n + "-new").value.trim();
+    if (!name) { $("f-loc" + n).value = ""; continue; }
+    const loc = await api("admin/storage-locations", { method: "POST", body: { name: name } });   // H-C: danach fest in der Liste
+    await loadLocations();
+    const keep = { 1: $("f-loc1").value, 2: $("f-loc2").value };
+    fillLocations(Object.assign({}, item || {}, formLocationsSnapshot(keep)));
+    $("f-loc" + n).value = String(loc.id);
+  }
+}
+function formLocationsSnapshot(keep) {
+  const o = {};
+  ["1", "2"].forEach((n) => {
+    o["location" + n + "_id"] = keep[n] && keep[n] !== "new" ? Number(keep[n]) : null;
+    o["location" + n + "_label"] = $("f-loc" + n + "-label").value;
+  });
+  return o;
+}
+function typeUi() {
+  const aid = $("f-type").value === "aid";
+  document.querySelectorAll("#form .no-aid").forEach((e) => e.classList.toggle("hidden", aid));
+  document.querySelectorAll("#form .aid-only").forEach((e) => e.classList.toggle("hidden", !aid));
+  $("f-unit-label-text").textContent = aid ? "Verpackungseinheit (Pflicht, z. B. Karton, Kanister)" : "Gebinde-/Stückbezeichnung (z. B. Ei, Sack)";
+}
+$("f-type").addEventListener("change", typeUi);
+async function fillCodes(it) {
+  const box = $("f-codes");
+  box.textContent = "";
+  if (!it) return;
+  let codes = [];
+  try { codes = await api("raw-materials/" + it.id + "/barcodes"); } catch (err) { codes = []; }
+  if (!item || item.id !== it.id) return;
+  if (!codes.length) { box.textContent = "Strichcodes: keine (zuordnen auf der Seite „Scannen“)."; return; }
+  box.appendChild(document.createTextNode("Strichcodes: "));
+  codes.forEach((c) => {
+    box.appendChild(document.createTextNode(c.code_text + " "));
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = "entfernen"; b.className = "small";
+    b.addEventListener("click", async () => {
+      if (!(await askConfirm("Code " + c.code_text + " von „" + it.name + "“ entfernen?", "Entfernen"))) return;
+      try { await api("admin/barcodes/" + c.id, { method: "DELETE" }); fillCodes(it); } catch (err) { handleError(err, "form-msg"); }
+    });
+    box.appendChild(b);
+    box.appendChild(document.createTextNode(" "));
+  });
+}
+
 async function save(confirmTypeChange) {
+  await createNewLocations();
   const payload = formPayload();
   if (confirmTypeChange) payload.confirm_type_change = true;
   if (!item) return api("admin/raw-materials", { method: "POST", body: payload });
@@ -1095,7 +1228,7 @@ async function refreshStock() {
       cell(tr, m.kind_text);
       cell(tr, m.delta_g === null ? "" : (m.delta_g > 0 ? "+" : "") + kgText(m.delta_g), "num");
       cell(tr, m.stock_after_g === null ? "Führung beendet" : kgText(m.stock_after_g), "num");
-      cell(tr, [m.batch_no, m.note].filter(Boolean).join(" · "));
+      cell(tr, [m.batch_no, m.reason_text, m.purchase_label ? "Einkauf " + m.purchase_label : null, m.note].filter(Boolean).join(" · "));
       body.appendChild(tr);
     });
     if (!moves.length) { const tr = document.createElement("tr"); cell(tr, "Noch keine Buchung.").colSpan = 5; body.appendChild(tr); }
@@ -1267,7 +1400,48 @@ async function loadAllRaw() {
   allRaw.forEach((r) => { const o = document.createElement("option"); o.value = String(r.id); o.textContent = r.number + " " + r.name; sel.appendChild(o); });
   sel.value = keep;
 }
+async function loadLocationTable() {
+  showMsg("loc-msg", "");
+  let list = [];
+  try { list = await api("storage-locations" + ($("loc-archived").checked ? "?include_archived=true" : "")); }
+  catch (err) { handleError(err, "loc-msg"); return; }
+  const body = $("loc-rows");
+  body.textContent = "";
+  list.forEach((l) => {
+    const tr = document.createElement("tr");
+    cell(tr, l.name + (l.archived ? " (archiviert)" : ""));
+    cell(tr, l.code_text || "");
+    cell(tr, String(l.materials), "num");
+    const td = cell(tr, "");
+    const mk = (label, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.addEventListener("click", fn); td.appendChild(b); };
+    mk("Umbenennen", async () => {
+      const name = await askText("Neuer Name für „" + l.name + "“:", l.name);
+      if (name === null) return;
+      try { await api("admin/storage-locations/" + l.id, { method: "PATCH", body: { name: name } }); loadLocationTable(); } catch (err) { handleError(err, "loc-msg"); }
+    });
+    mk("Code", async () => {
+      const code = await askText("Code für „" + l.name + "“ (leer = keiner):", l.code_text || "");
+      if (code === null) return;
+      try { await api("admin/storage-locations/" + l.id, { method: "PATCH", body: { code: code } }); loadLocationTable(); } catch (err) { handleError(err, "loc-msg"); }
+    });
+    mk(l.archived ? "Wiederherstellen" : "Archivieren", async () => {
+      try { await api("admin/storage-locations/" + l.id, { method: "PATCH", body: { archived: !l.archived } }); loadLocationTable(); } catch (err) { handleError(err, "loc-msg"); }
+    });
+    body.appendChild(tr);
+  });
+  if (!list.length) { const tr = document.createElement("tr"); cell(tr, "Noch keine Lagerorte.").colSpan = 4; body.appendChild(tr); }
+}
+$("loc-archived").addEventListener("change", loadLocationTable);
+$("loc-add").addEventListener("click", async () => {
+  showMsg("loc-msg", "");
+  const body = { name: $("loc-name").value };
+  if ($("loc-code").value.trim()) body.code = $("loc-code").value.trim();
+  try { await api("admin/storage-locations", { method: "POST", body: body }); $("loc-name").value = ""; $("loc-code").value = ""; loadLocationTable(); }
+  catch (err) { handleError(err, "loc-msg"); }
+});
+
 async function loadStockArea() {
+  loadLocationTable();
   await loadAllRaw();
   await loadAlertList();
   await loadHistory();
@@ -1277,7 +1451,9 @@ async function loadStockArea() {
 function setMode(mode) {
   qMode = mode;
   document.querySelectorAll("#q-mode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
-  $("q-amount").placeholder = mode === "receipt" ? "Zugang in kg" : "Gesamtbestand in kg";
+  $("q-amount").placeholder = mode === "receipt" ? "Zugang in kg" : mode === "loss" ? "Abgang in kg" : "Gesamtbestand in kg";
+  show("q-reason", mode === "loss");
+  show("q-note", mode === "loss");
   qPreview();
 }
 document.querySelectorAll("#q-mode button").forEach((b) => b.addEventListener("click", () => { setMode(b.dataset.mode); ($("q-amount").disabled ? $("q-search") : $("q-amount")).focus(); }));
@@ -1344,8 +1520,9 @@ function qPreview() {
   if (!qItem) { $("q-preview").textContent = ""; return; }
   const g = parseKg($("q-amount").value);
   if (g === null) { $("q-preview").textContent = $("q-amount").value.trim() ? "Menge in kg als Zahl, z. B. 12,5" : ""; return; }
-  const after = qMode === "receipt" ? (qItem.stock_g || 0) + g : g;
-  $("q-preview").textContent = (qMode === "receipt" ? "Zugang " + kgText(g) + " kg → " : "") + "neu: " + kgText(after) + " kg";
+  const after = qMode === "receipt" ? (qItem.stock_g || 0) + g : qMode === "loss" ? (qItem.stock_g || 0) - g : g;
+  $("q-preview").textContent = (qMode === "receipt" ? "Zugang " + kgText(g) + " kg → " : qMode === "loss" ? "Abgang " + kgText(g) + " kg → " : "")
+    + "neu: " + kgText(after) + " kg";
 }
 $("q-amount").addEventListener("input", qPreview);
 $("q-amount").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); qBook(); } });
@@ -1362,14 +1539,18 @@ async function qBook() {
       // F: ohne Bestandsführung erst fragen
       if (qItem.stock_g === null && !(await askConfirm("„" + qItem.name + "“ hat noch keinen Bestand – ab 0 starten?", "Ab 0 starten"))) return;
       res = await api("raw-materials/" + qItem.id + "/stock/receipt", { method: "POST", body: { amount_kg: amount, source: "quick_entry" } });
+    } else if (qMode === "loss") {
+      res = await api("raw-materials/" + qItem.id + "/stock/loss", { method: "POST", body: { amount_kg: amount, source: "quick_entry",
+        reason: $("q-reason").value, note: $("q-note").value } });
+      $("q-note").value = "";
     } else {
       res = await api("admin/raw-materials/" + qItem.id + "/stock/inventory", { method: "POST", body: { stock_kg: amount, source: "quick_entry" } });
     }
     const tr = document.createElement("tr");
     cell(tr, dateText(new Date().toISOString()));
     cell(tr, res.number + " " + res.name);
-    cell(tr, qMode === "receipt" ? "Zugang" : "Gesamtbestand");
-    cell(tr, (qMode === "receipt" ? "+" : "") + kgText(parseKg(amount)), "num");
+    cell(tr, qMode === "receipt" ? "Zugang" : qMode === "loss" ? "Abgang (" + $("q-reason").selectedOptions[0].textContent + ")" : "Gesamtbestand");
+    cell(tr, (qMode === "receipt" ? "+" : qMode === "loss" ? "−" : "") + kgText(parseKg(amount)), "num");
     cell(tr, kgText(res.stock_g), "num");
     $("q-rows").insertBefore(tr, $("q-rows").firstChild);
     show("q-empty", false);
@@ -1411,7 +1592,7 @@ async function loadHistory() {
   if ($("h-rm").value) q.set("raw_material_id", $("h-rm").value);
   let list = [];
   try { list = await api("admin/stock/movements?" + q.toString()); } catch (err) { handleError(err, "h-msg"); return; }
-  const SOURCE = { quick_entry: "Schnellerfassung", station: "Station", production: "Verwiegung", admin: "Admin", import: "Import" };
+  const SOURCE = { quick_entry: "Schnellerfassung", station: "Station", production: "Verwiegung", admin: "Admin", import: "Import", scan: "Scan" };
   const body = $("h-rows");
   body.textContent = "";
   list.forEach((m) => {
@@ -1421,7 +1602,7 @@ async function loadHistory() {
     cell(tr, m.kind_text);
     cell(tr, m.delta_g === null ? "" : (m.delta_g > 0 ? "+" : "") + kgText(m.delta_g), "num");
     cell(tr, m.stock_after_g === null ? "Führung beendet" : kgText(m.stock_after_g), "num");
-    cell(tr, [m.batch_no, m.note, SOURCE[m.source] || m.source].filter(Boolean).join(" · "));
+    cell(tr, [m.batch_no, m.reason_text, m.purchase_label ? "Einkauf " + m.purchase_label : null, m.note, SOURCE[m.source] || m.source].filter(Boolean).join(" · "));
     body.appendChild(tr);
   });
   $("h-count").textContent = list.length ? list.length + " Buchung" + (list.length === 1 ? "" : "en") + (list.length >= 500 ? " (die neuesten 500)" : "") : "Keine Buchungen.";

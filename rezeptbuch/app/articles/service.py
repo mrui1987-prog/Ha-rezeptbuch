@@ -248,10 +248,13 @@ def _validate_line(conn: sqlite3.Connection, index: int, line, old_refs: set) ->
                 "amount_g": amount, "amount_pieces": None}
     if kind == "raw":
         raw_id = _int(line.get("raw_material_id"), f"lines.{index}.raw_material_id", f"{prefix}: Rohstoff", 1, 2**62)
-        raw = conn.execute("SELECT id, archived FROM raw_material WHERE id = ?", (raw_id,)).fetchone()
+        raw = conn.execute("SELECT id, archived, type FROM raw_material WHERE id = ?", (raw_id,)).fetchone()
         if raw is None:
             raise ValidationError(f"{prefix}: Rohstoff nicht gefunden.", field=f"lines.{index}.raw_material_id",
                                   code="raw_material_not_found")
+        if raw["type"] == "aid":
+            raise ValidationError(f"{prefix}: Hilfs- und Betriebsstoffe stehen nicht in der Stückliste (F-2).",
+                                  field=f"lines.{index}.raw_material_id", code="raw_material_aid")
         if raw["archived"] and ("raw", raw_id) not in old_refs:
             raise ValidationError(f"{prefix}: Der Rohstoff ist archiviert.", field=f"lines.{index}.raw_material_id",
                                   code="raw_material_archived")

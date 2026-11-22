@@ -84,10 +84,12 @@ def test_compact_buttons_0_10_10():
         assert needle in text, needle
 
 
-def test_camera_test_page():
-    """Prüfseite Kamera (0.10.17): ohne PIN erreichbar, nicht zwischengespeichert, beide Wege, Link auf der Startseite."""
-    res = client.get("/kameratest")
+def test_scan_page():
+    """Scan-Seite (Strichcode S1): ohne PIN erreichbar, nicht zwischengespeichert, Kachel auf der Startseite;
+    die Prüfseite /kameratest ist entfallen."""
+    res = client.get("/scannen")
     assert res.status_code == 200
     assert res.headers["cache-control"] == "no-store"
-    assert 'id="start"' in res.text and 'capture="environment"' in res.text
-    assert 'href="kameratest"' in client.get("/").text
+    assert 'id="modes"' in res.text and 'capture="environment"' in res.text
+    assert 'href="scannen"' in client.get("/").text
+    assert 'href="kameratest"' not in client.get("/").text

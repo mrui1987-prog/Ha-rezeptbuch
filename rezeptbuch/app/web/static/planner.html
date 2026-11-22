@@ -334,7 +334,7 @@ const rawLabel = (m) => m.number + " " + m.name;
 async function loadChoices() {
   try {
     const [rs, ms] = await Promise.all([api("recipes?include_locked=true"), api("raw-materials")]);
-    recipes = rs; raws = ms;
+    recipes = rs; raws = ms.filter((m) => m.type !== "aid");   // Hilfs- und Betriebsstoffe nie im Planer (S8)
     const dr = $("dl-recipes"); dr.textContent = "";
     recipes.forEach((r) => { const o = el("option"); o.value = recipeLabel(r); dr.appendChild(o); });
     const dm = $("dl-raw"); dm.textContent = "";
