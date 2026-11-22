@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HA-Rezeptbuch – Planer</title>
 <style>
-  /* Planer (Modul 10 C2, docs/planer.md): Teil P-A = Verkaufsartikel und Stückliste; „Planen“ folgt mit P-B */
+  /* Planer (Modul 10 C2, docs/planer.md): Teil P-A = Verkaufsartikel und Stückliste; Teil P-B = Reiter „Planen“ (bettet /planer ein) und „Austauschen“ */
   :root { color-scheme: light; }
   html { background: #fafafa; }
   body { font-family: sans-serif; margin: 0; color: #222; background: #fafafa; min-height: 100vh; -webkit-transform: translateZ(0); transform: translateZ(0); }
@@ -65,9 +65,12 @@
   <div id="msg" class="msg hidden" role="alert"></div>
 
   <section id="view-plan" class="hidden">
-    <h1>Planen</h1>
-    <p class="note">Der Tagesplan („Jetzt planen“, Aufträge, Übersicht) kommt mit Teil P-B. Hier werden zuerst die
-      Verkaufsartikel und ihre Stücklisten gepflegt.</p>
+    <div class="row" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+      <h1 style="margin:0">Planen</h1>
+      <label><input id="set-presel" type="checkbox"> Planer in der Vorwahl der Stationen anzeigen</label>
+      <a id="plan-open" href="#" target="_blank" rel="noopener">eigenes Fenster (ohne PIN, für Tablet)</a>
+    </div>
+    <iframe id="plan-frame" title="Planen" style="width:100%;height:80vh;border:1px solid #ccc;border-radius:5px;background:#fff;margin-top:.5rem"></iframe>
   </section>
 
   <section id="view-list">
@@ -90,6 +93,23 @@
       <label>Stück je Ganzes <input id="b-ppw" type="number" min="1" max="1000" style="width:5rem" placeholder="leer"></label>
       <button type="button" id="b-ppw-set" disabled>setzen</button>
     </div>
+    <details class="bulk" id="repl" style="display:block">
+      <summary><strong>Austauschen</strong> – Rezept, Rohstoff oder Stückgewicht in Stücklisten ersetzen</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-top:.4rem">
+        <select id="r-kind" aria-label="Was">
+          <option value="recipe">Rezept</option><option value="raw">Rohstoff</option><option value="piece_weight">Stückgewicht</option>
+        </select>
+        <label>bisher <input id="r-from" list="dl-recipes" style="width:14rem"></label>
+        <select id="r-from-pw" class="hidden" aria-label="bisheriges Stückgewicht"></select>
+        <label>neu <input id="r-to" list="dl-recipes" style="width:14rem"></label>
+        <select id="r-to-pw" class="hidden" aria-label="neues Stückgewicht"></select>
+        <label id="r-factor-l">Faktor <input id="r-factor" type="text" inputmode="decimal" value="1" style="width:4.5rem"></label>
+        <label><input id="r-only" type="checkbox"> nur ausgewählte Artikel</label>
+        <button type="button" id="r-run">Prüfen und austauschen</button>
+      </div>
+      <p class="small">Faktor: neue Menge = bisherige × Faktor (z. B. 1,25). Rezeptzeilen mit Stückgewicht werden beim
+        Rezepttausch zu Gramm. Beim Stückgewicht gilt kein Faktor.</p>
+    </details>
     <p class="small" id="list-info"></p>
     <table>
       <thead><tr>
@@ -241,7 +261,7 @@ function showView(name) {
   $("tab-articles").classList.toggle("active", name !== "plan");
   showMsg("");
 }
-$("tab-plan").addEventListener("click", () => { if (leaveOk()) { linesDirty = false; showView("plan"); } });
+$("tab-plan").addEventListener("click", () => { if (leaveOk()) { linesDirty = false; showView("plan"); showPlan(); } });
 $("tab-articles").addEventListener("click", () => { if (leaveOk()) { linesDirty = false; showView("list"); loadList(); } });
 
 // ---- Liste ------------------------------------------------------------------------
@@ -324,6 +344,74 @@ $("b-ppw-set").addEventListener("click", () => {
   const text = value === null ? "„Stück je Ganzes“ bei " + selected.size + " Artikel(n) leeren?"
     : "„Stück je Ganzes“ = " + value + " bei " + selected.size + " Artikel(n) setzen?";
   if (confirm(text)) bulk("pieces_per_whole", value);
+});
+
+// ---- Austauschen (K10-P25) -----------------------------------------------------------
+
+function replKind() { return $("r-kind").value; }
+function syncRepl() {
+  const k = replKind();
+  $("r-from").setAttribute("list", k === "raw" ? "dl-raw" : "dl-recipes");
+  $("r-to").setAttribute("list", k === "raw" ? "dl-raw" : "dl-recipes");
+  $("r-from-pw").classList.toggle("hidden", k !== "piece_weight");
+  $("r-to-pw").classList.toggle("hidden", k !== "piece_weight");
+  $("r-factor-l").classList.toggle("hidden", k === "piece_weight");
+  if (k === "piece_weight") { fillPw("r-from", "r-from-pw"); fillPw("r-to", "r-to-pw"); }
+}
+async function fillPw(inputId, selectId) {
+  const sel = $(selectId); sel.textContent = "";
+  const r = findByLabel(recipes, $(inputId).value, recipeLabel);
+  if (!r) { sel.appendChild(el("option", "erst Rezept wählen")); return; }
+  try {
+    const pws = await pieceWeights(r.id);
+    if (!pws.length) sel.appendChild(el("option", "keine Stückgewichte"));
+    pws.forEach((pw) => { const o = el("option", pw.label + " (" + pw.weight_g + " g)"); o.value = pw.id; sel.appendChild(o); });
+  } catch (err) { handleError(err); }
+}
+$("r-kind").addEventListener("change", syncRepl);
+$("r-from").addEventListener("change", () => { if (replKind() === "piece_weight") fillPw("r-from", "r-from-pw"); });
+$("r-to").addEventListener("change", () => { if (replKind() === "piece_weight") fillPw("r-to", "r-to-pw"); });
+function replId(inputId, selectId) {
+  const k = replKind();
+  if (k === "piece_weight") { const v = Number($(selectId).value); return Number.isInteger(v) && v > 0 ? v : null; }
+  const x = findByLabel(k === "raw" ? raws : recipes, $(inputId).value, k === "raw" ? rawLabel : recipeLabel);
+  return x ? x.id : null;
+}
+$("r-run").addEventListener("click", async () => {
+  const fromId = replId("r-from", "r-from-pw"), toId = replId("r-to", "r-to-pw");
+  if (!fromId || !toId) { showMsg("Bitte „bisher“ und „neu“ auswählen.", "error"); return; }
+  if ($("r-only").checked && !selected.size) { showMsg("Keine Artikel ausgewählt.", "error"); return; }
+  const body = { kind: replKind(), from_id: fromId, to_id: toId, factor: $("r-factor").value, mode: "check" };
+  if ($("r-only").checked) body.article_ids = [...selected];
+  try {
+    const chk = await api("admin/articles/replace", { method: "POST", body: body });
+    if (!chk.lines) { showMsg("Keine Stücklistenzeile gefunden – nichts auszutauschen.", "info"); return; }
+    const text = chk.lines + " Zeile(n) in " + chk.articles.length + " Artikel(n) → " + chk.target
+      + (body.kind !== "piece_weight" && String(body.factor).trim() && String(body.factor).trim() !== "1" ? ", Faktor " + body.factor : "")
+      + "\n\n" + chk.articles.slice(0, 25).join("\n") + (chk.articles.length > 25 ? "\n…" : "")
+      + (chk.hints.length ? "\n\n" + chk.hints.join("\n") : "") + "\n\nAustauschen?";
+    if (!confirm(text)) return;
+    body.mode = "run";
+    const r = await api("admin/articles/replace", { method: "POST", body: body });
+    showMsg(r.lines + " Zeile(n) in " + r.articles.length + " Artikel(n) ausgetauscht.", "info");
+    await loadList();
+  } catch (err) { handleError(err); }
+});
+
+// ---- Planen (Teil P-B): eingebettete Seite /planer und Einstellung --------------------
+
+let planLoaded = false;
+async function showPlan() {
+  if (!planLoaded) { $("plan-frame").src = BASE + "planer?embedded=1"; planLoaded = true; }
+  try { const s = await api("settings/planner"); $("set-presel").checked = s.in_preselection; } catch (err) { handleError(err); }
+}
+$("plan-open").href = BASE + "planer";
+$("set-presel").addEventListener("change", async () => {
+  try {
+    const s = await api("admin/settings/planner", { method: "PUT", body: { in_preselection: $("set-presel").checked } });
+    $("set-presel").checked = s.in_preselection;
+    showMsg(s.in_preselection ? "Planer erscheint in der Vorwahl der Stationen." : "Planer aus der Vorwahl entfernt.", "info");
+  } catch (err) { handleError(err); }
 });
 
 // ---- Auswahllisten (Rezepte, Rohstoffe) ---------------------------------------------

@@ -893,7 +893,8 @@ def _check_revision_optional(row, revision) -> None:
 
 
 def set_piece_weights(conn: sqlite3.Connection, recipe_id: int, data, *, revision=None,
-                      confirm_delete_batch_sizes: bool = False, source: str = "admin") -> dict:
+                      confirm_delete_batch_sizes: bool = False, source: str = "admin",
+                      article_resolution=None) -> dict:
     """Ersetzt die Stückgewichte eines Rezepts (ganze Liste). Vorhandene behalten ihre ID.
 
     Wird ein Stückgewicht gelöscht, auf das Chargengrößen verweisen, werden diese mit gelöscht
@@ -903,14 +904,16 @@ def set_piece_weights(conn: sqlite3.Connection, recipe_id: int, data, *, revisio
     try:
         with transaction(conn):
             set_piece_weights_in_tx(conn, recipe_id, clean, revision=revision,
-                                    confirm_delete_batch_sizes=confirm_delete_batch_sizes, source=source)
+                                    confirm_delete_batch_sizes=confirm_delete_batch_sizes, source=source,
+                                    article_resolution=article_resolution)
     except sqlite3.IntegrityError as exc:
         raise _integrity(exc) from exc
     return get_recipe(conn, recipe_id)
 
 
 def set_piece_weights_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: list[dict], *, revision=None,
-                            confirm_delete_batch_sizes: bool = False, source: str = "admin") -> None:
+                            confirm_delete_batch_sizes: bool = False, source: str = "admin",
+                            article_resolution=None) -> None:
     """Wie ``set_piece_weights``, in einer bereits offenen Transaktion (``clean`` aus ``validate_piece_weights``)."""
     row = _fetch(conn, recipe_id)
     _check_revision_optional(row, revision)
@@ -926,14 +929,7 @@ def set_piece_weights_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: lis
         "JOIN recipe_piece_weight p ON p.id = b.piece_weight_id "
         f"WHERE b.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY b.sort_order",
         removed)]
-    in_articles = [r["name"] for r in conn.execute(
-        "SELECT DISTINCT a.name FROM sales_article_line l JOIN sales_article a ON a.id = l.article_id "
-        f"WHERE l.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY a.name", removed)]
-    if in_articles:
-        # Planer (K10-P6): Stücklisten verweisen auf Stückgewichte – erst dort ändern
-        raise ConflictError("Das Stückgewicht wird in der Stückliste dieser Verkaufsartikel verwendet: "
-                            + ", ".join(f"„{n}“" for n in in_articles) + ". Bitte erst dort ändern.",
-                            code="piece_weight_in_articles", articles=in_articles)
+    resolutions = _article_resolutions(conn, recipe_id, existing, removed, keep_ids, article_resolution)
     if affected and not confirm_delete_batch_sizes:
         labels = ", ".join(f"„{a['label']}“" for a in affected)
         raise ConflictError(
@@ -946,6 +942,7 @@ def set_piece_weights_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: lis
             check_no_formula_start(p["label"], field=f"piece_weights.{index}.label",
                                    label=f"Stückgewicht {index}: Bezeichnung")
     old_list = _piece_weights(conn, recipe_id)
+    _apply_article_resolutions(conn, existing, resolutions, source)
     for pid in removed:
         conn.execute("DELETE FROM recipe_piece_weight WHERE id = ?", (pid,))
     # Zwischenbezeichnung, damit ein Tausch von Bezeichnungen nicht an UNIQUE scheitert
@@ -964,6 +961,77 @@ def set_piece_weights_in_tx(conn: sqlite3.Connection, recipe_id: int, clean: lis
             or removed:
         _log(conn, "update", recipe_id, {"piece_weights": old_list}, {"piece_weights": new_list}, source)
         conn.execute("UPDATE recipe SET revision = revision + 1 WHERE id = ?", (recipe_id,))
+
+
+PIECE_WEIGHT_ACTIONS = ("grams", "replace", "remove")
+
+
+def _article_resolutions(conn, recipe_id: int, existing: dict, removed: list[int], keep_ids: set[int],
+                         article_resolution) -> dict[int, dict]:
+    """K10-P24: Stückgewicht löschen, das in Stücklisten steckt – Wahl je Stückgewicht nötig.
+
+    ``article_resolution``: ``{piece_weight_id: {"action": "grams" | "replace" | "remove", "replace_with": id}}``.
+    Fehlt eine Wahl, Rückfrage (409 ``piece_weight_in_articles``) mit den betroffenen Artikeln und den
+    verbleibenden Stückgewichten des Rezepts als Ersatz.
+    """
+    used: dict[int, list[str]] = {}
+    for r in conn.execute(
+            "SELECT DISTINCT l.piece_weight_id, a.register_no, a.name FROM sales_article_line l "
+            "JOIN sales_article a ON a.id = l.article_id "
+            f"WHERE l.piece_weight_id IN ({','.join('?' * len(removed)) or 'NULL'}) ORDER BY a.register_no", removed):
+        used.setdefault(r["piece_weight_id"], []).append(f"{r['register_no']} {r['name']}")
+    if not used:
+        return {}
+    given = article_resolution if isinstance(article_resolution, dict) else {}
+    result, missing = {}, []
+    for pid, names in used.items():
+        choice = given.get(str(pid), given.get(pid))
+        if not isinstance(choice, dict) or choice.get("action") not in PIECE_WEIGHT_ACTIONS:
+            missing.append(pid)
+            continue
+        if choice["action"] == "replace":
+            try:
+                target = int(choice.get("replace_with"))
+            except (TypeError, ValueError):
+                target = None
+            if target not in keep_ids:
+                raise ValidationError("Ersatz-Stückgewicht muss ein bleibendes Stückgewicht dieses Rezepts sein.",
+                                      field="article_resolution", code="replace_invalid")
+            result[pid] = {"action": "replace", "replace_with": target}
+        else:
+            result[pid] = {"action": choice["action"]}
+    if missing:
+        pieces = [{"piece_weight_id": pid, "label": existing[pid]["label"], "weight_g": existing[pid]["weight_g"],
+                   "articles": used[pid]} for pid in missing]
+        options = [{"id": i, "label": existing[i]["label"], "weight_g": existing[i]["weight_g"]}
+                   for i in sorted(keep_ids)]
+        names = sorted({n for p in pieces for n in p["articles"]})
+        raise ConflictError(
+            "Das Stückgewicht steckt in der Stückliste dieser Verkaufsartikel: " + ", ".join(names)
+            + ". In Gramm umwandeln, durch ein anderes Stückgewicht ersetzen oder die Zeilen entfernen?",
+            code="piece_weight_in_articles", articles=names, pieces=pieces, options=options)
+    return result
+
+
+def _apply_article_resolutions(conn, existing: dict, resolutions: dict[int, dict], source: str) -> None:
+    for pid, choice in resolutions.items():
+        affected = [r[0] for r in conn.execute(
+            "SELECT DISTINCT article_id FROM sales_article_line WHERE piece_weight_id = ?", (pid,))]
+        if choice["action"] == "grams":
+            conn.execute("UPDATE sales_article_line SET amount_g = ?, piece_weight_id = NULL WHERE piece_weight_id = ?",
+                         (existing[pid]["weight_g"], pid))
+        elif choice["action"] == "replace":
+            conn.execute("UPDATE sales_article_line SET piece_weight_id = ? WHERE piece_weight_id = ?",
+                         (choice["replace_with"], pid))
+        else:
+            conn.execute("DELETE FROM sales_article_line WHERE piece_weight_id = ?", (pid,))
+        for article_id in affected:
+            conn.execute("INSERT INTO change_log (source, entity, entity_id, action, old_values, new_values) "
+                         "VALUES (?, 'sales_article', ?, 'update', ?, ?)",
+                         (source, article_id, json.dumps({"piece_weight": existing[pid]["label"]}, ensure_ascii=False),
+                          json.dumps({"piece_weight_resolution": choice}, ensure_ascii=False)))
+            conn.execute("UPDATE sales_article SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                         (article_id,))
 
 
 def set_batch_sizes(conn: sqlite3.Connection, recipe_id: int, data, *, revision=None,

@@ -12,6 +12,21 @@ Konzept `docs/wareneingang.md` (W1) und `docs/strichcode.md` Abschnitt 6.
 - Rechnungen und Gutschriften kommen mit Teil W2
 - Neue Option `reader_url` (nur falls der Belegleser nicht automatisch gefunden wird)
 
+## 0.10.23 – Planer, Teil P-B (in Entwicklung)
+
+Konzept `docs/planer.md` (freigegeben 21.11.2026, 00:21), Entscheidungen K10-P5 bis K10-P25.
+
+- **Seite `/planer`** ohne PIN (Station: Taste „Planer“, Admin: Reiter „Planer → Planen“ eingebettet): Reiter Eingabe / Jetzt planen / Rohstoffe
+- **Eingabe je Tag** (◀ ▶, Vorgabe morgen): Stück / halbe / ganze je Artikel, Auftragsnummer per Tippknopf, „+ Auftrag“, Suche und Warengruppen; „Plan übernehmen von …“ mit Haken, Mengen änderbar, Rückfrage beim Überschreiben
+- **Jetzt planen:** Tage wählen, Vorschau je Produktionstag und Rezept mit Summe, Ausklappen (Artikel, Stückgewichte), Tippknopf Genau / Aufrunden / Abrunden / Streichen, Grammzahl antippen = Von Hand, „+“ Zuschlag in % oder g je Teig (Vorgabe am Rezept), Haken + „Ausgewählte zusammenfassen“ / „Trennen“ (auch über Tage, Produktionstag änderbar), Übertrag bei Zuschlag über der Obergrenze (eigene Zeile oder mit nächstem Auftrag zusammenfassen), Rohstoffbedarf aus Stücklisten mit Bestand
+- **Aufträge anlegen** in einem Schritt; bei schon angelegten Aufträgen Wahl „Ersetzen“ oder „Nur Unterschied dazu“; Herkunft je Auftrag gespeichert
+- **Rohstoffe für heute abbuchen** (nur bestandsgeführte, am Produktionstag; erneut nur der Unterschied, weniger → Rückfrage Zurückbuchen)
+- **Station, Chargen:** je Charge Knöpfe „Zutaten“ (Soll/Ist/Abweichung/Quittung) und „Artikel“ (grau ohne Planer, „Auftrag in n Teigen“)
+- **Admin-Schalter** „Planer in der Vorwahl der Stationen anzeigen“
+- **Stückgewicht löschen**, das in Stücklisten steckt (K10-P24): Fenster je Stückgewicht – in Gramm umwandeln, durch anderes Stückgewicht ersetzen oder Zeilen entfernen
+- **Sammelaktion „Austauschen“** (K10-P25) in der Artikelliste: Rezept, Rohstoff oder Stückgewicht in allen oder ausgewählten Stücklisten ersetzen, mit Faktor und Vorschau
+- Intern: Auftrag anlegen in Prüfen und Schreiben geteilt (`prepare_order` / `insert_order_in_tx`), Verhalten unverändert
+
 ## 0.10.22 – Scanner: Korrekturen aus der Praxisprüfung
 
 - Abgangsgründe „Bruch“ und „Verderb“ zusammengefasst zu **„Bruch/Verderb“** (M03-27); alte Buchungen zeigen den neuen Text

@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from . import __version__
 from .auth.pin import ensure_default_pin
 from .articles.router import router as articles_router
+from .planner.router import router as planner_router
 from .auth.router import router as auth_router
 from .auth.sessions import AdminSessions
 from .calculation.router import router as calculation_router
@@ -101,6 +102,7 @@ app.include_router(raw_materials_router)
 app.include_router(dealers_router)
 app.include_router(receiving_router)
 app.include_router(articles_router)
+app.include_router(planner_router)
 app.include_router(imports_router)
 app.include_router(exports_router)      # vor recipes_router: /admin/recipes/export.xlsx ist keine Rezept-ID
 app.include_router(recipes_router)
