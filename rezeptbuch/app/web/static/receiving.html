@@ -111,7 +111,8 @@
     b.addEventListener("click", onClick);
     return b;
   }
-  function setView(title, back) { $("title").textContent = title; S.back = back; S.view = "view"; $("main").textContent = ""; }
+  function setView(title, back) { $("title").textContent = title; S.back = back; S.view = "view"; $("main").textContent = "";
+    window.scrollTo(0, 0); }  // neue Ansicht beginnt oben (Wunsch Michael 23.11.2026, 10:50)
   $("back").addEventListener("click", () => {
     stopCam();
     if (S.back) S.back(); else location.href = RB.BASE;
