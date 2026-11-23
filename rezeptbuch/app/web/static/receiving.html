@@ -502,7 +502,7 @@
       if (l.state !== "open" && l.state !== "backorder") return;
       if (!S.marks[l.id]) {
         const pre = !l.order_item && !l.unexpected && !S.scanning;
-        S.marks[l.id] = { on: pre, qty: pre ? l.remaining_milli : 0, rest: "backorder", sub: null, track: false };
+        S.marks[l.id] = { on: pre, qty: pre ? l.remaining_milli : 0, rest: "backorder", sub: null, track: true };  // vorgehakt (M03-34, Michael 23.11.2026, 17:32; ändert K03-46)
       }
     });
     paintDelivery();
