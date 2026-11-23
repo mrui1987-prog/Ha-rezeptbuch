@@ -668,11 +668,11 @@
     const b = S.mine;
     const choice = await RB.dialog({ title: "Behälter",
       text: "Behältergewicht: " + (b.container_g === null || b.container_g === undefined ? "unbekannt" : g(b.container_g)),
-      buttons: [{ label: "Abbrechen", value: null }, { label: "Gewicht eingeben", value: "set" },
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Gewicht notieren (ohne Tara)", value: "set" },
         { label: "Behälter wiegen", value: "weigh", kind: "primary" }] });
     if (choice === "weigh") await act(bt, "batches/" + b.id + "/container", { station: ST, action: "weigh" });
     if (choice === "set") {
-      const v = await RB.numpad({ title: "Behältergewicht", unit: "g", value: b.container_g || "" });
+      const v = await RB.numpad({ title: "Behältergewicht notieren – ändert das Ist nicht", unit: "g", value: b.container_g || "" });
       if (v !== null && v !== "") await act(bt, "batches/" + b.id + "/container", { station: ST, action: "set", container_g: v });
     }
   }

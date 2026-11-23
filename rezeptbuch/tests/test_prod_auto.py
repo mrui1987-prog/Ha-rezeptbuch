@@ -645,3 +645,38 @@ def test_weigh_message_without_batch(conn, runner, hub, clock):
     run(conn, runner, clock, 0.2)
     weigh = [e for e in hub.events if e["type"] == "weigh"][-1]
     assert weigh["batch_id"] is None and weigh["actual_g"] == 120 and weigh["station"] == 1
+
+
+# -- Tara/Null von Hand an der Waage während der Handwaage (Michael 23.11.2026, 21:36) ------------------
+
+def test_manual_tare_during_hand_scale_keeps_load(conn, brot, runner, hub, clock):
+    hub.put(1, 1100)                                              # 300 g Mehl im Behälter (800 g tariert)
+    run(conn, runner, clock, 3.2)                                 # eigener Tara-Befehl liegt > 3 s zurück
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    run(conn, runner, clock, 0.4)
+    hub.offset[1] = 1100                                          # jemand drückt an der Waage TARA → Anzeige 0
+    run(conn, runner, clock, 0.4)
+    assert runner.live_offset(1) == 1100                          # Gesamtlast bleibt 1 100 g
+    batch = batches.resume(conn, brot["id"], st(), runner)
+    assert batch["resume_mode"] == "keep" and actual_now(conn, runner, brot["id"]) == 300
+
+
+def test_manual_zero_detected_in_weigh():
+    from app.production.weigh import Sample, StationWeigh
+    sw = StationWeigh()
+    sw.observe(0, Sample("ok", 0, True, net=False), 3, 5)
+    sw.scale_tare_g = 800
+    sw.observe(1, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
+    assert sw.gross() == 1100
+    # Null von Hand: Waage zeigt brutto 0, die 1 100 g sind „versteckt“
+    assert sw.observe(1.3, Sample("ok", 0, True, net=False), 3, 5, watch_manual=True) == ["manual_zero"]
+    assert sw.gross() == 1100 and sw.offset() == 1100
+    # langsames Abnehmen mit Zwischenwert ist kein Nullstellen
+    sw2 = StationWeigh(scale_tare_g=800)
+    sw2.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
+    sw2.observe(0.3, Sample("ok", 150, False, net=True), 3, 5, watch_manual=True)
+    assert sw2.observe(0.6, Sample("ok", 0, True, net=True), 3, 5, watch_manual=True) == []
+    # Sprung erst nach langer Ruhe (> 0,7 s seit dem letzten Wert): kein Treffer
+    sw3 = StationWeigh(scale_tare_g=800)
+    sw3.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
+    assert sw3.observe(5, Sample("ok", 0, True, net=True), 3, 5, watch_manual=True) == []

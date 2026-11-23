@@ -28,6 +28,7 @@ log = logging.getLogger("rezeptbuch.production")
 TICK_S = 0.2
 SETTINGS_EVERY_S = 5.0
 WEIGH_EMIT_MIN_S = 0.1
+OWN_COMMAND_QUIET_S = 3.0   # so lange nach einem eigenen tare/zero keine „Tara/Null von Hand“ erkennen
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,7 @@ class ProductionRunner:
         self._flows: dict[int, ContainerFlow] = {}
         self._offline_seen: dict[int, float] = {}
         self._snap_written: dict[int, tuple] = {}
+        self._last_command: dict[int, float] = {}
         self._last_emit: dict[int, tuple[float, dict]] = {}
         self._lock = threading.RLock()
         self._task: asyncio.Task | None = None
@@ -149,9 +151,14 @@ class ProductionRunner:
         with self._lock:
             sw = self.weigh_state(station)
             sample = self.sample(station)
-            events = sw.observe(self.clock(), sample, self.settings["tare_confirm_seconds"],
-                                self.settings["auto_ack_span_g"])
+            now = self.clock()
+            quiet = now - self._last_command.get(station, -1e9) >= OWN_COMMAND_QUIET_S
+            events = sw.observe(now, sample, self.settings["tare_confirm_seconds"],
+                                self.settings["auto_ack_span_g"], watch_manual=quiet and station not in self._flows)
             for event in events:
+                if event in ("manual_tare", "manual_zero"):
+                    log.info("Waage %d: %s von Hand an der Waage erkannt – Gesamtlast nachgeführt (Ausgleich %s g)",
+                             station, "Tara" if event == "manual_tare" else "Null", sw.offset(sample))
                 if event == "tare_timeout":
                     log.warning("Waage %d: Tara nicht bestätigt – Software-Tara", station)
                 elif event == "late_tare":
@@ -190,6 +197,8 @@ class ProductionRunner:
     def send(self, station: int, cmd: str) -> str:
         if self.hub is None or not hasattr(self.hub, "send_command"):
             return "unavailable"
+        with self._lock:
+            self._last_command[station] = self.clock()
         try:
             result = self.hub.send_command(station, cmd)
         except Exception:  # noqa: BLE001
@@ -258,11 +267,19 @@ class ProductionRunner:
             actual = sw.actual(sample)
             if gross is None or actual is None:
                 return None
-            scale_tare = 0 if sample.net is False else sw.scale_tare_g
-            return {"load_g": gross, "tare_g": gross - actual, "scale_tare_g": scale_tare, "actual_g": actual}
+            # „scale_tare_g“ = Gesamtlast − Anzeige (Tara der Waage + von Hand Genulltes)
+            return {"load_g": gross, "tare_g": gross - actual, "scale_tare_g": gross - sample.weight_g,
+                    "actual_g": actual}
+
+    def live_offset(self, station: int) -> int | None:
+        """Gesamtlast − Anzeige, wie der Runner sie gerade verfolgt (``None`` = unbekannt, z. B. nach Neustart)."""
+        with self._lock:
+            sw, sample, _ = self.observe(station)
+            return sw.offset(sample) if sample.ok else None
 
     def keep_tare(self, station: int, tare_g: int, scale_tare_g: int | None) -> int | None:
-        """„Weiter“ ohne neue Tara (M09-17): Tara der Waage und Bezug so setzen, dass Ist = Gesamtlast − ``tare_g``.
+        """„Weiter“ ohne neue Tara (M09-17): Ausgleich (Gesamtlast − Anzeige, Parameter ``scale_tare_g``) und Bezug
+        so setzen, dass Ist = Gesamtlast − ``tare_g``.
         Gibt das Ist zurück (``None`` ohne gültigen Wert)."""
         with self._lock:
             sw, sample, _ = self.observe(station)
@@ -272,10 +289,10 @@ class ProductionRunner:
             sw.taring_since = None
             sw.late_tare_g = None
             sw.hint = None
-            sw.scale_tare_g = 0 if sample.net is False else scale_tare_g
-            if sw.scale_tare_g is None:
+            if scale_tare_g is None:
                 return None
-            sw.reference_g = tare_g - sw.scale_tare_g
+            sw.set_offset(sample, scale_tare_g)
+            sw.reference_g = tare_g - scale_tare_g
             return sw.actual(sample)
 
     # ------------------------------------------------------------------ Behälter (K09-13, K09-14)

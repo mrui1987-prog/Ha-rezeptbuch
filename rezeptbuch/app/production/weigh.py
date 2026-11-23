@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 LATE_TARE_WINDOW_S = 30.0       # so lange wird ein verspäteter Tara-Sprung noch erkannt
+MANUAL_JUMP_S = 0.7             # Tara/Null von Hand: Sprung auf ~0 ohne Zwischenwert in höchstens 0,7 s
 EMPTY_LIMIT_G = 50              # „leer“ bzw. „Last weg“ (wie die Null-Grenze der Waage, Z07-1)
 
 
@@ -53,6 +54,8 @@ class StationWeigh:
     peak_g: int | None = None            # höchste Anzeige seit dem Tara-Befehl (B2)
     hint: str | None = None
     last: Sample | None = None
+    last_at: float | None = None         # Zeit des letzten Werts (Sprung-Erkennung)
+    hidden_g: int = 0                    # Last, die ein Nullstellen von Hand an der Waage „versteckt“ hat
     # Auto-Quittung
     ack_since: float | None = None
     ack_min: int | None = None
@@ -77,10 +80,50 @@ class StationWeigh:
         if sample is None or not sample.ok:
             return None
         if sample.net is False:
-            return sample.weight_g
+            return sample.weight_g + self.hidden_g
         if self.scale_tare_g is None:
             return None
-        return self.scale_tare_g + sample.weight_g
+        return self.scale_tare_g + sample.weight_g + self.hidden_g
+
+    def offset(self, sample: Sample | None = None) -> int | None:
+        """Gesamtlast − Anzeige (Tara der Waage + von Hand Genulltes); ``None`` = unbekannt."""
+        gross = self.gross(sample)
+        sample = sample or self.last
+        return None if gross is None else gross - sample.weight_g
+
+    def set_offset(self, sample: Sample, offset: int) -> None:
+        """Gesamtlast = Anzeige + ``offset`` (nach „Weiter“ ohne neue Tara, M09-17)."""
+        if sample.net is False:
+            self.scale_tare_g, self.hidden_g = 0, offset
+        else:
+            self.scale_tare_g, self.hidden_g = offset, 0
+
+    def _manual_jump(self, previous: Sample | None, sample: Sample, now: float, span_g: int) -> str | None:
+        """Tara oder Null von Hand an der Waage, während kein Teig gewogen wird (Handwaage, Pause).
+        Erkannt, wenn die tarierte Waage (netto) von einem Wert über ``span_g`` **ohne Zwischenwert** innerhalb
+        zwischen zwei Beobachtungen (höchstens ``MANUAL_JUMP_S`` auseinander) auf ~0 springt – Abnehmen geht bei tarierter Waage ins Minus (``-----``), Abheben
+        von Hand zeigt meist Zwischenwerte. Oder die Waage springt von brutto auf netto (~0) = Tara von Hand.
+        Die Gesamtlast bleibt dadurch richtig (Michael 23.11.2026, 21:36: Null während der Handwaage)."""
+        if previous is None or not previous.ok or not previous.stable or not sample.ok or abs(sample.weight_g) > span_g:
+            return None                                    # vorher muss die Last ruhig gelegen haben
+        if self.last_at is None or now - self.last_at > MANUAL_JUMP_S:
+            return None
+        if previous.net is False and sample.net is True:
+            # Tara von Hand auf einer brutto zeigenden Waage
+            if abs(previous.weight_g) <= span_g:
+                return None
+            self.scale_tare_g = previous.weight_g
+            return "manual_tare"
+        if previous.net is True and previous.weight_g > span_g:
+            if self.scale_tare_g is None:
+                return None
+            if sample.net is True:
+                self.scale_tare_g += previous.weight_g           # Tara von Hand auf tarierter Waage
+                return "manual_tare"
+            self.hidden_g += self.scale_tare_g + previous.weight_g   # Null von Hand: Bezug verschoben
+            self.scale_tare_g = 0
+            return "manual_zero"
+        return None
 
     def tare_total(self) -> int | None:
         """Tara gesamt für das Protokoll: Tara der Waage + Bezug der Software (sonst nur der Bezug)."""
@@ -115,6 +158,7 @@ class StationWeigh:
     def zeroed(self) -> None:
         """Nach ``zero``: Waage zeigt brutto 0, Tara der Waage 0."""
         self.scale_tare_g = 0
+        self.hidden_g = 0
         self.taring_since = None
         self.late_tare_g = None
         self.reset_ack()
@@ -143,15 +187,23 @@ class StationWeigh:
         if sample.ok:
             self.peak_g = sample.weight_g if self.peak_g is None else max(self.peak_g, sample.weight_g)
 
-    def observe(self, now: float, sample: Sample, tare_confirm_s: float, span_g: int) -> list[str]:
+    def observe(self, now: float, sample: Sample, tare_confirm_s: float, span_g: int,
+                watch_manual: bool = False) -> list[str]:
         """Neuer Zustand der Waage: Tara-Bestätigung, Zeitablauf, verspäteter Sprung, Tara der Waage.
 
-        Gibt Ereignisse zurück: ``tare_confirmed``, ``tare_timeout``, ``late_tare``.
+        Gibt Ereignisse zurück: ``tare_confirmed``, ``tare_timeout``, ``late_tare``, ``manual_tare``,
+        ``manual_zero`` (nur mit ``watch_manual``: kein Teig wird gewogen, kein eigener Befehl unterwegs).
         """
         events: list[str] = []
         previous = self.last
+        changed = previous is None or sample != previous
+        if changed and watch_manual and not self.taring and self.reference_g is None:
+            jump = self._manual_jump(previous, sample, now, span_g)
+            if jump:
+                events.append(jump)
         self.last = sample
-        if sample.ok and sample.net is False:
+        self.last_at = now                                 # letzte Beobachtung (Hintergrund alle 0,2 s)
+        if sample.ok and sample.net is False and "manual_zero" not in events:
             self.scale_tare_g = 0
         if self.taring and self._tare_executed(previous, sample, self.taring_before_g or 0, span_g):
             # Tara ausgeführt, die nächste Zutat liegt schon auf: Nullpunkt = 0 netto (B2)

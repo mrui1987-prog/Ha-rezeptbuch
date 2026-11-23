@@ -691,7 +691,11 @@ def _resume_plan(conn, row, station: int, payload, runner) -> dict:
                             "des Teigs wieder aufstellen, dann „Weiter“.", code="resume_invalid")
     if not sample.ok:
         return {"mode": "tare"}                  # Waage getrennt: keine Prüfung möglich
-    scale_tare = 0 if sample.net is False else row["snap_scale_tare_g"]
+    # Ausgleich Gesamtlast − Anzeige: wie der Runner ihn seit der Pause verfolgt hat (erkennt Tara/Null von Hand
+    # während der Handwaage, Michael 21:36); nach einem Neustart der gespeicherte Stand, solange die Waage netto zeigt
+    scale_tare = runner.live_offset(station)
+    if scale_tare is None:
+        scale_tare = row["snap_scale_tare_g"] if sample.net is not False else 0
     if scale_tare is None:
         return {"mode": "tare"}
     before = row["snap_load_g"]
