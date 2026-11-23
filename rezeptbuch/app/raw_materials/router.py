@@ -74,8 +74,9 @@ def stock_loss(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Conn
 # -- Scanner (docs/strichcode.md 10, Teil S1) --------------------------------------------
 
 @router.get("/barcodes/candidates")
-def barcode_candidates(search: str = "", location_id: int | None = None, db: sqlite3.Connection = Depends(get_db)):
-    return scanner.candidates(db, search, location_id)
+def barcode_candidates(search: str = "", location_id: int | None = None, limit: int = 30,
+                       db: sqlite3.Connection = Depends(get_db)):
+    return scanner.candidates(db, search, location_id, limit)
 
 
 @router.get("/barcodes/lookup")

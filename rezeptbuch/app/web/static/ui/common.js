@@ -99,15 +99,40 @@
 
   // ------------------------------------------------------------ Dialoge (keine Browser-Dialoge, iOS-App)
   // buttons: [{label, value, kind}] → Promise mit dem value der getippten Taste
+  // nearTap: Fenster auf Höhe der zuletzt berührten Taste/Zeile (in der HA-App ist die Seite so hoch wie ihr Inhalt, „mittig“
+  // läge sonst weit weg); ein noch offenes nearTap-Fenster wird dabei abgebrochen, damit sich nie zwei überlagern.
+  let lastTap = null, lastTapAt = 0;
+  function rememberTap(ev) {
+    const t = ev.target && ev.target.closest ? ev.target.closest("button, a, input, select, label, summary, td, th, li, tr, .row, .card") : null;
+    if (!t || t.closest(".dlg-back")) return;
+    const r = t.getBoundingClientRect();
+    lastTap = { top: r.top + window.scrollY, h: r.height }; lastTapAt = Date.now();
+  }
+  document.addEventListener("pointerdown", rememberTap, true);
+  document.addEventListener("click", rememberTap, true);
+  function placeNearTap(back, box) {
+    const docH = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    back.style.position = "absolute"; back.style.inset = "auto"; back.style.left = "0"; back.style.right = "0"; back.style.top = "0";
+    back.style.alignItems = "flex-start"; back.style.height = docH + "px";
+    box.style.marginTop = "0px";
+    const h = box.offsetHeight, viewTop = window.scrollY, viewBottom = viewTop + window.innerHeight;
+    let y = (lastTap && Date.now() - lastTapAt < 10000) ? lastTap.top + lastTap.h / 2 - h / 2 : viewTop + (window.innerHeight - h) / 2;
+    y = Math.min(y, viewBottom - h - 8, docH - h - 8);
+    y = Math.max(y, viewTop + 8, 8);
+    box.style.marginTop = Math.round(y) + "px";
+    back.style.height = Math.max(docH, y + h + 16) + "px";
+  }
   function dialog(opts) {
     return new Promise((resolve) => {
-      const back = el("div", null, "dlg-back");
+      if (opts.nearTap) document.querySelectorAll(".dlg-back.near").forEach((old) => { if (old._cancel) old._cancel(); });
+      const back = el("div", null, "dlg-back" + (opts.nearTap ? " near" : ""));
       const box = el("div", null, "dlg");
       if (opts.title) box.appendChild(el("h2", opts.title));
       if (opts.text) box.appendChild(el("p", opts.text));
       if (opts.content) box.appendChild(opts.content);
       const row = el("div", null, "btns");
-      (opts.buttons || [{ label: "OK", value: true, kind: "primary" }]).forEach((b) => {
+      const buttons = opts.buttons || [{ label: "OK", value: true, kind: "primary" }];
+      buttons.forEach((b) => {
         const btn = el("button", b.label, (b.kind || "") + " keep");
         btn.type = "button";
         btn.addEventListener("click", () => {
@@ -118,7 +143,13 @@
       });
       box.appendChild(row);
       back.appendChild(box);
+      back._cancel = () => {
+        back.remove();
+        const c = buttons.find((b) => /^(Abbrechen|Zurück)$/.test(b.label));
+        resolve(c ? c.value : null);
+      };
       document.body.appendChild(back);
+      if (opts.nearTap) placeNearTap(back, box);
     });
   }
 
@@ -144,7 +175,7 @@
     });
     wrap.appendChild(pad);
     paint();
-    return dialog({ title: opts.title, text: opts.text, content: wrap, buttons: [
+    return dialog({ nearTap: opts.nearTap, title: opts.title, text: opts.text, content: wrap, buttons: [
       { label: "Abbrechen", value: null },
       { label: "OK", value: "ok", kind: "primary" },
     ] }).then((r) => (r === "ok" ? value : null));

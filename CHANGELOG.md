@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.10.26 – Wareneingang: Fenster auf Höhe des angetippten Artikels, Einheiten-Vorauswahl
+
+- Rückfrage-, Auswahl- und Zahlenfenster der Seite `/wareneingang` erscheinen auf Höhe der zuletzt angetippten Zeile statt mittig (in der HA-App ist die Seite so hoch wie ihr Inhalt, das Fenster lag weit weg).
+- Ein noch offenes Fenster wird beim Öffnen eines neuen abgebrochen; zwei Fenster liegen nie mehr übereinander.
+- Neuer Hilfs- und Betriebsstoff: Einheit per Taste wählbar – Karton, Paket, Eimer, Sack, Dose und alle bereits vergebenen Einheiten (`GET /api/v1/barcodes/candidates` mit Parameter `limit`, höchstens 200).
+- `ui/common.js`: Option `nearTap` für `RB.dialog` und `RB.numpad` (nur der Wareneingang nutzt sie; Station und übrige Seiten unverändert). Keine Migration.
+
 ## 0.10.25 – Wareneingang: Ersatz per Scan
 
 Entscheidung Michael 22.11.2026 (Sprachchat, „so umsetzen“ 14:40), `docs/strichcode.md` H-D.

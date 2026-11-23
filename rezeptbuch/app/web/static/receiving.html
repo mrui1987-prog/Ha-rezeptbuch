@@ -52,6 +52,9 @@
           border: 3px dashed var(--accent); border-radius: var(--radius); color: var(--accent); }
   .file input { display: none; }
   .dlg input, .dlg select { font-size: 2.6vh; padding: .8vh 1vw; width: 100%; box-sizing: border-box; margin: .6vh 0; }
+  .dlg .chips { display: flex; flex-wrap: wrap; gap: .8vh .8vw; margin: .6vh 0 1vh; }
+  .dlg .chips .chip { min-height: 7vh; min-width: 0; font-size: 2.6vh; padding: 1vh 1.4vw; }
+  .dlg .chips .chip.on { background: var(--accent, #2e7d32); color: #fff; }
   .dlg .list { display: flex; flex-direction: column; gap: .8vh; max-height: 40vh; overflow: auto; margin-top: 1vh; }
   .dlg .list button { text-align: left; min-height: 9vh; font-size: 2.8vh; line-height: 1.25; padding: 1.4vh 1.2rem;
                       display: block; width: 100%; box-sizing: border-box; }
@@ -113,7 +116,7 @@
 
   async function ensurePin() {
     try { await RB.api("admin/session"); return true; } catch (e) { /* anmelden */ }
-    const pin = await RB.numpad({ title: "PIN eingeben", secret: true, max: 12 });
+    const pin = await RB.numpad({ nearTap: true, title: "PIN eingeben", secret: true, max: 12 });
     if (pin === null || pin === "") return false;
     try {
       const data = await RB.api("admin/login", { method: "POST", body: { pin: pin } });
@@ -122,6 +125,36 @@
     } catch (e) { fail(e); return false; }
   }
   function session() { try { return sessionStorage.getItem("rezeptbuch_admin_session"); } catch (e) { return null; } }
+
+  // Vorauswahl der Einheit: gängige Einheiten und alle bereits vergebenen (Wunsch Michael 23.11.2026, 10:13)
+  const COMMON_UNITS = ["Karton", "Paket", "Eimer", "Sack", "Dose"];
+  function unitChips(input) {
+    const box = el("div", null, "chips");
+    function paint(units) {
+      box.textContent = "";
+      units.forEach((u) => {
+        const b = el("button", u, input.value.trim() === u ? "chip on" : "chip");
+        b.type = "button";
+        b.addEventListener("click", () => { input.value = u; paint(units); });
+        box.appendChild(b);
+      });
+    }
+    let units = COMMON_UNITS.slice();
+    paint(units);
+    RB.api("barcodes/candidates?limit=200").then((rows) => {
+      const seen = new Set(units.map((u) => u.toLowerCase()));
+      const extra = [];
+      rows.forEach((r) => {
+        const u = (r.unit_label || "").trim();
+        if (u && !seen.has(u.toLowerCase())) { seen.add(u.toLowerCase()); extra.push(u); }
+      });
+      extra.sort((a, b) => a.localeCompare(b, "de"));
+      units = COMMON_UNITS.concat(extra);
+      paint(units);
+    }).catch(() => { /* gängige Einheiten bleiben */ });
+    input.addEventListener("input", () => paint(units));
+    return box;
+  }
 
   async function pickMaterial(title, text, filter) {
     const wrap = el("div");
@@ -146,7 +179,7 @@
     let t = null;
     search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(refresh, 250); });
     refresh();
-    const p = RB.dialog({ title: title, text: text, content: wrap, buttons: [{ label: "Abbrechen", value: null }] });
+    const p = RB.dialog({ nearTap: true, title: title, text: text, content: wrap, buttons: [{ label: "Abbrechen", value: null }] });
     closeFn = () => { const back = document.querySelector(".dlg-back"); if (back) back.remove(); };
     const result = await Promise.race([p, new Promise((res) => {
       const iv = setInterval(() => { if (chosen) { clearInterval(iv); res(chosen); } }, 80);
@@ -156,7 +189,7 @@
   }
 
   async function askNumber(title, text, unit, value) {
-    const v = await RB.numpad({ title: title, text: text, unit: unit, decimal: true, value: value });
+    const v = await RB.numpad({ nearTap: true, title: title, text: text, unit: unit, decimal: true, value: value });
     if (v === null || v === "") return null;
     const n = Number(v.replace(",", "."));
     return Number.isFinite(n) ? n : null;
@@ -302,7 +335,7 @@
       const tol = el("input"); tol.inputMode = "decimal"; tol.value = "5";
       const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
       wrap.appendChild(el("label", "Toleranz beim Wiegen (g)")); wrap.appendChild(tol);
-      const ok = await RB.dialog({ title: "Neuer Rohstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
+      const ok = await RB.dialog({ nearTap: true, title: "Neuer Rohstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
         { label: "Weiter", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
       if (!ok) return;
       const g = await needGpu(line); if (g === null) return;
@@ -310,7 +343,7 @@
                                                                           tolerance_unit: "g" }, g));
     }
     if (id === "aid") {
-      const how = await RB.dialog({ title: "Hilfs- und Betriebsstoff", text: line.description, buttons: [
+      const how = await RB.dialog({ nearTap: true, title: "Hilfs- und Betriebsstoff", text: line.description, buttons: [
         { label: "Abbrechen", value: null }, { label: "Vorhandenen zuordnen", value: "assign" },
         { label: "Neu anlegen", value: "new", kind: "primary" }] });
       if (how === "assign") {
@@ -320,8 +353,9 @@
         const name = el("input"); name.value = line.description || "";
         const unit = el("input"); unit.value = line.unit_code === "KT" ? "Karton" : "VE";
         const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
-        wrap.appendChild(el("label", "Einheit (z. B. Karton)")); wrap.appendChild(unit);
-        const ok = await RB.dialog({ title: "Neuer Hilfs- und Betriebsstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
+        wrap.appendChild(el("label", "Einheit (Taste wählen oder tippen)")); wrap.appendChild(unit);
+        wrap.appendChild(unitChips(unit));
+        const ok = await RB.dialog({ nearTap: true, title: "Neuer Hilfs- und Betriebsstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
           { label: "Übernehmen", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
         if (ok) decide(line, card, state, decisions, "aid_new", { name: name.value.trim(), unit_label: unit.value.trim() || "VE" });
       }
@@ -534,7 +568,7 @@
           || (S.marks[x.id] && S.marks[x.id].sub && S.marks[x.id].sub.raw_material_id === r.raw_material.id));
         if (l) { countLine(l, r.raw_material); return; }
         signal(false);
-        const add = await RB.dialog({ title: r.raw_material.name, text: "Nicht in dieser Lieferung. Zusätzlich aufnehmen?",
+        const add = await RB.dialog({ nearTap: true, title: r.raw_material.name, text: "Nicht in dieser Lieferung. Zusätzlich aufnehmen?",
           buttons: [{ label: "Nein", value: false }, { label: "Zusätzlich aufnehmen", value: true, kind: "primary" }] });
         if (!add) return;
         const id = await addUnexpected(r.raw_material);
@@ -547,7 +581,7 @@
       const wrap = el("div", null, "list");
       let chosen = null;
       const lines = openLines().filter((l) => l.raw_material_id);
-      const p = RB.dialog({ title: "Code " + r.code_text + " unbekannt", text: "Was hast du gescannt? Der Code wird gespeichert.",
+      const p = RB.dialog({ nearTap: true, title: "Code " + r.code_text + " unbekannt", text: "Was hast du gescannt? Der Code wird gespeichert.",
         content: wrap, buttons: [{ label: "Abbrechen", value: null }, { label: "Ersatz für …", value: "sub" },
                                   { label: "Nicht in der Lieferung", value: "other" }] });
       lines.forEach((l) => wrap.appendChild(btn(l.raw_material_name, () => {
@@ -575,7 +609,7 @@
   async function chooseLine(title, text, lines) {
     const wrap = el("div", null, "list");
     let chosen = null;
-    const p = RB.dialog({ title: title, text: text, content: wrap, buttons: [{ label: "Abbrechen", value: null }] });
+    const p = RB.dialog({ nearTap: true, title: title, text: text, content: wrap, buttons: [{ label: "Abbrechen", value: null }] });
     lines.forEach((l) => {
       const b = btn(l.raw_material_name || l.description, () => {
         chosen = l; const back = document.querySelector(".dlg-back"); if (back) back.remove();
@@ -594,7 +628,7 @@
     const curG = l.rm_pack_g || (l.pack && l.pack.step_milli && gpu ? Math.round(l.pack.step_milli * gpu / 1000) : null);
     let packG = curG;
     if (curG) {
-      const same = await RB.dialog({ title: "Gebinde gleich groß?", text: "Bisher: 1 Gebinde = " + fmtMilli(curG, "kg")
+      const same = await RB.dialog({ nearTap: true, title: "Gebinde gleich groß?", text: "Bisher: 1 Gebinde = " + fmtMilli(curG, "kg")
           + ". Hat das Ersatz-Gebinde dieselbe Größe?",
         buttons: [{ label: "Abbrechen", value: null }, { label: "Nein, andere Größe", value: "no" },
                   { label: "Ja, gleich", value: "yes", kind: "primary" }] });
@@ -779,7 +813,7 @@
       const a = el("td");
       a.appendChild(btn("PDF", () => openPdf(d.id)));
       a.appendChild(btn("Löschen", async () => {
-        const ok = await RB.dialog({ title: "Beleg " + d.doc_no + " löschen?", text: "Nur möglich, solange nichts gebucht ist.",
+        const ok = await RB.dialog({ nearTap: true, title: "Beleg " + d.doc_no + " löschen?", text: "Nur möglich, solange nichts gebucht ist.",
           buttons: [{ label: "Abbrechen", value: false }, { label: "Löschen", value: true, kind: "danger" }] });
         if (!ok) return;
         try { await RB.api("admin/receiving/documents/" + d.id, { method: "DELETE" }); archive(); } catch (e) { fail(e); }
