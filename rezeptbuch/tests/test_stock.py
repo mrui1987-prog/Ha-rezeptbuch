@@ -241,3 +241,60 @@ def test_migration_0008_columns(conn):
     assert {"stock_g", "stock_alert_g"} <= cols
     with pytest.raises(Exception):
         conn.execute("INSERT INTO stock_movement (raw_material_id, kind) VALUES (1, 'unknown')")
+
+
+# -- Beleg-Foto zu „Zugang buchen“ (M03-37) -----------------------------------------------------------
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 200
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
+
+
+@pytest.fixture
+def photos(db_path, monkeypatch):
+    monkeypatch.setenv("REZEPTBUCH_DB", str(db_path))
+    from app.raw_materials.stock import photo_dir
+    return photo_dir()
+
+
+def test_receipt_returns_movement_and_photo_is_attached(conn, rm, photos):
+    from app.raw_materials.stock import attach_photo, photo_path
+    mid = receipt(conn, rm["mehl"], {"amount_kg": "25"})
+    assert isinstance(mid, int)
+    assert movements(conn, rm["mehl"])[0]["has_photo"] == 0
+    assert attach_photo(conn, mid, JPEG) == {"movement_id": mid, "has_photo": True}
+    path, mime = photo_path(conn, mid)
+    assert path.read_bytes() == JPEG and mime == "image/jpeg" and path.parent == photos
+    assert movements(conn, rm["mehl"])[0]["has_photo"] == 1
+    assert not list(photos.glob("*.part"))
+
+
+def test_photo_only_for_receipt_once_and_in_time(conn, rm, photos):
+    from datetime import datetime, timedelta, timezone
+
+    from app.errors import NotFoundError
+    from app.raw_materials.stock import attach_photo, photo_path
+    mid = receipt(conn, rm["mehl"], {"amount_kg": "5"})
+    with pytest.raises(ValidationError):
+        attach_photo(conn, mid, b"GIF89a" + b"\x00" * 20)               # kein Foto-Format
+    with pytest.raises(ValidationError):
+        attach_photo(conn, mid, b"")
+    late = datetime.now(timezone.utc) + timedelta(minutes=61)
+    with pytest.raises(ConflictError):
+        attach_photo(conn, mid, JPEG, now=late)                          # später als 60 Minuten
+    attach_photo(conn, mid, PNG)
+    assert photo_path(conn, mid)[1] == "image/png"
+    with pytest.raises(ConflictError):
+        attach_photo(conn, mid, JPEG)                                    # nur ein Foto
+    inventory(conn, rm["mehl"], {"stock_kg": "3"})
+    inv_id = movements(conn, rm["mehl"])[0]["id"]
+    with pytest.raises(ValidationError):
+        attach_photo(conn, inv_id, JPEG)                                 # nur zu Zugängen
+    with pytest.raises(NotFoundError):
+        attach_photo(conn, 99999, JPEG)
+    with pytest.raises(NotFoundError):
+        photo_path(conn, inv_id)
+
+
+def test_migration_0013_attachment_column(conn):
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(stock_movement)")}
+    assert "attachment" in cols

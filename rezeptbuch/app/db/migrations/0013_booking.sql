@@ -8,6 +8,7 @@
 -- * receiving_line.net_book_cents: Betrag, mit dem die Position in die Belegsumme eingeht (nach Skonto)
 -- * receiving_line.substitute_ref: fremde Artikelnummer/Code eines Ersatzes (M03-36, „zweites Mal“)
 -- * raw_material.substitute_note: Marke „Ersatzware im Bestand – Pass prüfen“ bis zur Quittung (M03-35)
+-- * stock_movement.attachment: Foto eines Belegs zu „Zugang buchen“ (M03-37, 23.11.2026, 20:21)
 
 CREATE TABLE booking_group (
     id          INTEGER PRIMARY KEY,
@@ -47,3 +48,7 @@ ALTER TABLE receiving_line ADD COLUMN substitute_ref TEXT;
 
 -- Keine Vorbelegung an den Artikeln: die Gruppe wird beim ersten Beleg aus Warengruppe bzw. Art abgeleitet
 -- (ungeprüft, K03-84) – sonst bekäme z. B. Pfand als Hilfs- und Betriebsstoff fälschlich „Unkosten“.
+
+-- M03-37: „Zugang buchen“ ohne Beleg-Zwang, aber mit Kamerataste „Beleg fotografieren“.
+-- Dateiname (ohne Pfad) in der Ablage belege/zugang neben der Datenbank; leer = kein Foto.
+ALTER TABLE stock_movement ADD COLUMN attachment TEXT;

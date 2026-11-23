@@ -59,3 +59,19 @@ def test_archive_with_stock_zero_and_csv(client, auth, mehl):
 
 def test_archive_without_body_still_works(client, auth, mehl):
     assert client.post(f"/api/v1/admin/raw-materials/{mehl}/archive", headers=auth).status_code == 200
+
+
+def test_receipt_photo_upload_without_pin_view_with_pin(client, auth, mehl):
+    """M03-37: Beleg-Foto ohne PIN anhängen, ansehen nur mit PIN."""
+    r = client.post(f"/api/v1/raw-materials/{mehl}/stock/receipt", json={"amount_kg": "25"})
+    mid = r.json()["movement_id"]
+    jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+    r = client.post(f"/api/v1/stock/movements/{mid}/photo", content=jpeg, headers={"Content-Type": "image/jpeg"})
+    assert r.status_code == 200 and r.json()["has_photo"] is True
+    assert client.post(f"/api/v1/stock/movements/{mid}/photo", content=jpeg).status_code == 409
+    assert client.get(f"/api/v1/admin/stock/movements/{mid}/photo").status_code == 401
+    r = client.get(f"/api/v1/admin/stock/movements/{mid}/photo", headers=auth)
+    assert r.status_code == 200 and r.content == jpeg and r.headers["content-type"] == "image/jpeg"
+    moves = client.get(f"/api/v1/raw-materials/{mehl}/stock/movements").json()
+    assert moves[0]["has_photo"] == 1
+    assert client.post(f"/api/v1/stock/movements/{mid}/photo", content=b"kein bild").status_code in (400, 409)

@@ -7,6 +7,12 @@
 <style>
   /* Bewusst schlicht; Aufbau nach docs/rohstoffverwaltung.md (R1), Gestaltung der übrigen Seiten in Modul 10 C3 */
   :root { color-scheme: light; }
+  /* Beleg-Foto zu „Zugang buchen“ (M03-37) */
+  .photo-state { margin-left: .5rem; }
+  #photo-view { position: fixed; inset: 0; z-index: 1100; background: rgba(0,0,0,.85); display: flex; flex-direction: column; }
+  #photo-view .bar { display: flex; gap: 1rem; padding: .6rem 1rem; background: #fff; }
+  #photo-view .bar button, #photo-view .bar a { font-size: 1.1rem; min-height: 2.6rem; padding: .3em 1em; }
+  #photo-view img { flex: 1; min-height: 0; object-fit: contain; width: 100%; }
   #confirm-box { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000;
                  align-items: center; justify-content: center; padding: 1rem; }
   #confirm-box .dlg { background: #fff; border-radius: 10px; padding: 1.2rem; max-width: 28rem; width: 100%; color: #222; }
@@ -260,9 +266,12 @@
             <input id="stock-note" maxlength="200" style="width:100%"></div>
         </div>
         <div id="stock-msg" class="msg error hidden" role="alert"></div>
+        <div class="toolbar"><button type="button" id="stock-photo-btn">📷 Beleg fotografieren</button>
+          <input id="stock-photo" type="file" accept="image/*" capture="environment" class="hidden" aria-label="Beleg-Foto">
+          <span id="stock-photo-state" class="small photo-state"></span></div>
         <div class="toolbar"><button type="button" id="stock-receipt">Zugang buchen</button>
           <button type="button" id="stock-set">Bestand setzen</button></div>
-        <p class="small">„Zugang buchen“ zählt dazu. „Bestand setzen“ ist die Inventur; leer = Bestandsführung beenden.
+        <p class="small">„Zugang buchen“ zählt dazu; ein Beleg-Foto ist freiwillig und hängt dann an der Buchung. „Bestand setzen“ ist die Inventur; leer = Bestandsführung beenden.
           Den Meldewert stellt man bei den Grunddaten ein.</p>
         <h3>Verlauf</h3>
         <div class="scroll" style="max-height:20rem;overflow:auto"><table><thead><tr><th>Zeit</th><th>Art</th><th class="num">Menge kg</th><th class="num">Bestand kg</th><th>Charge / Notiz</th></tr></thead>
@@ -312,6 +321,9 @@
         <div class="toolbar">
           <input id="q-amount" inputmode="decimal" placeholder="Menge in kg" style="width:12rem" aria-label="Menge in kg" disabled>
           <button type="button" id="q-book" disabled>Buchen</button>
+          <button type="button" id="q-photo-btn">📷 Beleg</button>
+          <input id="q-photo" type="file" accept="image/*" capture="environment" class="hidden" aria-label="Beleg-Foto">
+          <span id="q-photo-state" class="small photo-state"></span>
         </div>
         <div id="q-preview"></div>
         <div id="q-msg" class="msg error hidden" role="alert"></div>
@@ -380,6 +392,9 @@
   </section>
 </main>
 
+<div id="photo-view" class="hidden" role="dialog" aria-label="Beleg-Foto"><div class="bar">
+  <button type="button" id="photo-close">Schließen</button><a id="photo-dl" download="beleg.jpg">Herunterladen</a></div>
+  <img id="photo-img" alt="Beleg"></div>
 <script>
 "use strict";
 
@@ -462,6 +477,74 @@ async function api(path, options) {
 }
 
 function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
+
+// ---- Beleg-Foto zu „Zugang buchen“ (M03-37): freiwillig, wird nach der Buchung angehängt ----------
+
+const pendingPhoto = { stock: null, q: null };
+function setPhoto(where, blob, text) {
+  pendingPhoto[where] = blob;
+  $(where + "-photo-state").textContent = text || "";
+  $(where + "-photo").value = "";
+}
+// Handyfotos sind oft 3–5 MB: auf höchstens 1600 px Kante als JPEG verkleinern; klappt das nicht, Original schicken.
+function shrinkPhoto(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => resolve(b || file), "image/jpeg", 0.8);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+async function pickPhoto(where) {
+  const file = $(where + "-photo").files[0];
+  if (!file) return;
+  setPhoto(where, null, "Foto wird vorbereitet …");
+  const blob = await shrinkPhoto(file);
+  setPhoto(where, blob, "📷 Beleg-Foto bereit – wird mit dem nächsten Zugang gespeichert");
+}
+async function sendPhoto(movementId, blob, msgId) {
+  try {
+    const res = await fetch(API + "stock/movements/" + movementId + "/photo",
+      { method: "POST", headers: { "Content-Type": blob.type || "image/jpeg" }, body: blob });
+    if (res.ok) return true;
+    let text = "";
+    try { text = (await res.json()).detail; } catch (e) { /* kein JSON */ }
+    showMsg(msgId, "Zugang gebucht, Beleg-Foto nicht gespeichert: " + (typeof text === "string" && text ? text : "Fehler " + res.status));
+  } catch (e) {
+    showMsg(msgId, "Zugang gebucht, Beleg-Foto nicht gespeichert: keine Verbindung.");
+  }
+  return false;
+}
+function photoCell(tr, m, text) {
+  const td = cell(tr, text);
+  if (m.has_photo) {
+    const b = actionButton("📎 Beleg", () => showPhoto(m.id));
+    td.appendChild(document.createTextNode(text ? " " : ""));
+    td.appendChild(b);
+  }
+  return td;
+}
+let photoUrl = null;
+async function showPhoto(movementId) {
+  try {
+    const res = await api("admin/stock/movements/" + movementId + "/photo", { raw: true });
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    photoUrl = URL.createObjectURL(await res.blob());
+    $("photo-img").src = photoUrl;
+    $("photo-dl").href = photoUrl;
+    $("photo-dl").download = "beleg-zugang-" + movementId + ".jpg";
+    show("photo-view", true);
+  } catch (err) { handleError(err); }
+}
+$("photo-close").addEventListener("click", () => show("photo-view", false));
 function showMsg(id, text, kind) {
   const e = $(id);
   e.textContent = text || "";
@@ -1228,7 +1311,7 @@ async function refreshStock() {
       cell(tr, m.kind_text);
       cell(tr, m.delta_g === null ? "" : (m.delta_g > 0 ? "+" : "") + kgText(m.delta_g), "num");
       cell(tr, m.stock_after_g === null ? "Führung beendet" : kgText(m.stock_after_g), "num");
-      cell(tr, [m.batch_no, m.reason_text, m.purchase_label ? "Einkauf " + m.purchase_label : null, m.note].filter(Boolean).join(" · "));
+      photoCell(tr, m, [m.batch_no, m.reason_text, m.purchase_label ? "Einkauf " + m.purchase_label : null, m.note].filter(Boolean).join(" · "));
       body.appendChild(tr);
     });
     if (!moves.length) { const tr = document.createElement("tr"); cell(tr, "Noch keine Buchung.").colSpan = 5; body.appendChild(tr); }
@@ -1240,7 +1323,11 @@ async function stockAction(kind) {
   const note = $("stock-note").value.trim() || null;
   try {
     if (kind === "receipt") {
-      await api("raw-materials/" + item.id + "/stock/receipt", { method: "POST", body: { amount_kg: amount, note: note } });
+      const res = await api("raw-materials/" + item.id + "/stock/receipt", { method: "POST", body: { amount_kg: amount, note: note } });
+      if (pendingPhoto.stock) {
+        const ok = await sendPhoto(res.movement_id, pendingPhoto.stock, "stock-msg");
+        setPhoto("stock", null, ok ? "Beleg gespeichert ✓" : "");
+      }
     } else {
       if (amount === "" && !(await askConfirm("Feld leer: Bestandsführung für „" + item.name + "“ beenden?", "Beenden"))) return;
       await api("admin/raw-materials/" + item.id + "/stock/inventory",
@@ -1253,6 +1340,8 @@ async function stockAction(kind) {
   } catch (err) { handleError(err, "stock-msg"); }
 }
 $("stock-receipt").addEventListener("click", () => stockAction("receipt"));
+$("stock-photo-btn").addEventListener("click", () => $("stock-photo").click());
+$("stock-photo").addEventListener("change", () => pickPhoto("stock"));
 $("stock-set").addEventListener("click", () => stockAction("inventory"));
 
 // ---- Reiter Bezugsquellen (Modul 04 C1, M04-5, M04-14) ------------------------------------
@@ -1454,6 +1543,8 @@ function setMode(mode) {
   $("q-amount").placeholder = mode === "receipt" ? "Zugang in kg" : mode === "loss" ? "Abgang in kg" : "Gesamtbestand in kg";
   show("q-reason", mode === "loss");
   show("q-note", mode === "loss");
+  show("q-photo-btn", mode === "receipt");
+  if (mode !== "receipt") setPhoto("q", null, "");
   qPreview();
 }
 document.querySelectorAll("#q-mode button").forEach((b) => b.addEventListener("click", () => { setMode(b.dataset.mode); ($("q-amount").disabled ? $("q-search") : $("q-amount")).focus(); }));
@@ -1539,6 +1630,10 @@ async function qBook() {
       // F: ohne Bestandsführung erst fragen
       if (qItem.stock_g === null && !(await askConfirm("„" + qItem.name + "“ hat noch keinen Bestand – ab 0 starten?", "Ab 0 starten"))) return;
       res = await api("raw-materials/" + qItem.id + "/stock/receipt", { method: "POST", body: { amount_kg: amount, source: "quick_entry" } });
+      if (pendingPhoto.q) {
+        const ok = await sendPhoto(res.movement_id, pendingPhoto.q, "q-msg");
+        setPhoto("q", null, ok ? "Beleg gespeichert ✓" : "");
+      }
     } else if (qMode === "loss") {
       res = await api("raw-materials/" + qItem.id + "/stock/loss", { method: "POST", body: { amount_kg: amount, source: "quick_entry",
         reason: $("q-reason").value, note: $("q-note").value } });
@@ -1602,7 +1697,7 @@ async function loadHistory() {
     cell(tr, m.kind_text);
     cell(tr, m.delta_g === null ? "" : (m.delta_g > 0 ? "+" : "") + kgText(m.delta_g), "num");
     cell(tr, m.stock_after_g === null ? "Führung beendet" : kgText(m.stock_after_g), "num");
-    cell(tr, [m.batch_no, m.reason_text, m.purchase_label ? "Einkauf " + m.purchase_label : null, m.note, SOURCE[m.source] || m.source].filter(Boolean).join(" · "));
+    photoCell(tr, m, [m.batch_no, m.reason_text, m.purchase_label ? "Einkauf " + m.purchase_label : null, m.note, SOURCE[m.source] || m.source].filter(Boolean).join(" · "));
     body.appendChild(tr);
   });
   $("h-count").textContent = list.length ? list.length + " Buchung" + (list.length === 1 ? "" : "en") + (list.length >= 500 ? " (die neuesten 500)" : "") : "Keine Buchungen.";

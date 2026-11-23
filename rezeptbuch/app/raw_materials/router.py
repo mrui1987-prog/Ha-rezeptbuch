@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Body, Depends, Response
+from fastapi import APIRouter, Body, Depends, Request, Response
+from fastapi.responses import FileResponse
 
 from ..auth.dependencies import require_admin
 from ..deps import get_db
-from ..errors import ValidationError
+from ..errors import PayloadTooLargeError, ValidationError
 from . import bulk, scanner, service, sources, stock
 from .export import build_csv
 
@@ -59,9 +60,31 @@ def stock_movements(raw_material_id: int, db: sqlite3.Connection = Depends(get_d
 
 @router.post("/raw-materials/{raw_material_id}/stock/receipt")
 def stock_receipt(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
-    """„Zugang buchen“ – bewusst ohne PIN, auch an der Station (M03-13)."""
-    stock.receipt(db, raw_material_id, payload)
-    return service.get_raw_material(db, raw_material_id)
+    """„Zugang buchen“ – bewusst ohne PIN, auch an der Station (M03-13). ``movement_id`` für das Beleg-Foto."""
+    movement_id = stock.receipt(db, raw_material_id, payload)
+    return dict(service.get_raw_material(db, raw_material_id), movement_id=movement_id)
+
+
+async def photo_body(request: Request) -> bytes:
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > stock.PHOTO_MAX_BYTES:
+            raise PayloadTooLargeError("Foto größer als 8 MB.", code="file_too_large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/stock/movements/{movement_id}/photo")
+def stock_photo_upload(movement_id: int, body: bytes = Depends(photo_body), db: sqlite3.Connection = Depends(get_db)):
+    """Beleg-Foto an einen Zugang hängen (M03-37) – ohne PIN wie der Zugang; Bild im Anfragekörper."""
+    return stock.attach_photo(db, movement_id, body)
+
+
+@router.get("/admin/stock/movements/{movement_id}/photo", dependencies=admin)
+def stock_photo(movement_id: int, db: sqlite3.Connection = Depends(get_db)):
+    path, mime = stock.photo_path(db, movement_id)
+    return FileResponse(path, media_type=mime)
 
 
 @router.post("/raw-materials/{raw_material_id}/stock/loss")

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-from ..db import transaction
+from ..db import default_db_path, transaction
 from ..errors import ConflictError, NotFoundError, ValidationError
 
 MAX_KG = Decimal("1000000")          # Plausibilitätsgrenze je Eingabe (1 000 t)
@@ -113,11 +115,11 @@ def _note(note) -> str | None:
     return text or None
 
 
-def receipt_in_tx(conn, raw_material_id: int, grams: int, *, note=None, station=None, source="admin") -> None:
+def receipt_in_tx(conn, raw_material_id: int, grams: int, *, note=None, station=None, source="admin") -> int:
     row = _row(conn, raw_material_id)
     before = row["stock_g"]
-    _book(conn, raw_material_id, "receipt", before, (before or 0) + grams, source=source, note=_note(note),
-          station=station)
+    return _book(conn, raw_material_id, "receipt", before, (before or 0) + grams, source=source, note=_note(note),
+                 station=station)
 
 
 def inventory_in_tx(conn, raw_material_id: int, grams: int | None, *, note=None, source="admin") -> bool:
@@ -182,7 +184,8 @@ def _quick(payload: dict) -> bool:
     return payload.get("source") == QUICK_ENTRY
 
 
-def receipt(conn, raw_material_id: int, payload: dict) -> None:
+def receipt(conn, raw_material_id: int, payload: dict) -> int:
+    """„Zugang buchen“; gibt die Buchungs-ID zurück (für das Beleg-Foto, M03-37)."""
     grams = parse_kg(payload.get("amount_kg"), "amount_kg", allow_empty=False, allow_negative=False)
     if grams == 0:
         raise ValidationError("Bitte eine Menge größer 0 eingeben.", field="amount_kg")
@@ -193,7 +196,8 @@ def receipt(conn, raw_material_id: int, payload: dict) -> None:
     with transaction(conn):
         if station is not None and not conn.execute("SELECT 1 FROM station WHERE id = ?", (station,)).fetchone():
             raise ValidationError("Station unbekannt.", field="station")
-        receipt_in_tx(conn, raw_material_id, grams, note=payload.get("note"), station=station, source=source)
+        return receipt_in_tx(conn, raw_material_id, grams, note=payload.get("note"), station=station,
+                             source=source)
 
 
 def inventory(conn, raw_material_id: int, payload: dict) -> int | None:
@@ -354,7 +358,8 @@ def movements(conn, raw_material_id: int, limit: int = 50) -> list[dict]:
     _row(conn, raw_material_id)
     rows = conn.execute(
         "SELECT m.id, m.kind, m.delta_g, m.stock_after_g, m.batch_id, b.batch_no, m.station_id, m.source, "
-        "m.note, m.created_at, m.reason, m.purchase_id, p.label AS purchase_label, m.undo_of_id "
+        "m.note, m.created_at, m.reason, m.purchase_id, p.label AS purchase_label, m.undo_of_id, "
+        "m.attachment IS NOT NULL AS has_photo "
         "FROM stock_movement m LEFT JOIN batch b ON b.id = m.batch_id "
         "LEFT JOIN purchase p ON p.id = m.purchase_id "
         "WHERE m.raw_material_id = ? ORDER BY m.id DESC LIMIT ?", (raw_material_id, limit)).fetchall()
@@ -391,7 +396,7 @@ def movements_all(conn, *, date_from: str | None = None, date_to: str | None = N
     limit = max(1, min(int(limit), 2000))
     sql = ("SELECT m.id, m.raw_material_id, rm.number, rm.name, m.kind, m.delta_g, m.stock_after_g, m.batch_id, "
            "b.batch_no, m.station_id, m.source, m.note, m.created_at, m.reason, m.purchase_id, "
-           "p.label AS purchase_label, m.undo_of_id FROM stock_movement m "
+           "p.label AS purchase_label, m.undo_of_id, m.attachment IS NOT NULL AS has_photo FROM stock_movement m "
            "JOIN raw_material rm ON rm.id = m.raw_material_id LEFT JOIN batch b ON b.id = m.batch_id "
            "LEFT JOIN purchase p ON p.id = m.purchase_id"
            + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY m.id DESC LIMIT ?")
@@ -412,3 +417,71 @@ def need_status(conn, needs: dict[int, int]) -> list[dict]:
                     "stock_g": row["stock_g"], "stock_alert_g": row["stock_alert_g"],
                     "stock_status": status(row["stock_g"], row["stock_alert_g"], need)})
     return out
+
+
+# -- Beleg-Foto zu „Zugang buchen“ (M03-37) ---------------------------------------------------
+# Kein Beleg-Zwang: gebucht wird immer; danach kann ein Foto an die Buchung gehängt werden.
+# Ohne PIN wie der Zugang selbst – deshalb eng begrenzt: nur Zugänge, nur einmal, nur kurz danach.
+
+PHOTO_MAX_BYTES = 8 * 1024 * 1024
+PHOTO_MINUTES = 60
+_PHOTO_TYPES = ((b"\xff\xd8\xff", ".jpg", "image/jpeg"), (b"\x89PNG\r\n\x1a\n", ".png", "image/png"))
+
+
+def photo_dir() -> Path:
+    """Ablage neben der Datenbank (im Betrieb /data/belege/zugang, wie die PDF-Belege K03-48)."""
+    return default_db_path().parent / "belege" / "zugang"
+
+
+def _photo_kind(body: bytes) -> tuple[str, str]:
+    for magic, ext, mime in _PHOTO_TYPES:
+        if body.startswith(magic):
+            return ext, mime
+    if len(body) > 12 and body[:4] == b"RIFF" and body[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    raise ValidationError("Bitte ein Foto (JPEG oder PNG) schicken.", field="photo", code="photo_type")
+
+
+def attach_photo(conn, movement_id: int, body: bytes, *, now: datetime | None = None) -> dict:
+    """Hängt ein Foto an einen Zugang. Nur ``receipt``, nur ein Foto, nur bis 60 Minuten nach der Buchung."""
+    if not body:
+        raise ValidationError("Kein Foto empfangen.", field="photo", code="photo_empty")
+    if len(body) > PHOTO_MAX_BYTES:
+        raise ValidationError("Foto größer als 8 MB.", field="photo", code="photo_too_large")
+    ext, _ = _photo_kind(body)
+    row = conn.execute("SELECT id, kind, created_at, attachment FROM stock_movement WHERE id = ?",
+                       (movement_id,)).fetchone()
+    if row is None:
+        raise NotFoundError("Buchung nicht gefunden.", code="not_found")
+    if row["kind"] != "receipt":
+        raise ValidationError("Ein Beleg-Foto gibt es nur zu „Zugang buchen“.", code="photo_kind")
+    if row["attachment"]:
+        raise ConflictError("Zu dieser Buchung gibt es schon ein Foto.", code="photo_exists")
+    booked = datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    if (now or datetime.now(timezone.utc)) - booked > timedelta(minutes=PHOTO_MINUTES):
+        raise ConflictError("Das Foto muss bis 60 Minuten nach der Buchung kommen.", code="photo_late")
+    folder = photo_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"zugang-{movement_id}{ext}"
+    tmp = folder / (name + ".part")
+    tmp.write_bytes(body)
+    with transaction(conn):
+        cur = conn.execute("UPDATE stock_movement SET attachment = ? WHERE id = ? AND attachment IS NULL",
+                           (name, movement_id))
+        if cur.rowcount != 1:
+            tmp.unlink(missing_ok=True)
+            raise ConflictError("Zu dieser Buchung gibt es schon ein Foto.", code="photo_exists")
+        tmp.replace(folder / name)
+    return {"movement_id": movement_id, "has_photo": True}
+
+
+def photo_path(conn, movement_id: int) -> tuple[Path, str]:
+    """Pfad und Medientyp des Fotos einer Buchung (Anzeige im Admin, PIN)."""
+    row = conn.execute("SELECT attachment FROM stock_movement WHERE id = ?", (movement_id,)).fetchone()
+    if row is None or not row["attachment"]:
+        raise NotFoundError("Kein Foto zu dieser Buchung.", code="not_found")
+    path = photo_dir() / Path(row["attachment"]).name
+    if not path.is_file():
+        raise NotFoundError("Foto-Datei fehlt in der Ablage.", code="photo_missing")
+    mime = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(path.suffix, "image/jpeg")
+    return path, mime

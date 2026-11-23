@@ -7,6 +7,7 @@
 - **B1:** neue Kachel „Buchführung“ (PIN): Monat anzeigen und als Excel laden (Spalte Nr. leer, Brutto/MwSt./Netto, Netto je Gruppe, Netto und MwSt. je 7 %/19 %, Prüfspalte, Summenzeile; Gutschriften negativ); Liste „Buchungsgruppen prüfen“ (automatisch gesetzte bestätigen oder umstellen); Gruppen pflegen (anlegen, umbenennen, Reihenfolge, archivieren).
 - **M03-35:** Ersatz am Liefertag (Taste, Scan, Ersatz von der AB) setzt am Rohstoff „Ersatzware im Bestand – Pass prüfen“; Liste unter „Buchführung“ mit „Pass geprüft“.
 - **M03-36:** Kommt derselbe Ersatz (gleiche fremde Artikelnummer bzw. gleicher Code) ein zweites Mal, fragt die Seite „Dauerhaft umstellen?“ und öffnet „Rohstoff austauschen“ bei den Rezepten (neu: `admin/rezepte?view=replace&old=…`).
+- **M03-37 (Beleg-Foto zu „Zugang buchen“):** kein Beleg-Zwang; neue Taste „📷 Beleg fotografieren“ am Rohstoff (Reiter Bestand) und „📷 Beleg“ in der Schnellerfassung (nur Zugang). Das Foto wird auf dem Gerät auf höchstens 1600 px verkleinert und nach der Buchung an den Zugang gehängt (ohne PIN, nur Zugänge, ein Foto, bis 60 Minuten nach der Buchung). Ablage `belege/zugang/` neben der Datenbank; im Verlauf „📎 Beleg“ (Ansicht mit PIN). Migration 0013: `stock_movement.attachment`. Station folgt mit Modul 10 C2.
 
 ## 0.10.30 – Wareneingang: Kamerabild füllt den Rahmen, Ersatz immer auf den bestellten Artikel
 
