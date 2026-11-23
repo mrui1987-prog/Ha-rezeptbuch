@@ -1,6 +1,6 @@
 # Export für die Buchführung (Wareneingang, Teil B1)
 
-Stand: 23.11.2026, 12:10 · Status: **Konzept erstellt, K03-78 bis K03-84 entschieden (Michael, Sprachchat, eingetragen 12:10); Freigabe offen** · Modul 03 (VC03-c Wareneingang)
+Stand: 23.11.2026, 17:20 · Status: **K03-78 bis K03-84 entschieden (Michael, Sprachchat, eingetragen 12:10); Konzept freigegeben (Michael, Sprachchat: „Ja, das gebe ich frei“, eingetragen 17:20)** · Modul 03 (VC03-c Wareneingang)
 
 Grundlage: Wunsch Michael 23.11.2026, 11:17 (Muster „Wareneingang_Oktober_2026.xlsx“), Entscheidungen M03-31 (11:21/11:22), M03-32 (11:23), K03-78 bis K03-84 (Sprachchat, ~12:00), docs/wareneingang.md, Migration 0012.
 
@@ -60,3 +60,4 @@ Beispiel BÄKO 5.10.: Brutto 1 559,69 · MwSt. 111,20 · Netto 1 448,49 = Leergu
 |---|---|
 | 23.11.2026, 11:30 | Konzept erstellt (Claude) nach Wunsch Michael 11:17, M03-31/M03-32. |
 | 23.11.2026, 12:10 | K03-78 bis K03-83 entschieden, K03-84 neu und entschieden (Michael, Sprachchat): W2a nur Einlesen/Zuordnen, Gruppen pflegbar, Unk. = Unkosten, Gruppe am Artikel, keine Buchungsnummer, 7 %/19 % getrennt, lernende Zuordnung mit „ungeprüft“-Liste im Admin. Freigabe offen. |
+| 23.11.2026, 17:20 | **Konzept freigegeben** (Michael, Sprachchat zwischen 12:12 und 17:15). Fracht, Maut, Gebühren: kein Bestand, Buchungsgruppe Unkosten, gemerkt je Artikel (K03-75, Sprachchat). Umsetzung W2a + B1 mit Migration 0013 als nächste freie Version nach 0.10.29. |
