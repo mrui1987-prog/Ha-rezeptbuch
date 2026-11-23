@@ -209,3 +209,32 @@ def test_pack_step():
     assert rec.pack_step("3 VE à 5 KG", "KG")["step_milli"] == 5000
     assert rec.pack_step("1 VE à 3 BT", "BT") == {"step_milli": 3000, "name": "VE", "count": 1}
     assert rec.pack_step(None, "L")["step_milli"] == 1000
+
+
+def test_same_article_twice_in_one_ab(conn, env):
+    """Gleicher Artikel zweimal im Beleg (z. B. Pfand): kein Fehler 500 (Meldung Michael 23.11.2026, 10:23)."""
+    _, doc = load(conn, env, [position(1, "1405", "Pfand Kiste", 2000, me="ST"),
+                              position(2, "1405", "Pfand Kiste", 1000, me="ST")],
+                  {"1": {"action": "other"}, "2": {"action": "other"}})
+    assert {l["target"] for l in doc["lines"]} == {"other"}
+    assert conn.execute("SELECT count(*) FROM other_article").fetchone()[0] == 1
+    _, doc2 = load(conn, env, [position(1, "66", "Becher", 2000, me="KT"), position(2, "66", "Becher", 1000, me="KT")],
+                   {"1": {"action": "aid_new", "name": "Becher", "unit_label": "Karton"},
+                    "2": {"action": "aid_new", "name": "Becher", "unit_label": "Karton"}}, no="AT2")
+    assert doc2["lines"][0]["raw_material_id"] == doc2["lines"][1]["raw_material_id"]
+
+
+def test_missing_gpu_on_known_line_says_so(conn, env):
+    """Bekannter Rohstoff ohne „g je ME“: klare Meldung statt „Ungültige Zahl“."""
+    rm = mehl(conn, "Apfelwürfel")
+    env.append(ab([position(1, "88", "Apfelwürfel", 3000, me="BT")]))
+    pre = rec.upload(conn, PDF, None)
+    rec.commit(conn, {"token": pre["token"], "decisions": {"1": {"action": "assign", "raw_material_id": rm,
+                                                                  "grams_per_unit": 5000}}})
+    conn.execute("UPDATE raw_material_source SET grams_per_unit = NULL")
+    env.append(ab([position(1, "88", "Apfelwürfel", 3000, me="BT")], "AT5"))
+    pre = rec.upload(conn, PDF + b"5", None)
+    assert pre["lines"][0]["needs_gpu"]
+    with pytest.raises(ValidationError) as e:
+        rec.commit(conn, {"token": pre["token"], "decisions": {}})
+    assert e.value.code == "gpu_missing" and "Pos. 1" in str(e.value) and "Gramm je BT" in str(e.value)

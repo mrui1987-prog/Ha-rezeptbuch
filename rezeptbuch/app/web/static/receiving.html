@@ -267,8 +267,10 @@
     (pre.plausibility || []).forEach((p) => head.appendChild(el("div", "⚠ " + (p.meldung || p.text || JSON.stringify(p)), "sub")));
     $("main").appendChild(head);
 
+    const cards = {};
     pre.lines.forEach((line) => {
       const c = el("div", null, "card");
+      c.dataset.line = String(line.line_no);
       const t = el("div", line.line_no + ". " + (line.description || "–"), "title");
       if (line.order_item) t.appendChild(el("span", "B", "tag b"));
       c.appendChild(t);
@@ -276,9 +278,14 @@
         + (line.pack_text ? " · " + line.pack_text : ""), "sub"));
       const state = el("div", null, "chosen");
       c.appendChild(state);
+      cards[String(line.line_no)] = { line: line, card: c, state: state };
       if (line.target === "raw_material") {
         state.textContent = "→ " + line.raw_material_name;
-        if (line.needs_gpu) c.appendChild(gpuButton(line, decisions, state));
+        if (line.needs_gpu) {
+          c.classList.add("warn");
+          state.textContent += " · Gramm je " + line.unit_code + " fehlt";
+          c.appendChild(gpuButton(line, decisions, state, c));
+        }
       } else if (line.target === "other") {
         state.textContent = "→ Sonstiger Artikel (ohne Bestand)";
       } else {
@@ -297,9 +304,27 @@
       }
       $("main").appendChild(c);
     });
+    S.cards = cards;
+
+    // offene Positionen: unbekannt ohne Entscheidung oder „Gramm je ME“ fehlt
+    function missing() {
+      return pre.lines.filter((l) => {
+        const d = decisions[String(l.line_no)];
+        if (l.target === "unknown") return !d || !d.action;
+        if (l.target === "raw_material" && l.needs_gpu) return !d || !d.grams_per_unit;
+        return false;
+      });
+    }
 
     const bottom = el("div", null, "bottom");
     bottom.appendChild(btn("Beleg speichern", async () => {
+      const open = missing();
+      if (open.length) {
+        msg("Noch offen: Pos. " + open.map((l) => l.line_no).join(", ") + " – bitte zuordnen bzw. Gramm eintragen.", "orange");
+        const first = cards[String(open[0].line_no)];
+        if (first) first.card.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
       try {
         const send = () => RB.api("admin/receiving/commit", { method: "POST", body: { token: pre.token, decisions: decisions } });
         let doc;
@@ -319,12 +344,13 @@
     $("main").appendChild(bottom);
   }
 
-  function gpuButton(line, decisions, state) {
+  function gpuButton(line, decisions, state, card) {
     return btn("Gramm je " + line.unit_code + " eintragen", async () => {
       const g = await askNumber("Gewicht je " + line.unit_code, line.description + (line.pack_text ? " (" + line.pack_text + ")" : ""), "g");
       if (!g) return;
       decisions[String(line.line_no)] = Object.assign(decisions[String(line.line_no)] || {}, { grams_per_unit: Math.round(g) });
       state.textContent = "→ " + (line.raw_material_name || state.dataset.name || "") + " · " + Math.round(g) + " g je " + line.unit_code;
+      if (card) { card.classList.remove("warn"); card.classList.add("done"); }
     });
   }
 
@@ -336,12 +362,21 @@
     return { grams_per_unit: Math.round(g) };
   }
 
-  function decide(line, card, state, decisions, action, extra) {
+  function decide(line, card, state, decisions, action, extra, copied) {
     decisions[String(line.line_no)] = Object.assign({ action: action }, extra);
     card.classList.remove("warn"); card.classList.add("done");
     const text = { assign: "→ ", aid_assign: "→ Hilfs- und Betriebsstoff ", new: "→ neu: ", aid_new: "→ neu (Hilfs- und Betriebsstoff): ",
                    other: "→ Sonstiger Artikel", substitute: "→ Ersatz für " }[action];
-    state.textContent = text + (extra.name || "") + (extra.grams_per_unit ? " · " + extra.grams_per_unit + " g je " + line.unit_code : "");
+    state.textContent = text + (extra.name || "") + (extra.grams_per_unit ? " · " + extra.grams_per_unit + " g je " + line.unit_code : "")
+      + (copied ? " (wie Pos. " + copied + ")" : "");
+    // gleicher Artikel nochmal im Beleg (z. B. Pfand): Entscheidung übernehmen, solange dort noch nichts gewählt ist
+    if (copied || !line.article_no || !S.cards) return;
+    Object.keys(S.cards).forEach((k) => {
+      const o = S.cards[k];
+      if (o.line === line || o.line.target !== "unknown" || o.line.article_no !== line.article_no) return;
+      if (decisions[k] && decisions[k].action) return;
+      decide(o.line, o.card, o.state, decisions, action, extra, line.line_no);
+    });
   }
 
   async function choose(id, line, card, state, decisions) {

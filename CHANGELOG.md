@@ -7,6 +7,8 @@
 - Neuer Hilfs- und Betriebsstoff: Einheit per Taste wählbar – Karton, Paket, Eimer, Sack, Dose und alle bereits vergebenen Einheiten (`GET /api/v1/barcodes/candidates` mit Parameter `limit`, höchstens 200).
 - Neuer Rohstoff: bei Toleranz 0 erscheint der Hinweis „0 g = wird nicht gewogen (Zugabe von Hand, ohne Waage)“.
 - Sitzung läuft bei der Zuordnung nicht mehr ab: solange die Zuordnung eines Belegs offen ist, wird sie jede Minute verlängert; ist sie trotzdem abgelaufen, fragt „Beleg speichern“ nur die PIN neu ab, die Zuordnungen bleiben erhalten.
+- Fehler 500 beim Speichern behoben: gleicher Artikel zweimal in einer AB (z. B. Pfand) als „Sonstiger Artikel“ bzw. neu angelegt – der zweite nutzt jetzt denselben Eintrag; die Entscheidung wird auf noch offene Positionen mit gleicher Artikelnummer übernommen („wie Pos. n“).
+- „Ungültige Zahl“ beim Speichern ersetzt: bekannte Rohstoffe ohne „Gramm je ME“ sind jetzt orange markiert („Gramm je … fehlt“); „Beleg speichern“ nennt alle offenen Positionen und springt zur ersten, der Server meldet „Pos. n (…): Gramm je … fehlt“.
 - `ui/common.js`: Option `nearTap` für `RB.dialog` und `RB.numpad` (nur der Wareneingang nutzt sie; Station und übrige Seiten unverändert). Keine Migration.
 
 ## 0.10.25 – Wareneingang: Ersatz per Scan

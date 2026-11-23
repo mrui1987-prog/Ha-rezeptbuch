@@ -156,8 +156,15 @@ def _preview(conn, res: dict, sha: str) -> dict:
 
 # -- Speichern mit Entscheidungen ---------------------------------------------------------
 
-def _gpu(value, field: str) -> int:
-    return _int(value, field, minimum=1, maximum=1_000_000)
+def _gpu(value, field: str, where: str = "", unit: str = "") -> int:
+    if value is None or value == "":
+        raise ValidationError(f"{where}: Gramm je {unit} fehlt – bitte „Gramm je {unit} eintragen“ tippen.".lstrip(": "),
+                              field=field, code="gpu_missing")
+    try:
+        return _int(value, field, minimum=1, maximum=1_000_000)
+    except ValidationError:
+        raise ValidationError(f"{where}: Gramm je {unit} ungültig (1 bis 1 000 000).".lstrip(": "),
+                              field=field, code="gpu_invalid") from None
 
 
 def _attach_source(conn, rm_id: int, dealer_id: int, article_no: str, unit: str, gpu: int | None) -> None:
@@ -203,21 +210,22 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
              str(res.get("addon_version")), json.dumps(res, ensure_ascii=False), saved.get("file_name"), token,
              pre["net_cents"])).lastrowid
         positions = {p.get("nr"): p for p in res["daten"].get("positionen") or []}
+        made: dict[str, tuple[str, int]] = {}   # Artikelnummer → (Ziel, id), wenn im selben Beleg schon angelegt
         for line in pre["lines"]:
             p = positions[line["line_no"]]
             dec = decisions.get(str(line["line_no"])) or {}
             target, rm_id, other_id, gpu_used, note = line["target"], line.get("raw_material_id"), \
                 line.get("other_article_id"), None, None
-            where = f"Pos. {line['line_no']}"
+            where = f"Pos. {line['line_no']} ({line['description']})"
             if target == "raw_material" and line.get("needs_gpu"):
-                gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit")
+                gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
                 _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu)
             elif target == "unknown":
                 action = dec.get("action")
                 gpu = None
                 if action in ("assign", "new", "aid_assign", "aid_new", "substitute") and line["needs_gpu"] \
                         and action not in ("aid_assign", "aid_new"):
-                    gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit")
+                    gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
                 if action in ("assign", "aid_assign"):
                     rm_id = _int(dec.get("raw_material_id"), f"{line['line_no']}.raw_material_id", minimum=1)
                     rm = stock._row(conn, rm_id)
@@ -225,6 +233,10 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                         raise ValidationError(f"{where}: Art passt nicht (Rohstoff/Hilfs- und Betriebsstoff).",
                                               field=f"{line['line_no']}.raw_material_id")
                     _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu)
+                    target = "raw_material"
+                elif action in ("new", "aid_new") and line["article_no"] and \
+                        made.get(line["article_no"], ("", 0))[0] == "raw_material":
+                    rm_id = made[line["article_no"]][1]       # gleicher Artikel zweimal im Beleg
                     target = "raw_material"
                 elif action in ("new", "aid_new"):
                     data = {"name": dec.get("name") or line["description"]}
@@ -237,7 +249,9 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                     _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu)
                     target = "raw_material"
                 elif action == "other":
-                    other_id = conn.execute(
+                    row = conn.execute("SELECT id FROM other_article WHERE dealer_id = ? AND article_no IS ?",
+                                       (dealer_id, line["article_no"])).fetchone() if line["article_no"] else None
+                    other_id = row["id"] if row else conn.execute(
                         "INSERT INTO other_article (dealer_id, article_no, description, last_price_e4, last_unit) "
                         "VALUES (?, ?, ?, ?, ?)", (dealer_id, line["article_no"], line["description"],
                                                   p.get("preis_zehntausendstel_euro"), line["unit_code"])).lastrowid
@@ -252,6 +266,8 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                 else:
                     raise ValidationError(f"{where} ({line['description']}): bitte zuordnen.",
                                           field=f"{line['line_no']}.action", code="decision_missing")
+            if line["article_no"] and target in ("raw_material", "other"):
+                made.setdefault(line["article_no"], (target, rm_id if target == "raw_material" else other_id))
             conn.execute(
                 "INSERT INTO receiving_line (document_id, line_no, article_no, description, qty_milli, unit_code, pack_text, "
                 "price_e4, price_unit, net_cents, vat_percent, order_item, target, raw_material_id, other_article_id, "
