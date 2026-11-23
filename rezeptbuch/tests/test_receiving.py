@@ -72,10 +72,8 @@ def test_duplicate_and_invoice_later(conn, env):
     assert pre["duplicate"]
     with pytest.raises(ConflictError):
         rec.commit(conn, {"token": pre["token"]})
-    env.append(ab([], "RE1", "rechnung"))
-    with pytest.raises(ConflictError) as e:
-        rec.upload(conn, PDF, None)
-    assert e.value.code == "kind_later"
+    env.append(ab([], "RE1", "rechnung"))           # seit W2a (0013): Rechnungen werden eingelesen
+    assert rec.upload(conn, PDF, None)["billing"] is True
 
 
 def test_reader_not_ok(conn, env):

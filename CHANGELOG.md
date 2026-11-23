@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.10.31 – Rechnung/Gutschrift einlesen (W2a), Export für die Buchführung (B1), Ersatzware (M03-35/36) – ENTWURF, Migration 0013 noch nicht freigegeben
+
+- **Migration 0013:** Buchungsgruppen (neun Vorgaben: Leergut, Wurst, Spirituosen, Feinkost, Handelsware, Kaffee, Zeitung, Rohstoffe, Unkosten), gelernte Zuordnung Warengruppe → Gruppe, Gruppe + „geprüft“ an Rohstoff und sonstigem Artikel, Gruppe/Betrag nach Skonto/Ersatz-Bezug an der Belegposition, Marke „Ersatzware im Bestand“ am Rohstoff.
+- **W2a:** „Beleg hochladen“ nimmt jetzt auch BÄKO-Rechnungen und -Gutschriften. Zuordnen wie bei der AB, dazu je Position die Buchungsgruppe (Vorschlag, „Ändern“); neue Warengruppe ohne Gruppe muss einmal gewählt werden und wird gelernt. Bucht keinen Bestand, keine Preise (W2b später).
+- **B1:** neue Kachel „Buchführung“ (PIN): Monat anzeigen und als Excel laden (Spalte Nr. leer, Brutto/MwSt./Netto, Netto je Gruppe, Netto und MwSt. je 7 %/19 %, Prüfspalte, Summenzeile; Gutschriften negativ); Liste „Buchungsgruppen prüfen“ (automatisch gesetzte bestätigen oder umstellen); Gruppen pflegen (anlegen, umbenennen, Reihenfolge, archivieren).
+- **M03-35:** Ersatz am Liefertag (Taste, Scan, Ersatz von der AB) setzt am Rohstoff „Ersatzware im Bestand – Pass prüfen“; Liste unter „Buchführung“ mit „Pass geprüft“.
+- **M03-36:** Kommt derselbe Ersatz (gleiche fremde Artikelnummer bzw. gleicher Code) ein zweites Mal, fragt die Seite „Dauerhaft umstellen?“ und öffnet „Rohstoff austauschen“ bei den Rezepten (neu: `admin/rezepte?view=replace&old=…`).
+
 ## 0.10.30 – Wareneingang: Kamerabild füllt den Rahmen, Ersatz immer auf den bestellten Artikel
 
 - Liefertag mit Kamera (iPhone): das Bild lag klein oben, der Scan-Rahmen darunter im Schwarzen. Jetzt feste Höhe, das Bild füllt die Fläche, der Rahmen liegt im Bild (Michael 23.11.2026, 18:05).

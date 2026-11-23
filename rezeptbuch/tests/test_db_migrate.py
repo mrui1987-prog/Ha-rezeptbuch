@@ -40,6 +40,8 @@ EXPECTED_TABLES = {
     "storage_location", "raw_material_barcode", "purchase",
     # Modul 03, Wareneingang Teil W1 (0012)
     "receiving_document", "receiving_line", "other_article",
+    # Modul 03, Buchführung B1 / Rechnung W2a (0013)
+    "booking_group", "commodity_group_booking",
 }
 
 

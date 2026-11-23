@@ -64,6 +64,7 @@
   /* flex-shrink: 0 – sonst drückt die Liste die Tasten zusammen und die zweite Zeile verschwindet (iPhone, Michael 23.11., 17:17) */
   .dlg .list button { text-align: left; min-height: 7vh; height: auto; flex-shrink: 0; font-size: clamp(16px, 2.4vh, 24px);
                       line-height: 1.25; padding: 1vh 1rem; display: block; width: 100%; box-sizing: border-box; }
+  .btnlink { display: inline-block; padding: .6em 1em; border: 2px solid var(--line); border-radius: var(--radius); text-decoration: none; color: inherit; }
   .pdfview { position: fixed; inset: 0; z-index: 60; background: #fff; display: flex; flex-direction: column; }
   .pdfbar { display: flex; gap: 1rem; align-items: center; padding: 1vh 1rem; border-bottom: 2px solid var(--line); }
   .pdfbar button, .pdfbar .btnlink { font-size: 2.4vh; min-height: 6vh; padding: .5em 1em; border: 2px solid var(--line);
@@ -105,6 +106,7 @@
   function fmtMilli(m, unit) {
     return (m / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + unit;
   }
+  function euro(c) { return c === null || c === undefined ? "–" : (c / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"; }
   function date(d) { return d ? d.slice(8, 10) + "." + d.slice(5, 7) + "." + d.slice(0, 4) : "–"; }
   function packs(milli, pack) {
     if (!pack || !pack.step_milli || pack.step_milli === 1000) return "";
@@ -243,10 +245,12 @@
     const tiles = el("div", null, "tiles");
     const t1 = el("span", "Lieferungen"); t1.appendChild(el("small", deliveries.length + " offen"));
     tiles.appendChild(btn(t1, () => listDeliveries(), "primary"));
-    const t2 = el("span", "Beleg hochladen"); t2.appendChild(el("small", "🔒 PIN · Auftragsbestätigung (PDF)"));
+    const t2 = el("span", "Beleg hochladen"); t2.appendChild(el("small", "🔒 PIN · AB, Rechnung, Gutschrift (PDF)"));
     tiles.appendChild(btn(t2, async () => { if (await ensurePin()) uploadView(); }));
     const t3 = el("span", "Archiv & Sonstige"); t3.appendChild(el("small", "🔒 PIN · Belege, sonstige Artikel"));
     tiles.appendChild(btn(t3, async () => { if (await ensurePin()) archive(); }));
+    const t4 = el("span", "Buchführung"); t4.appendChild(el("small", "🔒 PIN · Export, Gruppen prüfen, Ersatzware"));
+    tiles.appendChild(btn(t4, async () => { if (await ensurePin()) bookkeeping(); }));
     $("main").appendChild(tiles);
   }
 
@@ -257,7 +261,7 @@
     const input = el("input"); input.type = "file"; input.accept = "application/pdf,.pdf";
     label.appendChild(input);
     $("main").appendChild(label);
-    $("main").appendChild(el("p", "Auftragsbestätigung aus Chefslist. Rechnungen und Gutschriften kommen mit Teil W2.", "hint"));
+    $("main").appendChild(el("p", "Auftragsbestätigung aus Chefslist (erwartete Lieferung) oder Rechnung/Gutschrift (für die Buchführung, bucht keinen Bestand).", "hint"));
     input.addEventListener("change", async () => {
       const file = input.files && input.files[0];
       if (!file) return;
@@ -299,7 +303,8 @@
     startKeep(S.view);
     const decisions = {};
     const head = el("div", null, "card" + (pre.duplicate ? " warn" : ""));
-    head.appendChild(el("div", "Lieferung voraussichtlich " + date(pre.expected_date), "title"));
+    head.appendChild(el("div", pre.billing ? pre.kind_text + " vom " + date(pre.doc_date) + " – für die Buchführung, bucht keinen Bestand"
+      : "Lieferung voraussichtlich " + date(pre.expected_date), "title"));
     head.appendChild(el("div", "Beleg vom " + date(pre.doc_date) + (pre.chefslist_ref ? " · Chefslist " + pre.chefslist_ref : "")
       + " · " + pre.lines.length + " Positionen", "sub"));
     if (pre.duplicate) head.appendChild(el("div", "Schon eingelesen am " + date(pre.duplicate.slice(0, 10)) + " – Speichern nicht möglich.", "title"));
@@ -344,6 +349,17 @@
         ACTIONS.forEach((a) => ch.appendChild(btn(a.label, () => choose(a.id, line, c, state, decisions))));
         c.appendChild(ch);
       }
+      if (line.prior_substitute && line.target === "unknown") {
+        // M03-36: derselbe Ersatz kam schon einmal → dauerhaft umstellen?
+        const ps = line.prior_substitute;
+        const r = el("div", null, "row");
+        r.appendChild(el("span", "Kam schon einmal als Ersatz für " + ps.name + ".", "sub"));
+        r.appendChild(btn("Wieder Ersatz für " + ps.name, () => decide(line, c, state, decisions, "substitute",
+          { raw_material_id: ps.raw_material_id, name: ps.name })));
+        r.appendChild(btn("Dauerhaft umstellen …", () => permanentSwitch(ps.name)));
+        c.appendChild(r);
+      }
+      if (pre.billing) groupRow(line, c, decisions, pre.groups);
       $("main").appendChild(c);
     });
     S.cards = cards;
@@ -355,6 +371,8 @@
         if (l.target === "unknown") return !d || !d.action
           || (l.needs_gpu && ["assign", "new", "substitute"].includes(d.action) && !d.grams_per_unit);
         if (l.target === "raw_material" && l.needs_gpu) return !d || !d.grams_per_unit;
+        if (pre.billing && !(l.booking && l.booking.id) && (l.target === "other" || (d && d.action === "other")))
+          return !d || !d.booking_group_id;                     // neue Warengruppe: Buchungsgruppe wählen (K03-84)
         return false;
       });
     }
@@ -363,7 +381,8 @@
     bottom.appendChild(btn("Beleg speichern", async () => {
       const open = missing();
       if (open.length) {
-        msg("Noch offen: Pos. " + open.map((l) => l.line_no).join(", ") + " – bitte zuordnen bzw. Gewicht eintragen.", "orange");
+        msg("Noch offen: Pos. " + open.map((l) => l.line_no).join(", ") + " – bitte zuordnen" + (pre.billing ? ", Buchungsgruppe wählen" : "")
+          + " bzw. Gewicht eintragen.", "orange");
         const first = cards[String(open[0].line_no)];
         if (first) first.card.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
@@ -379,6 +398,7 @@
           doc = await send();
         }
         stopKeep();
+        if (pre.billing) { msg(doc.kind_text + " " + doc.doc_no + " gespeichert – erscheint im Export für die Buchführung.", "blue"); bookkeeping(); return; }
         msg("Gespeichert – Lieferung " + doc.doc_no + " wartet.", "blue");
         openDelivery(doc.id);
       } catch (e) {
@@ -395,6 +415,53 @@
     }, "primary big"));
     if (pre.duplicate) bottom.firstChild.disabled = true;
     $("main").appendChild(bottom);
+  }
+
+  // Buchungsgruppe je Position (K03-81/K03-84): Vorschlag anzeigen, „Ändern“ setzt sie am Artikel (geprüft) und lernt die Warengruppe
+  function groupRow(line, card, decisions, groups) {
+    const r = el("div", null, "row");
+    const label = el("span", "", "sub");
+    const paint = () => {
+      const d = decisions[String(line.line_no)] || {};
+      const id = d.booking_group_id || (line.booking && line.booking.id);
+      const g = groups.find((x) => x.id === id);
+      label.textContent = "Buchungsgruppe: " + (g ? g.name : "– bitte wählen –")
+        + (d.booking_group_id ? " ✓" : g ? (line.booking.checked ? "" : " (Vorschlag)") : "")
+        + (line.commodity_group ? " · WG " + line.commodity_group : "");
+      label.style.color = g ? "" : "var(--high)";
+    };
+    r.appendChild(label);
+    r.appendChild(btn("Ändern", async () => {
+      const g = await pickGroup(groups, line.description);
+      if (!g) return;
+      decisions[String(line.line_no)] = Object.assign(decisions[String(line.line_no)] || {}, { booking_group_id: g.id });
+      paint();
+    }));
+    paint();
+    card.appendChild(r);
+  }
+
+  async function pickGroup(groups, text) {
+    const list = el("div", null, "list");
+    let chosen = null;
+    groups.forEach((g) => {
+      const b = el("button", g.name); b.type = "button";
+      b.addEventListener("click", () => { chosen = g; const back = document.querySelector(".dlg-back"); if (back) back.remove(); });
+      list.appendChild(b);
+    });
+    const p = RB.dialog({ nearTap: true, title: "Buchungsgruppe", text: text, content: list, buttons: [{ label: "Abbrechen", value: null }] });
+    await Promise.race([p, new Promise((res) => { const iv = setInterval(() => { if (chosen) { clearInterval(iv); res(); } }, 80);
+                                                  p.then(() => clearInterval(iv)); })]);
+    return chosen;
+  }
+
+  // M03-36: dauerhafter Herstellerwechsel nur über „Rohstoff austauschen“ (Rezepte, C3-E9, M04-7)
+  async function permanentSwitch(name) {
+    const ok = await RB.dialog({ nearTap: true, title: "Dauerhaft umstellen?",
+      text: "Derselbe Ersatz kam schon einmal für " + name + ". Dauerhaft umstellen heißt: neuer Rohstoff mit eigenem Pass, "
+        + "Rezepte werden umgehängt („Rohstoff austauschen“ bei den Rezepten). Die Seite öffnet sich dort.",
+      buttons: [{ label: "Nein, nur Ersatz", value: false }, { label: "Zu „Rohstoff austauschen“", value: true, kind: "primary" }] });
+    if (ok) location.href = RB.BASE + "admin/rezepte?view=replace&old=" + encodeURIComponent(name);
   }
 
   function gpuButton(line, decisions, state, card) {
@@ -614,7 +681,7 @@
       const it = { id: l.id, qty_milli: m.qty, rest: m.rest };
       if (m.track) it.start_tracking = true;
       if (m.sub) it.substitute = { raw_material_id: m.sub.raw_material_id, grams_per_unit: m.sub.grams_per_unit,
-                                   pack_g: m.sub.pack_g || undefined };
+                                   pack_g: m.sub.pack_g || undefined, code: m.sub.code || undefined };
       items.push(it);
     });
     if (!items.length) return;
@@ -622,6 +689,8 @@
       const res = await RB.api("receiving/deliveries/" + S.delivery.id + "/book", { method: "POST", body: { device_id: DEVICE, lines: items } });
       msg(res.lines.length + " Positionen gebucht" + (res.status === "partial" ? " – Rest bleibt offen." : "."), "blue");
       S.marks = {};
+      const rep = res.lines.find((x) => x.repeat_substitute);
+      if (rep) await permanentSwitch(rep.name);
       if (res.status === "booked") { stopCam(); S.scanning = false; listDeliveries(); }
       else openDelivery(S.delivery.id);
     } catch (e) { fail(e); }
@@ -737,6 +806,7 @@
     if (!l) return;
     const r = await makeSub(l);
     if (!r) return;
+    S.marks[l.id].sub.code = raw;          // M03-36: Code merken, um denselben Ersatz wiederzuerkennen
     S.marks[l.id].qty = 0;
     S.temp[raw] = { lineId: l.id, step: r.step };
     countLine(l, null, r.step);
@@ -930,8 +1000,10 @@
       const tr = el("tr");
       const info = el("td");
       info.appendChild(el("div", d.kind_text + " " + d.doc_no));
-      info.appendChild(el("div", "Lieferung " + date(d.expected_date) + " · " + ({ expected: "erwartet", partial: "teilweise", booked: "gebucht",
-        cancelled: "storniert" }[d.status] || d.status), "sub"));
+      info.appendChild(el("div", d.kind === "order_confirmation"
+        ? "Lieferung " + date(d.expected_date) + " · " + ({ expected: "erwartet", partial: "teilweise", booked: "gebucht",
+          cancelled: "storniert" }[d.status] || d.status)
+        : "Beleg vom " + date(d.doc_date) + " · " + euro(d.net_cents) + " netto", "sub"));
       tr.appendChild(info);
       const a = el("td");
       a.appendChild(btn("PDF", () => openPdf(d.id, d.doc_no)));
@@ -981,6 +1053,163 @@
       t2.appendChild(tr);
     });
     $("main").appendChild(t2);
+  }
+
+  // ------------------------------------------------------------ Buchführung (B1, docs/buchfuehrung-export.md)
+  async function bookkeeping() {
+    stopCam();
+    setView("Buchführung", home);
+    const main = $("main");
+    let groups = [], unchecked = [], subs = [];
+    try {
+      [groups, unchecked, subs] = await Promise.all([RB.api("admin/booking/groups?all=true"), RB.api("admin/booking/unchecked"),
+                                                     RB.api("admin/receiving/substitutes")]);
+    } catch (e) { fail(e); return; }
+    const active = groups.filter((g) => !g.archived);
+
+    // 1. Export je Monat
+    main.appendChild(el("h2", "Export für die Buchführung"));
+    const now = new Date(); now.setDate(1); now.setMonth(now.getMonth() - 1);
+    const month = el("input"); month.type = "month";
+    month.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    const r1 = el("div", null, "row");
+    r1.appendChild(month);
+    const out = el("div");
+    r1.appendChild(btn("Anzeigen", () => showMonth(month.value, out)));
+    r1.appendChild(btn("Excel herunterladen", () => download("admin/booking/export.xlsx?month=" + month.value,
+                                                              "Wareneingang_" + month.value + ".xlsx"), "primary"));
+    main.appendChild(r1);
+    main.appendChild(el("p", "Nur BÄKO-Rechnungen und -Gutschriften nach Belegdatum. Spalte „Nr.“ bleibt leer (Nummer in Excel nach unten ziehen).", "hint"));
+    main.appendChild(out);
+
+    // 2. Ungeprüfte Buchungsgruppen (K03-84)
+    main.appendChild(el("h2", "Buchungsgruppen prüfen" + (unchecked.length ? " (" + unchecked.length + ")" : "")));
+    if (!unchecked.length) main.appendChild(el("p", "Alles geprüft.", "hint"));
+    else {
+      main.appendChild(el("p", "Automatisch gesetzte Gruppen. „Passt“ bestätigt, „Ändern“ stellt um und bestätigt.", "hint"));
+      const t = el("table", null, "simple");
+      unchecked.forEach((u) => {
+        const tr = el("tr");
+        const info = el("td");
+        info.appendChild(el("div", (u.number ? u.number + " " : "") + u.name));
+        info.appendChild(el("div", u.group_name + " · " + (u.kind === "other_article" ? "Sonstiger Artikel" : u.type === "aid" ? "Hilfs- und Betriebsstoff" : "Rohstoff"), "sub"));
+        tr.appendChild(info);
+        const a = el("td");
+        const send = async (gid) => {
+          try { await RB.api("admin/booking/confirm", { method: "POST", body: { items: [{ kind: u.kind, id: u.id, booking_group_id: gid }] } }); bookkeeping(); }
+          catch (e) { fail(e); }
+        };
+        a.appendChild(btn("Passt", () => send(u.booking_group_id), "primary"));
+        a.appendChild(btn("Ändern", async () => { const g = await pickGroup(active, u.name); if (g) send(g.id); }));
+        tr.appendChild(a);
+        t.appendChild(tr);
+      });
+      main.appendChild(t);
+      main.appendChild(btn("Alle " + unchecked.length + " bestätigen", async () => {
+        try {
+          await RB.api("admin/booking/confirm", { method: "POST", body: { items: unchecked.map((u) => ({ kind: u.kind, id: u.id, booking_group_id: u.booking_group_id })) } });
+          bookkeeping();
+        } catch (e) { fail(e); }
+      }));
+    }
+
+    // 3. Ersatzware im Bestand (M03-35)
+    main.appendChild(el("h2", "Ersatzware – Pass prüfen" + (subs.length ? " (" + subs.length + ")" : "")));
+    if (!subs.length) main.appendChild(el("p", "Keine.", "hint"));
+    const t3 = el("table", null, "simple");
+    subs.forEach((x) => {
+      const tr = el("tr");
+      const info = el("td");
+      info.appendChild(el("div", x.number + " " + x.name));
+      info.appendChild(el("div", x.substitute_note || "", "sub"));
+      tr.appendChild(info);
+      const a = el("td");
+      a.appendChild(btn("Pass geprüft", async () => {
+        try { await RB.api("admin/receiving/substitutes/" + x.id + "/clear", { method: "POST" }); bookkeeping(); } catch (e) { fail(e); }
+      }, "primary"));
+      tr.appendChild(a);
+      t3.appendChild(tr);
+    });
+    main.appendChild(t3);
+
+    // 4. Gruppen pflegen (K03-79)
+    main.appendChild(el("h2", "Buchungsgruppen"));
+    main.appendChild(el("p", "Reihenfolge = Spalten im Export. Kurzname = Spaltenüberschrift.", "hint"));
+    const t4 = el("table", null, "simple");
+    groups.forEach((g) => {
+      const tr = el("tr");
+      const info = el("td");
+      info.appendChild(el("div", g.name + (g.archived ? " (archiviert)" : "")));
+      info.appendChild(el("div", "Spalte „" + g.short_name + "“", "sub"));
+      tr.appendChild(info);
+      const a = el("td");
+      const move = (d) => async () => { try { await RB.api("admin/booking/groups/" + g.id + "/move", { method: "POST", body: { direction: d } }); bookkeeping(); } catch (e) { fail(e); } };
+      a.appendChild(btn("↑", move(-1)));
+      a.appendChild(btn("↓", move(1)));
+      a.appendChild(btn("Umbenennen", () => editGroup(g)));
+      a.appendChild(btn(g.archived ? "Zurückholen" : "Archivieren", async () => {
+        try { await RB.api("admin/booking/groups/" + g.id, { method: "PATCH", body: { archived: !g.archived } }); bookkeeping(); } catch (e) { fail(e); }
+      }));
+      tr.appendChild(a);
+      t4.appendChild(tr);
+    });
+    main.appendChild(t4);
+    main.appendChild(btn("+ Neue Gruppe", () => editGroup(null)));
+  }
+
+  async function editGroup(g) {
+    const name = el("input"); name.value = g ? g.name : "";
+    const short = el("input"); short.value = g ? g.short_name : "";
+    const wrap = el("div");
+    wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
+    wrap.appendChild(el("label", "Kurzname (Spalte im Export, max. 15 Zeichen)")); wrap.appendChild(short);
+    const ok = await RB.dialog({ nearTap: true, title: g ? "Gruppe umbenennen" : "Neue Buchungsgruppe", content: wrap,
+      buttons: [{ label: "Abbrechen", value: false }, { label: "Speichern", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
+    if (!ok) return;
+    const body = { name: name.value.trim(), short_name: short.value.trim() || name.value.trim().slice(0, 15) };
+    try {
+      if (g) await RB.api("admin/booking/groups/" + g.id, { method: "PATCH", body: body });
+      else await RB.api("admin/booking/groups", { method: "POST", body: body });
+      bookkeeping();
+    } catch (e) { fail(e); }
+  }
+
+  async function showMonth(month, out) {
+    out.textContent = "";
+    let data;
+    try { data = await RB.api("admin/booking/month?month=" + month); } catch (e) { fail(e); return; }
+    if (!data.documents.length) { out.appendChild(el("p", "Keine Rechnungen oder Gutschriften in diesem Monat.", "hint")); return; }
+    if (data.unchecked) out.appendChild(el("p", "⚠ " + data.unchecked + " Positionen mit ungeprüfter Buchungsgruppe – unten prüfen.", "hint"));
+    const t = el("table", null, "simple");
+    let sum = 0;
+    data.documents.forEach((d) => {
+      sum += d.net;
+      const tr = el("tr");
+      const info = el("td");
+      info.appendChild(el("div", date(d.doc_date) + " · " + d.dealer + " · " + (d.kind === "credit_note" ? "Gutschrift " : "") + d.doc_no));
+      const parts = data.groups.filter((g) => d.groups[g.id]).map((g) => g.short_name + " " + euro(d.groups[g.id]));
+      if (d.ungrouped) parts.push("ohne Gruppe " + euro(d.ungrouped));
+      info.appendChild(el("div", parts.join(" · "), "sub"));
+      tr.appendChild(info);
+      tr.appendChild(el("td", "netto " + euro(d.net) + " · brutto " + euro(d.gross)));
+      t.appendChild(tr);
+    });
+    out.appendChild(t);
+    out.appendChild(el("p", data.documents.length + " Belege, netto " + euro(sum), "hint"));
+  }
+
+  // Datei laden und als Link anbieten (direkter Tipp – Safari/HA-App blocken Downloads nach dem Laden)
+  async function download(path, name) {
+    let res;
+    try { res = await fetch(RB.API + path, { headers: { "X-Rezeptbuch-Session": session() || "" } }); } catch (e) { fail(e); return; }
+    if (res.status === 401) { msg("Sitzung abgelaufen – bitte PIN eingeben.", "orange"); if (await ensurePin()) download(path, name); return; }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); fail(new Error(typeof d.detail === "string" ? d.detail : "Fehler " + res.status)); return; }
+    const url = URL.createObjectURL(await res.blob());
+    const a = el("a", "📥 " + name + " speichern"); a.href = url; a.download = name; a.className = "btnlink";
+    a.style.fontSize = "2.6vh";
+    const wrap = el("div"); wrap.appendChild(a);
+    await RB.dialog({ nearTap: true, title: "Export fertig", content: wrap, buttons: [{ label: "Schließen", value: true }] });
+    URL.revokeObjectURL(url);
   }
 
   // PDF in der Seite zeigen: ein neues Fenster nach dem Laden blockt Safari/HA-App (kein direkter Tipp mehr),

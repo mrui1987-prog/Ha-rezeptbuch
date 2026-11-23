@@ -1894,6 +1894,16 @@ async function start() {
   if (!(await checkSession())) return;
   // Reiter direkt öffnen: ?view=io (Import/Export, auch aus der Rohstoffverwaltung) bzw. ?view=groups (R1)
   const view = new URLSearchParams(location.search).get("view");
+  // Sprung aus dem Wareneingang „Dauerhaft umstellen?“ (M03-36): ?view=replace&old=<Rohstoffname>
+  if (view === "replace") {
+    const old = new URLSearchParams(location.search).get("old");
+    try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ }
+    try { await loadChoices(); } catch (err) { handleError(err, "list-msg"); }
+    if (old && old.length <= 200) $("rep-old").value = old;
+    showMsg("rep-msg", ""); showView("replace");
+    loadList();
+    return;
+  }
   if (view === "io" || view === "groups") {
     try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ }
     showView(view);

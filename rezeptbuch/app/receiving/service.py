@@ -14,6 +14,7 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+from ..booking import service as booking
 from ..db import transaction
 from ..db.connection import default_db_path
 from ..errors import ConflictError, NotFoundError, ValidationError
@@ -124,9 +125,9 @@ def upload(conn: sqlite3.Connection, pdf: bytes, file_name: str | None) -> dict:
 def _preview(conn, res: dict, sha: str) -> dict:
     d = res["daten"]
     kind = KINDS.get(d.get("belegart"))
-    if kind != "order_confirmation":
-        raise ConflictError(f"{KIND_TEXT.get(kind, 'Dieser Beleg')}: kommt mit Teil W2. "
-                            "Jetzt nur Auftragsbestätigungen.", code="kind_later")
+    if kind is None:
+        raise ConflictError("Belegart nicht erkannt.", code="kind_unknown")
+    billing = kind != "order_confirmation"          # Rechnung/Gutschrift (W2a): Positionen mit Buchungsgruppe
     dealer_id = _dealer(conn, d.get("haendler"))
     dup = conn.execute("SELECT created_at FROM receiving_document WHERE dealer_id = ? AND kind = ? AND doc_no = ?",
                        (dealer_id, kind, d.get("belegnummer"))).fetchone()
@@ -134,22 +135,35 @@ def _preview(conn, res: dict, sha: str) -> dict:
     for p in d.get("positionen") or []:
         art = p.get("artikelnummer")
         line = {"line_no": p.get("nr"), "article_no": art, "description": p.get("bezeichnung"),
-                "qty_milli": p.get("menge_tausendstel") or 0, "unit_code": (p.get("mengeneinheit") or "KG").upper(),
-                "pack_text": p.get("gebinde_text"), "order_item": bool(p.get("bestellartikel"))}
+                "qty_milli": abs(p.get("menge_tausendstel") or 0), "unit_code": (p.get("mengeneinheit") or "KG").upper(),
+                "pack_text": p.get("gebinde_text"), "order_item": bool(p.get("bestellartikel")),
+                "commodity_group": p.get("warengruppe"), "net_cents": p.get("netto_cent"),
+                "net_book_cents": book_cents(p), "vat_percent": p.get("mwst_prozent")}
         hit = _source_hit(conn, dealer_id, art)
         other = conn.execute("SELECT id, description FROM other_article WHERE dealer_id = ? AND article_no = ?",
                              (dealer_id, art)).fetchone() if art else None
         if hit:
             line.update(target="raw_material", raw_material_id=hit["raw_material_id"], raw_material_name=hit["name"],
                         raw_material_type=hit["type"],
-                        needs_gpu=line["unit_code"] != "KG" and hit["type"] != "aid" and not hit["grams_per_unit"])
+                        needs_gpu=line["unit_code"] != "KG" and hit["type"] != "aid" and not hit["grams_per_unit"]
+                        and not billing)
         elif other:
             line.update(target="other", other_article_id=other["id"])
         else:
             line.update(target="unknown", suggestions=_suggestions(conn, line["description"]),
-                        needs_gpu=line["unit_code"] != "KG")
+                        needs_gpu=line["unit_code"] != "KG" and not billing)
+            prior = conn.execute(   # M03-36: kam dieser Artikel schon einmal als Ersatz?
+                "SELECT l.raw_material_id, r.name FROM receiving_line l JOIN raw_material r ON r.id = l.raw_material_id "
+                "WHERE l.target = 'substitute' AND l.substitute_ref = ? ORDER BY l.id DESC LIMIT 1", (art,)).fetchone() \
+                if art else None
+            if prior:
+                line["prior_substitute"] = {"raw_material_id": prior["raw_material_id"], "name": prior["name"]}
+        if billing:
+            line["booking"] = booking.proposal(conn, dealer_id, line["commodity_group"],
+                                               raw_material_id=line.get("raw_material_id"),
+                                               other_article_id=line.get("other_article_id"))
         lines.append(line)
-    return {"kind": kind, "kind_text": KIND_TEXT[kind], "doc_no": d.get("belegnummer"), "doc_date": d.get("belegdatum"),
+    return {"kind": kind, "billing": billing, "groups": booking.list_groups(conn) if billing else None, "kind_text": KIND_TEXT[kind], "doc_no": d.get("belegnummer"), "doc_date": d.get("belegdatum"),
             "expected_date": d.get("lieferdatum_voraussichtlich"), "chefslist_ref": d.get("ihre_referenz"),
             "dealer_id": dealer_id, "net_cents": (d.get("summen") or {}).get("netto_cent"),
             "duplicate": dup["created_at"] if dup else None, "plausibility": res.get("plausibilitaet") or [],
@@ -157,6 +171,15 @@ def _preview(conn, res: dict, sha: str) -> dict:
 
 
 # -- Speichern mit Entscheidungen ---------------------------------------------------------
+
+def book_cents(p: dict) -> int | None:
+    """Betrag, mit dem eine Position in die Belegsumme eingeht – nach Skonto/Konditionen (wie der Leser rechnet)."""
+    if p.get("netto_nach_konditionen_cent") is not None:
+        return p["netto_nach_konditionen_cent"]
+    if p.get("skonto") and p["skonto"].get("cent") is not None and p.get("netto_cent") is not None:
+        return p["netto_cent"] + p["skonto"]["cent"]
+    return p.get("netto_cent")
+
 
 def _gpu(value, field: str, where: str = "", unit: str = "") -> int:
     if value is None or value == "":
@@ -209,9 +232,9 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
         dealer_id = pre["dealer_id"]
         doc_id = conn.execute(
             "INSERT INTO receiving_document (dealer_id, kind, doc_no, doc_date, expected_date, chefslist_ref, status, "
-            "reader_version, reader_json, file_name, file_sha256, net_cents) VALUES (?, ?, ?, ?, ?, ?, 'expected', ?, ?, ?, ?, ?)",
+            "reader_version, reader_json, file_name, file_sha256, net_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (dealer_id, pre["kind"], pre["doc_no"], pre["doc_date"], pre["expected_date"], pre["chefslist_ref"],
-             str(res.get("addon_version")), json.dumps(res, ensure_ascii=False), saved.get("file_name"), token,
+             "open" if pre["billing"] else "expected", str(res.get("addon_version")), json.dumps(res, ensure_ascii=False), saved.get("file_name"), token,
              pre["net_cents"])).lastrowid
         positions = {p.get("nr"): p for p in res["daten"].get("positionen") or []}
         made: dict[str, tuple[str, int]] = {}   # Artikelnummer → (Ziel, id), wenn im selben Beleg schon angelegt
@@ -221,14 +244,14 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
             target, rm_id, other_id, gpu_used, note = line["target"], line.get("raw_material_id"), \
                 line.get("other_article_id"), None, None
             where = f"Pos. {line['line_no']} ({line['description']})"
-            if target == "raw_material" and line.get("needs_gpu"):
+            if target == "raw_material" and line.get("needs_gpu") and not pre["billing"]:
                 gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
                 _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
             elif target == "unknown":
                 action = dec.get("action")
                 gpu = None
                 if action in ("assign", "new", "aid_assign", "aid_new", "substitute") and line["needs_gpu"] \
-                        and action not in ("aid_assign", "aid_new"):
+                        and action not in ("aid_assign", "aid_new") and not pre["billing"]:
                     gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
                 if action in ("assign", "aid_assign"):
                     rm_id = _int(dec.get("raw_material_id"), f"{line['line_no']}.raw_material_id", minimum=1)
@@ -272,13 +295,22 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                                           field=f"{line['line_no']}.action", code="decision_missing")
             if line["article_no"] and target in ("raw_material", "other"):
                 made.setdefault(line["article_no"], (target, rm_id if target == "raw_material" else other_id))
+            group_id = None
+            if pre["billing"]:
+                group_id = _line_group(conn, dealer_id, line, dec, where, target=target, rm_id=rm_id, other_id=other_id)
             conn.execute(
-                "INSERT INTO receiving_line (document_id, line_no, article_no, description, qty_milli, unit_code, pack_text, "
-                "price_e4, price_unit, net_cents, vat_percent, order_item, target, raw_material_id, other_article_id, "
-                "grams_per_unit_used, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (doc_id, line["line_no"], line["article_no"], line["description"], line["qty_milli"], line["unit_code"],
-                 line["pack_text"], p.get("preis_zehntausendstel_euro"), p.get("preiseinheit"), p.get("netto_cent"),
-                 p.get("mwst_prozent"), 1 if line["order_item"] else 0, target, rm_id, other_id, gpu_used, note))
+                "INSERT INTO receiving_line (document_id, line_no, article_no, description, commodity_group, qty_milli, "
+                "unit_code, pack_text, price_e4, price_unit, net_cents, vat_percent, order_item, target, raw_material_id, "
+                "other_article_id, grams_per_unit_used, note, booking_group_id, net_book_cents, substitute_ref, "
+                "order_no, delivery_note_no, delivery_date) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (doc_id, line["line_no"], line["article_no"], line["description"], line["commodity_group"],
+                 line["qty_milli"], line["unit_code"], line["pack_text"], p.get("preis_zehntausendstel_euro"),
+                 p.get("preiseinheit"), p.get("netto_cent"), p.get("mwst_prozent"), 1 if line["order_item"] else 0,
+                 target, rm_id, other_id, gpu_used, note, group_id, line["net_book_cents"],
+                 line["article_no"] if target == "substitute" else None,
+                 (p.get("auftrag") or {}).get("nummer"), (p.get("lieferung") or {}).get("nummer"),
+                 (p.get("lieferung") or {}).get("datum")))
         target_dir = documents_dir()
         target_dir.mkdir(parents=True, exist_ok=True)
         final = target_dir / f"{pre['doc_no']}-{token[:8]}.pdf"
@@ -287,6 +319,56 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
     for ext in ("pdf", "json"):
         (tmp / f"{token}.{ext}").unlink(missing_ok=True)
     return get_delivery(conn, doc_id)
+
+
+def _line_group(conn, dealer_id: int, line: dict, dec: dict, where: str, *, target: str, rm_id, other_id) -> int:
+    """Buchungsgruppe der Position (K03-81/K03-84): Wahl beim Einlesen (geprüft, gelernt) oder Vorschlag (ungeprüft)."""
+    chosen = dec.get("booking_group_id")
+    art_rm = rm_id if target in ("raw_material", "substitute") else None
+    art_other = other_id if target == "other" else None
+    if chosen is not None:
+        g = conn.execute("SELECT id FROM booking_group WHERE id = ? AND archived = 0", (chosen,)).fetchone() \
+            if isinstance(chosen, int) and not isinstance(chosen, bool) else None
+        if g is None:
+            raise ValidationError(f"{where}: Buchungsgruppe ungültig.", field=f"{line['line_no']}.booking_group_id")
+        if target != "substitute":                     # Ersatz: Gruppe gilt nur für diese Position
+            booking.set_article_group(conn, raw_material_id=art_rm, other_article_id=art_other, group_id=chosen,
+                                      checked=True)
+        booking.learn(conn, dealer_id, line["commodity_group"], chosen)
+        return chosen
+    prop = booking.proposal(conn, dealer_id, line["commodity_group"], raw_material_id=art_rm, other_article_id=art_other)
+    if prop["id"] is None:
+        raise ValidationError(f"{where}: Buchungsgruppe wählen (Warengruppe {line['commodity_group'] or '–'} ist neu).",
+                              field=f"{line['line_no']}.booking_group_id", code="group_missing")
+    if prop["source"] != "article" and target != "substitute":
+        booking.set_article_group(conn, raw_material_id=art_rm, other_article_id=art_other, group_id=prop["id"],
+                                  checked=False)
+    return prop["id"]
+
+
+def mark_substitute(conn, rm_id: int, text: str) -> None:
+    """M03-35: Marke „Ersatzware im Bestand – Pass prüfen“ am Rohstoff, bis ein Admin sie quittiert."""
+    conn.execute("UPDATE raw_material SET substitute_note = ? WHERE id = ?", (text[:300], rm_id))
+
+
+def substitute_seen(conn, rm_id: int, ref: str | None, exclude_line: int | None = None) -> bool:
+    """M03-36: kam derselbe Ersatz (fremde Artikelnummer bzw. Code) für diesen Rohstoff schon einmal?"""
+    if not ref:
+        return False
+    return conn.execute("SELECT 1 FROM receiving_line WHERE target = 'substitute' AND raw_material_id = ? "
+                        "AND substitute_ref = ? AND id IS NOT ? LIMIT 1", (rm_id, ref, exclude_line)).fetchone() is not None
+
+
+def list_substitutes(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT id, number, name, substitute_note FROM raw_material WHERE substitute_note IS NOT NULL "
+                        "ORDER BY name").fetchall()
+    return [dict(r) for r in rows]
+
+
+def clear_substitute(conn: sqlite3.Connection, rm_id: int) -> None:
+    with transaction(conn):
+        if not conn.execute("UPDATE raw_material SET substitute_note = NULL WHERE id = ?", (rm_id,)).rowcount:
+            raise NotFoundError("Rohstoff nicht gefunden.", code="not_found")
 
 
 # -- Lieferungen ---------------------------------------------------------------------------
@@ -461,6 +543,7 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
                 raise ValidationError("Rest: Rückstand oder streichen.", field=f"lines.{i}.rest")
             target, rm_id, gpu, note = line["target"], line["raw_material_id"], None, line["note"]
             sub = item.get("substitute")
+            sub_ref, repeat = None, False
             if sub:
                 rm_id = _int(sub.get("raw_material_id"), f"lines.{i}.substitute", minimum=1)
                 sub_rm = stock._row(conn, rm_id)
@@ -470,6 +553,8 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
                 if sub.get("pack_g") is not None:
                     pack_g = _int(sub.get("pack_g"), f"lines.{i}.substitute.pack_g", minimum=1, maximum=10 ** 7)
                     note += f" – Gebinde {pack_g / 1000:g} kg".replace(".", ",")
+                sub_ref = (str(sub.get("code") or "").strip()[:64]) or None
+                repeat = substitute_seen(conn, rm_id, sub_ref)
                 if line["unit_code"] != "KG" and sub_rm["type"] != "aid":
                     gpu = _gpu(sub.get("grams_per_unit"), f"lines.{i}.substitute.grams_per_unit")
                 elif sub_rm["type"] == "aid":
@@ -505,11 +590,20 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
                 state = "backorder"
             conn.execute("UPDATE receiving_line SET delivered_qty_milli = ?, grams = grams + ?, state = ?, "
                          "target = ?, raw_material_id = ?, grams_per_unit_used = coalesce(?, grams_per_unit_used), "
-                         "note = ?, stock_movement_id = coalesce(?, stock_movement_id) WHERE id = ?",
+                         "note = ?, stock_movement_id = coalesce(?, stock_movement_id), "
+                         "substitute_ref = coalesce(?, substitute_ref) WHERE id = ?",
                          (delivered, grams, state, target, rm_id, gpu if target == "substitute" else None, note,
-                          movement_id, line_id))
+                          movement_id, sub_ref, line_id))
+            if sub and qty:
+                mark_substitute(conn, rm_id, f"{doc['doc_no']} Pos. {line['line_no']}: {note or ''}")
+                if line["target"] == "substitute" and line["substitute_ref"] and not repeat:
+                    repeat = substitute_seen(conn, rm_id, line["substitute_ref"], exclude_line=line_id)
+            if not sub and qty and line["target"] == "substitute":     # Ersatz schon auf der AB (K03-32)
+                mark_substitute(conn, rm_id, f"{doc['doc_no']} Pos. {line['line_no']}: {line['note'] or ''}")
+                repeat = substitute_seen(conn, rm_id, line["substitute_ref"], exclude_line=line_id)
             results.append({"line_id": line_id, "line_no": line["line_no"], "grams": grams, "state": state,
-                            "raw_material_id": rm_id, "stock_g": booked_stock, "tracked": movement_id is not None})
+                            "raw_material_id": rm_id, "stock_g": booked_stock, "tracked": movement_id is not None,
+                            "repeat_substitute": bool(repeat)})
         states = [r["state"] for r in conn.execute("SELECT state FROM receiving_line WHERE document_id = ?", (doc_id,))]
         if all(s in ("booked", "cancelled") for s in states):
             status = "booked"
