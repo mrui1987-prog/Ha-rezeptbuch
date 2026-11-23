@@ -128,7 +128,8 @@
 
   // Vorauswahl der Einheit: gängige Einheiten und alle bereits vergebenen (Wunsch Michael 23.11.2026, 10:13)
   const COMMON_UNITS = ["Karton", "Paket", "Eimer", "Sack", "Dose"];
-  function unitChips(input) {
+  // type: nur Einheiten aus derselben Gruppe (z. B. „aid“ = Hilfs- und Betriebsstoffe), Wunsch Michael 23.11.2026, 10:47
+  function unitChips(input, type) {
     const box = el("div", null, "chips");
     function paint(units) {
       box.textContent = "";
@@ -145,6 +146,7 @@
       const seen = new Set(units.map((u) => u.toLowerCase()));
       const extra = [];
       rows.forEach((r) => {
+        if (type && r.type !== type) return;
         const u = (r.unit_label || "").trim();
         if (u && !seen.has(u.toLowerCase())) { seen.add(u.toLowerCase()); extra.push(u); }
       });
@@ -415,7 +417,7 @@
         const unit = el("input"); unit.value = line.unit_code === "KT" ? "Karton" : "VE";
         const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
         wrap.appendChild(el("label", "Einheit (Taste wählen oder tippen)")); wrap.appendChild(unit);
-        wrap.appendChild(unitChips(unit));
+        wrap.appendChild(unitChips(unit, "aid"));
         const ok = await RB.dialog({ nearTap: true, title: "Neuer Hilfs- und Betriebsstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
           { label: "Übernehmen", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
         if (ok) decide(line, card, state, decisions, "aid_new", { name: name.value.trim(), unit_label: unit.value.trim() || "VE" });
