@@ -9,6 +9,9 @@
   /* Wareneingang Teil W1 (Modul 03, docs/wareneingang.md, docs/strichcode.md 6). Touch: Tasten ≥ 56 px. */
   body { padding: 2vh 3vw; display: flex; flex-direction: column; gap: 1.6vh; min-height: 100vh; }
   header { display: flex; align-items: center; gap: 2vw; }
+  /* Meldeleiste: nicht zusammendrücken (Flex-Spalte), beim Scrollen oben sichtbar (Meldung Michael 23.11.2026, 10:49) */
+  #notice { flex-shrink: 0; position: sticky; top: 0; z-index: 40; border-radius: 8px; padding: 1.2vh 1.2vw; line-height: 1.3; }
+  #notice.hidden { display: none; }
   header h1 { margin: 0; font-size: 3.6vh; flex: 1; }
   header button { min-height: 56px; font-size: 2.4vh; }
   .hint { color: var(--muted); font-size: 2vh; margin: 0; }
@@ -274,7 +277,7 @@
       const c = el("div", null, "card");
       c.dataset.line = String(line.line_no);
       const t = el("div", line.line_no + ". " + (line.description || "–"), "title");
-      if (line.order_item) t.appendChild(el("span", "B", "tag b"));
+      if (line.order_item) t.appendChild(el("span", "Bestellartikel", "tag b"));
       c.appendChild(t);
       c.appendChild(el("div", "Art.-Nr. " + (line.article_no || "–") + " · " + fmtMilli(line.qty_milli, line.unit_code)
         + (line.pack_text ? " · " + line.pack_text : ""), "sub"));
@@ -296,8 +299,11 @@
         if (line.suggestions && line.suggestions.length) {
           const sug = el("div", null, "row");
           sug.appendChild(el("span", "Vorschlag:", "sub"));
-          line.suggestions.slice(0, 3).forEach((s) => sug.appendChild(btn(s.name, () =>
-            decide(line, c, state, decisions, s.type === "aid" ? "aid_assign" : "assign", { raw_material_id: s.id, name: s.name }))));
+          line.suggestions.slice(0, 3).forEach((s) => sug.appendChild(btn(s.name, async () => {
+            const g = s.type === "aid" ? {} : await needGpu(line); if (g === null) return;
+            decide(line, c, state, decisions, s.type === "aid" ? "aid_assign" : "assign",
+                   Object.assign({ raw_material_id: s.id, name: s.name }, g));
+          })));
           c.appendChild(sug);
         }
         const ch = el("div", null, "choices");
@@ -312,7 +318,8 @@
     function missing() {
       return pre.lines.filter((l) => {
         const d = decisions[String(l.line_no)];
-        if (l.target === "unknown") return !d || !d.action;
+        if (l.target === "unknown") return !d || !d.action
+          || (l.needs_gpu && ["assign", "new", "substitute"].includes(d.action) && !d.grams_per_unit);
         if (l.target === "raw_material" && l.needs_gpu) return !d || !d.grams_per_unit;
         return false;
       });
@@ -502,7 +509,7 @@
     top.appendChild(check);
     const name = el("div");
     const t = el("div", (m.sub ? m.sub.name + " (Ersatz)" : (l.raw_material_name || l.description)), "title");
-    if (l.order_item) t.appendChild(el("span", "B", "tag b"));
+    if (l.order_item) t.appendChild(el("span", "Bestellartikel", "tag b"));
     if (m.sub && m.sub.pack_g) t.appendChild(el("span", "Gebinde " + fmtMilli(m.sub.pack_g, "kg"), "tag"));
     if (l.unexpected) t.appendChild(el("span", "nicht erwartet", "tag"));
     if (l.state === "backorder") t.appendChild(el("span", "Rückstand", "tag"));

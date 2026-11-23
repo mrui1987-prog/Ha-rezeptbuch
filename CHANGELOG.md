@@ -3,6 +3,9 @@
 ## 0.10.27 – Wareneingang: Toleranz-Hinweis immer sichtbar, Einheiten nur aus der eigenen Gruppe
 
 - Neuer Hilfs- und Betriebsstoff: die Einheiten-Tasten zeigen neben Karton, Paket, Eimer, Sack, Dose nur Einheiten, die schon an Hilfs- und Betriebsstoffen stehen (nicht mehr die Waagen-Gebinde der Rohstoffe wie Ei, Löffel, Würfel; Wunsch Michael 10:47).
+- Fehlermeldungen lesbar: die Meldeleiste wurde in der Seitenspalte zusammengedrückt (Text lief weiß über die Karten); jetzt volle Höhe und beim Scrollen oben sichtbar (10:49).
+- Markierung „B“ heißt jetzt „Bestellartikel“ (10:48).
+- Vorschlags-Tasten bei unbekannten Positionen fragen „Gramm je ME“ ab wie „Rohstoff zuordnen“; die Prüfung vor „Beleg speichern“ erkennt auch fehlende Gramm bei zugeordneten Positionen (Ursache der Meldung „Pos. 5 … Gramm je PK fehlt“).
 - Neuer Rohstoff: der Hinweis „0 g = wird nicht gewogen (Zugabe von Hand, ohne Waage)“ steht dauerhaft unter dem Toleranzfeld, nicht erst bei 0 (Wunsch Michael 23.11.2026, 10:46). Keine Migration.
 
 ## 0.10.26 – Wareneingang: Fenster auf Höhe des angetippten Artikels, Einheiten-Vorauswahl
