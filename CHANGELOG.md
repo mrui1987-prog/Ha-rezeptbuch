@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.10.30 – Wareneingang: Kamerabild füllt den Rahmen, Ersatz aus derselben Art
+
+- Liefertag mit Kamera (iPhone): das Bild lag klein oben, der Scan-Rahmen darunter im Schwarzen. Jetzt feste Höhe, das Bild füllt die Fläche, der Rahmen liegt im Bild (Michael 23.11.2026, 18:05).
+- „Ersatz“ bei einem Hilfs- und Betriebsstoff (z. B. Coca Cola) zeigt nur Hilfs- und Betriebsstoffe statt der Mehle und fragt kein Gewicht ab (18:04). Ersatz per Scan bei Hilfs- und Betriebsstoffen zählt 1 Gebinde je Scan ohne kg-Rückfrage. Keine Migration.
+
 ## 0.10.29 – Wareneingang: Auswahlliste auf dem iPhone, PDF im Archiv, Löschen mit Zurückbuchen, Bestandsführung vorgehakt
 
 - Fenster „Zu welchem Rohstoff?“ (Zuordnen, Ersatz, unbekannter Code, Archiv „zum Rohstoff machen“): die Tasten der Liste wurden zusammengedrückt, die zweite Zeile („Rohstoff“) war abgeschnitten und lief unter die nächste Taste (Michael 23.11.2026, 17:17, iPhone). Jetzt volle Höhe, Schrift an kleine Bildschirme angepasst, Nummer fett vor dem Namen, Suchfeld „Suchen …“.

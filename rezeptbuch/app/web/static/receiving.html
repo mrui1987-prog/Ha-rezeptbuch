@@ -41,8 +41,9 @@
   .chosen { font-size: 2.3vh; font-weight: 700; color: var(--ok); }
   .card.warn .chosen { color: var(--high); }  /* offen = rot, nicht grün (Michael 23.11., 11:56) */
   .bottom { position: sticky; bottom: 0; background: #fff; padding: 1vh 0; }
-  .cam { position: relative; background: #111; border-radius: var(--radius); overflow: hidden; max-height: 40vh; }
-  .cam video { width: 100%; max-height: 40vh; display: block; object-fit: cover; }
+  /* feste Höhe, Video füllt die Fläche: auf dem iPhone lag das Bild klein oben, der Rahmen darunter (Michael 23.11., 18:05) */
+  .cam { position: relative; background: #111; border-radius: var(--radius); overflow: hidden; height: 34vh; }
+  .cam video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
   .cam .frame { position: absolute; left: 10%; right: 10%; top: 30%; bottom: 30%; border: 3px solid rgba(255,255,255,.85);
                 border-radius: 8px; pointer-events: none; }
   .cam .flash { position: absolute; inset: 0; background: rgba(40, 170, 80, .55); opacity: 0; transition: opacity .35s; }
@@ -580,10 +581,13 @@
     arow.appendChild(btn("Fehlt", () => { m.on = true; m.qty = 0; paintDelivery(); }));
     if (l.target !== "other") arow.appendChild(btn(m.sub ? "Ersatz entfernen" : "Ersatz", async () => {
       if (m.sub) { m.sub = null; Object.keys(S.temp).forEach((c) => { if (S.temp[c].lineId === l.id) delete S.temp[c]; }); paintDelivery(); return; }
-      const r = await pickMaterial("Ersatz – welcher Rohstoff kam?", "Statt " + (l.raw_material_name || l.description), (x) => x.type !== "aid");
+      // Ersatz aus derselben Art: Hilfs- und Betriebsstoff nur durch Hilfs- und Betriebsstoff (Michael 23.11., 18:04: Cola → Mehl-Liste)
+      const aid = l.raw_material_type === "aid";
+      const r = await pickMaterial(aid ? "Ersatz – was kam stattdessen?" : "Ersatz – welcher Rohstoff kam?",
+        "Statt " + (l.raw_material_name || l.description), (x) => (x.type === "aid") === aid);
       if (!r) return;
       let gpu = null;
-      if (l.unit_code !== "KG") {
+      if (l.unit_code !== "KG" && !aid) {
         gpu = await askGpu(l.unit_code, r.name, l.pack_text);
         if (!gpu) return;
       }
@@ -736,6 +740,15 @@
   async function substituteScan(raw, codeText, lines) {
     const l = await chooseLine("Ersatz für welchen Rohstoff?", "Code " + codeText + " gilt nur für diese Lieferung.", lines);
     if (!l) return;
+    if (l.raw_material_type === "aid") {      // Hilfs- und Betriebsstoff: 1 Scan = 1 Einheit, keine kg-Frage
+      const m0 = S.marks[l.id];
+      m0.sub = { raw_material_id: l.raw_material_id, name: l.raw_material_name, grams_per_unit: null, pack_g: null };
+      m0.qty = 0;
+      const st = (l.pack && l.pack.step_milli) || 1000;   // 1 Scan = 1 Gebinde laut Beleg (z. B. 1 Tray à 12 FL)
+      S.temp[raw] = { lineId: l.id, step: st };
+      countLine(l, null, st);
+      return;
+    }
     const gpu = l.unit_code === "KG" ? 1000 : l.grams_per_unit;
     const curG = l.rm_pack_g || (l.pack && l.pack.step_milli && gpu ? Math.round(l.pack.step_milli * gpu / 1000) : null);
     let packG = curG;
