@@ -60,9 +60,11 @@
   .dlg .chips .chip { min-height: 7vh; min-width: 0; font-size: 2.6vh; padding: 1vh 1.4vw; }
   .dlg .chips .chip.on { background: var(--accent, #2e7d32); color: #fff; }
   .dlg .list { display: flex; flex-direction: column; gap: .8vh; max-height: 40vh; overflow: auto; margin-top: 1vh; }
-  .dlg .list button { text-align: left; min-height: 9vh; font-size: 2.8vh; line-height: 1.25; padding: 1.4vh 1.2rem;
-                      display: block; width: 100%; box-sizing: border-box; }
-  .dlg .list button small { display: block; margin-top: .4vh; color: var(--muted); font-size: 2vh; }
+  /* flex-shrink: 0 – sonst drückt die Liste die Tasten zusammen und die zweite Zeile verschwindet (iPhone, Michael 23.11., 17:17) */
+  .dlg .list button { text-align: left; min-height: 7vh; height: auto; flex-shrink: 0; font-size: clamp(16px, 2.4vh, 24px);
+                      line-height: 1.25; padding: 1vh 1rem; display: block; width: 100%; box-sizing: border-box; }
+  .dlg .list button b { font-weight: 700; margin-right: .4em; }
+  .dlg .list button small { display: block; margin-top: .3vh; color: var(--muted); font-size: clamp(13px, 1.8vh, 18px); }
   table.simple { border-collapse: collapse; font-size: 2.1vh; width: 100%; }
   table.simple td { padding: .6vh 1vw; border-bottom: 1px solid var(--line); vertical-align: middle; }
 </style>
@@ -165,7 +167,7 @@
 
   async function pickMaterial(title, text, filter) {
     const wrap = el("div");
-    const search = el("input"); search.placeholder = "Suchen (Name oder Nummer)";
+    const search = el("input"); search.placeholder = "Suchen …"; search.type = "search";
     const list = el("div", null, "list");
     wrap.appendChild(search); wrap.appendChild(list);
     let chosen = null, closeFn = null;
@@ -175,8 +177,10 @@
       if (filter) rows = rows.filter(filter);
       list.textContent = "";
       rows.slice(0, 30).forEach((r) => {
-        const b = el("button", r.number + " " + r.name);
+        const b = el("button");
         b.type = "button";
+        b.appendChild(el("b", String(r.number)));
+        b.appendChild(document.createTextNode(r.name));
         b.appendChild(el("small", r.type === "aid" ? "Hilfs- und Betriebsstoff" : "Rohstoff"));
         b.addEventListener("click", () => { chosen = r; closeFn(); });
         list.appendChild(b);

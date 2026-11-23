@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.10.29 – Wareneingang: Auswahlliste auf dem iPhone lesbar
+
+- Fenster „Zu welchem Rohstoff?“ (Zuordnen, Ersatz, unbekannter Code, Archiv „zum Rohstoff machen“): die Tasten der Liste wurden zusammengedrückt, die zweite Zeile („Rohstoff“) war abgeschnitten und lief unter die nächste Taste (Michael 23.11.2026, 17:17, iPhone). Jetzt volle Höhe, Schrift an kleine Bildschirme angepasst, Nummer fett vor dem Namen, Suchfeld „Suchen …“. Keine Migration.
+
 ## 0.10.28 – Wareneingang: offene Positionen rot, Gewicht verständlich abfragen
 
 - „Noch nicht zugeordnet“ und „Gewicht … fehlt“ stehen jetzt rot statt grün (Karte war schon rot umrandet; Michael 23.11.2026, 11:56).
