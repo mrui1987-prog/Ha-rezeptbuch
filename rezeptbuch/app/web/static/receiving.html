@@ -63,6 +63,11 @@
   /* flex-shrink: 0 – sonst drückt die Liste die Tasten zusammen und die zweite Zeile verschwindet (iPhone, Michael 23.11., 17:17) */
   .dlg .list button { text-align: left; min-height: 7vh; height: auto; flex-shrink: 0; font-size: clamp(16px, 2.4vh, 24px);
                       line-height: 1.25; padding: 1vh 1rem; display: block; width: 100%; box-sizing: border-box; }
+  .pdfview { position: fixed; inset: 0; z-index: 60; background: #fff; display: flex; flex-direction: column; }
+  .pdfbar { display: flex; gap: 1rem; align-items: center; padding: 1vh 1rem; border-bottom: 2px solid var(--line); }
+  .pdfbar button, .pdfbar .btnlink { font-size: 2.4vh; min-height: 6vh; padding: .5em 1em; border: 2px solid var(--line);
+      border-radius: var(--radius); background: #f7f8f9; color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
+  .pdfview iframe { flex: 1; width: 100%; border: 0; -webkit-overflow-scrolling: touch; }
   .dlg .list button b { font-weight: 700; margin-right: .4em; }
   .dlg .list button small { display: block; margin-top: .3vh; color: var(--muted); font-size: clamp(13px, 1.8vh, 18px); }
   table.simple { border-collapse: collapse; font-size: 2.1vh; width: 100%; }
@@ -918,12 +923,22 @@
         cancelled: "storniert" }[d.status] || d.status), "sub"));
       tr.appendChild(info);
       const a = el("td");
-      a.appendChild(btn("PDF", () => openPdf(d.id)));
+      a.appendChild(btn("PDF", () => openPdf(d.id, d.doc_no)));
       a.appendChild(btn("Löschen", async () => {
-        const ok = await RB.dialog({ nearTap: true, title: "Beleg " + d.doc_no + " löschen?", text: "Nur möglich, solange nichts gebucht ist.",
+        const ok = await RB.dialog({ nearTap: true, title: "Beleg " + d.doc_no + " löschen?", text: "Das PDF und alle Zuordnungen dieses Belegs werden gelöscht.",
           buttons: [{ label: "Abbrechen", value: false }, { label: "Löschen", value: true, kind: "danger" }] });
         if (!ok) return;
-        try { await RB.api("admin/receiving/documents/" + d.id, { method: "DELETE" }); archive(); } catch (e) { fail(e); }
+        const url = "admin/receiving/documents/" + d.id;
+        try { await RB.api(url, { method: "DELETE" }); archive(); return; }
+        catch (e) { if (e.code !== "has_bookings") { fail(e); return; } }
+        // schon gebucht (z. B. keine Rechnung gekommen): zurückbuchen und löschen (M03-33, Michael 23.11., 17:22)
+        const rev = await RB.dialog({ nearTap: true, title: "Schon gebucht – zurückbuchen?",
+          text: "Aus " + d.doc_no + " wurden Zugänge in den Bestand gebucht. Beim Löschen werden sie zurückgebucht "
+            + "(Gegenbuchung „Rückgängig“ im Bestandsverlauf). Was inzwischen verbraucht wurde, kann den Bestand ins Minus bringen.",
+          buttons: [{ label: "Abbrechen", value: false }, { label: "Zurückbuchen und löschen", value: true, kind: "danger" }] });
+        if (!rev) return;
+        try { await RB.api(url + "?reverse=true", { method: "DELETE" }); msg("Beleg " + d.doc_no + " gelöscht, Zugänge zurückgebucht."); archive(); }
+        catch (e) { fail(e); }
       }));
       tr.appendChild(a);
       t.appendChild(tr);
@@ -957,15 +972,26 @@
     $("main").appendChild(t2);
   }
 
-  async function openPdf(id) {
+  // PDF in der Seite zeigen: ein neues Fenster nach dem Laden blockt Safari/HA-App (kein direkter Tipp mehr),
+  // daher Vollbild-Ansicht mit Schließen und Herunterladen (Michael 23.11.2026, 17:22: „PDF-Aufruf funktioniert nicht“)
+  async function openPdf(id, name) {
+    let res;
     try {
-      const res = await fetch(RB.API + "admin/receiving/documents/" + id + ".pdf", { headers: { "X-Rezeptbuch-Session": session() || "" } });
-      if (!res.ok) throw new Error("PDF nicht ladbar (" + res.status + ")");
-      const url = URL.createObjectURL(await res.blob());
-      const a = el("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (e) { fail(e); }
+      res = await fetch(RB.API + "admin/receiving/documents/" + id + ".pdf", { headers: { "X-Rezeptbuch-Session": session() || "" } });
+    } catch (e) { fail(e); return; }
+    if (res.status === 401) { msg("Sitzung abgelaufen – bitte PIN eingeben.", "orange"); if (await ensurePin()) openPdf(id, name); return; }
+    if (!res.ok) { fail(new Error("PDF nicht ladbar (" + res.status + ")")); return; }
+    const url = URL.createObjectURL(new Blob([await res.blob()], { type: "application/pdf" }));
+    const box = el("div", null, "pdfview");
+    const bar = el("div", null, "pdfbar");
+    const close = () => { box.remove(); URL.revokeObjectURL(url); };
+    bar.appendChild(btn("‹ Schließen", close));
+    const dl = el("a", "Herunterladen"); dl.href = url; dl.download = (name || "beleg") + ".pdf"; dl.className = "btnlink";
+    bar.appendChild(dl);
+    box.appendChild(bar);
+    const frame = el("iframe"); frame.src = url; frame.title = name || "Beleg";
+    box.appendChild(frame);
+    document.body.appendChild(box);
   }
 
   home();

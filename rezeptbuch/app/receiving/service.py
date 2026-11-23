@@ -372,16 +372,35 @@ def document_pdf(conn: sqlite3.Connection, doc_id: int) -> Path:
     return path
 
 
-def delete_document(conn: sqlite3.Connection, doc_id: int) -> None:
-    """Löschen nur, solange nichts gebucht ist (W1, K03-48)."""
+def delete_document(conn: sqlite3.Connection, doc_id: int, reverse: bool = False) -> dict:
+    """Beleg löschen (W1, K03-48). Mit Buchungen nur mit „zurückbuchen“ (M03-33, Michael 23.11.2026, 17:22):
+    jeder Zugang aus dem Beleg bekommt eine Gegenbuchung (Art „Rückgängig“), der Bestandsverlauf bleibt."""
+    reversed_n = 0
     with transaction(conn):
         row = _doc(conn, doc_id)
-        if conn.execute("SELECT 1 FROM receiving_line WHERE document_id = ? AND delivered_qty_milli > 0 LIMIT 1",
-                        (doc_id,)).fetchone():
-            raise ConflictError("Aus diesem Beleg ist schon etwas gebucht – Löschen nicht möglich.", code="has_bookings")
+        moves = conn.execute(
+            "SELECT m.id, m.raw_material_id, m.delta_g, m.kind FROM stock_movement m "
+            "JOIN receiving_line l ON l.id = m.receiving_line_id WHERE l.document_id = ? AND m.kind = 'receipt' "
+            "AND NOT EXISTS (SELECT 1 FROM stock_movement u WHERE u.undo_of_id = m.id)", (doc_id,)).fetchall()
+        booked = conn.execute("SELECT 1 FROM receiving_line WHERE document_id = ? AND delivered_qty_milli > 0 LIMIT 1",
+                              (doc_id,)).fetchone()
+        if (booked or moves) and not reverse:
+            raise ConflictError("Aus diesem Beleg ist schon etwas gebucht.", code="has_bookings",
+                                bookings=len(moves))
+        for m in moves:
+            rm = stock._row(conn, m["raw_material_id"])
+            if rm["stock_g"] is None or m["delta_g"] is None:
+                continue                                   # Bestand wird nicht (mehr) geführt
+            stock._book(conn, m["raw_material_id"], "undo", rm["stock_g"], rm["stock_g"] - m["delta_g"],
+                        source=RECEIVING, undo_of_id=m["id"],
+                        note=f"Beleg {row['doc_no']} gelöscht – Zugang zurückgebucht")
+            reversed_n += 1
+        conn.execute("UPDATE stock_movement SET receiving_line_id = NULL WHERE receiving_line_id IN "
+                     "(SELECT id FROM receiving_line WHERE document_id = ?)", (doc_id,))
         conn.execute("DELETE FROM receiving_document WHERE id = ?", (doc_id,))
     if row["file_path"]:
         Path(row["file_path"]).unlink(missing_ok=True)
+    return {"reversed": reversed_n}
 
 
 def add_unexpected(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:

@@ -53,8 +53,9 @@ def document_pdf(doc_id: int, db: sqlite3.Connection = Depends(get_db)):
 
 
 @router.delete("/admin/receiving/documents/{doc_id}", status_code=204, dependencies=admin)
-def delete_document(doc_id: int, db: sqlite3.Connection = Depends(get_db)):
-    service.delete_document(db, doc_id)
+def delete_document(doc_id: int, reverse: bool = False, db: sqlite3.Connection = Depends(get_db)):
+    """`?reverse=true`: gebuchte Zugänge zurückbuchen und löschen (M03-33)."""
+    service.delete_document(db, doc_id, reverse=reverse)
     return Response(status_code=204)
 
 

@@ -194,6 +194,14 @@ def test_delete_only_without_bookings(conn, env):
     _, doc2 = load(conn, env, [position(1, "1", "Weizenmehl", 1000)], no="AT2")
     rec.delete_document(conn, doc2["id"])
     assert len(rec.list_documents(conn)) == 1
+    # M03-33: zurückbuchen und löschen
+    assert rms.get_raw_material(conn, rm)["stock_g"] == 1000
+    res = rec.delete_document(conn, doc["id"], reverse=True)
+    assert res["reversed"] == 1
+    assert rms.get_raw_material(conn, rm)["stock_g"] == 0
+    assert rec.list_documents(conn) == []
+    m = conn.execute("SELECT kind, delta_g, note, receiving_line_id FROM stock_movement ORDER BY id DESC LIMIT 1").fetchone()
+    assert m["kind"] == "undo" and m["delta_g"] == -1000 and "gelöscht" in m["note"] and m["receiving_line_id"] is None
 
 
 def test_other_article_to_raw_material(conn, env):

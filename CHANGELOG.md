@@ -1,8 +1,10 @@
 # Änderungen
 
-## 0.10.29 – Wareneingang: Auswahlliste auf dem iPhone lesbar
+## 0.10.29 – Wareneingang: Auswahlliste auf dem iPhone, PDF im Archiv, Löschen mit Zurückbuchen
 
-- Fenster „Zu welchem Rohstoff?“ (Zuordnen, Ersatz, unbekannter Code, Archiv „zum Rohstoff machen“): die Tasten der Liste wurden zusammengedrückt, die zweite Zeile („Rohstoff“) war abgeschnitten und lief unter die nächste Taste (Michael 23.11.2026, 17:17, iPhone). Jetzt volle Höhe, Schrift an kleine Bildschirme angepasst, Nummer fett vor dem Namen, Suchfeld „Suchen …“. Keine Migration.
+- Fenster „Zu welchem Rohstoff?“ (Zuordnen, Ersatz, unbekannter Code, Archiv „zum Rohstoff machen“): die Tasten der Liste wurden zusammengedrückt, die zweite Zeile („Rohstoff“) war abgeschnitten und lief unter die nächste Taste (Michael 23.11.2026, 17:17, iPhone). Jetzt volle Höhe, Schrift an kleine Bildschirme angepasst, Nummer fett vor dem Namen, Suchfeld „Suchen …“.
+- Archiv: „PDF“ zeigt den Beleg jetzt in der Seite (Vollbild mit „Schließen“ und „Herunterladen“). Vorher lud der Server das PDF, das neue Fenster wurde aber von Safari/HA-App blockiert, weil es erst nach dem Laden geöffnet wurde (Michael 17:22).
+- Archiv: Beleg löschen, aus dem schon gebucht wurde – Rückfrage „Zurückbuchen und löschen“: jeder Zugang bekommt eine Gegenbuchung „Rückgängig“ mit Vermerk „Beleg … gelöscht“, der Bestandsverlauf bleibt erhalten (z. B. wenn keine Rechnung kommt; M03-33, Michael 17:22). Keine Migration.
 
 ## 0.10.28 – Wareneingang: offene Positionen rot, Gewicht verständlich abfragen
 
