@@ -348,7 +348,17 @@
         stopKeep();
         msg("Gespeichert – Lieferung " + doc.doc_no + " wartet.", "blue");
         openDelivery(doc.id);
-      } catch (e) { fail(e); }
+      } catch (e) {
+        fail(e);
+        // Fehler einer Position zuordnen: Karte rot umranden und hinscrollen
+        const m = /Pos\. (\d+)/.exec(e.message || "");
+        const hit = m && cards[m[1]];
+        if (hit) {
+          Object.values(cards).forEach((c) => { c.card.style.outline = ""; });
+          hit.card.style.outline = "3px solid #d32f2f";
+          hit.card.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
     }, "primary big"));
     if (pre.duplicate) bottom.firstChild.disabled = true;
     $("main").appendChild(bottom);

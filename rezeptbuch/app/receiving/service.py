@@ -167,7 +167,7 @@ def _gpu(value, field: str, where: str = "", unit: str = "") -> int:
                               field=field, code="gpu_invalid") from None
 
 
-def _attach_source(conn, rm_id: int, dealer_id: int, article_no: str, unit: str, gpu: int | None) -> None:
+def _attach_source(conn, rm_id: int, dealer_id: int, article_no: str, unit: str, gpu: int | None, where: str = "") -> None:
     """Bezugsquelle mit Artikelnummer anlegen bzw. leere Nummer füllen (Abschnitt 3, Taste 1)."""
     row = conn.execute("SELECT id, article_no FROM raw_material_source WHERE raw_material_id = ? AND dealer_id = ?",
                        (rm_id, dealer_id)).fetchone()
@@ -179,7 +179,8 @@ def _attach_source(conn, rm_id: int, dealer_id: int, article_no: str, unit: str,
     elif row["article_no"] in (None, article_no):
         sources.update_in_tx(conn, rm_id, row["id"], data)
     else:
-        raise ConflictError(f"Der Rohstoff hat schon die BÄKO-Artikelnummer {row['article_no']}.",
+        raise ConflictError(f"{where + ': ' if where else ''}Der Rohstoff hat schon die BÄKO-Artikelnummer {row['article_no']} – "
+                            "bitte einen anderen Rohstoff wählen.",
                             code="article_no_taken")
 
 
@@ -219,7 +220,7 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
             where = f"Pos. {line['line_no']} ({line['description']})"
             if target == "raw_material" and line.get("needs_gpu"):
                 gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
-                _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu)
+                _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
             elif target == "unknown":
                 action = dec.get("action")
                 gpu = None
@@ -232,7 +233,7 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                     if (action == "aid_assign") != (rm["type"] == "aid"):
                         raise ValidationError(f"{where}: Art passt nicht (Rohstoff/Hilfs- und Betriebsstoff).",
                                               field=f"{line['line_no']}.raw_material_id")
-                    _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu)
+                    _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
                     target = "raw_material"
                 elif action in ("new", "aid_new") and line["article_no"] and \
                         made.get(line["article_no"], ("", 0))[0] == "raw_material":
@@ -246,7 +247,7 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                     else:
                         data.update(type="aid", unit_label=dec.get("unit_label") or "VE")
                     rm_id = raw_materials.create_in_tx(conn, data)
-                    _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu)
+                    _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
                     target = "raw_material"
                 elif action == "other":
                     row = conn.execute("SELECT id FROM other_article WHERE dealer_id = ? AND article_no IS ?",

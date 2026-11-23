@@ -4,6 +4,7 @@
 
 - Neuer Hilfs- und Betriebsstoff: die Einheiten-Tasten zeigen neben Karton, Paket, Eimer, Sack, Dose nur Einheiten, die schon an Hilfs- und Betriebsstoffen stehen (nicht mehr die Waagen-Gebinde der Rohstoffe wie Ei, Löffel, Würfel; Wunsch Michael 10:47).
 - Fehlermeldungen lesbar: die Meldeleiste wurde in der Seitenspalte zusammengedrückt (Text lief weiß über die Karten); jetzt volle Höhe und beim Scrollen oben sichtbar (10:49).
+- Fehler beim Speichern nennen die Position („Pos. n: Der Rohstoff hat schon die BÄKO-Artikelnummer …“); die Seite springt zur Karte und umrandet sie rot (10:53).
 - Jede neue Ansicht beginnt oben; nach „Beleg speichern“ mit allen Zuordnungen springt die Seite also an den Anfang der Lieferung (10:50).
 - Markierung „B“ heißt jetzt „Bestellartikel“ (10:48).
 - Vorschlags-Tasten bei unbekannten Positionen fragen „Gramm je ME“ ab wie „Rohstoff zuordnen“; die Prüfung vor „Beleg speichern“ erkennt auch fehlende Gramm bei zugeordneten Positionen (Ursache der Meldung „Pos. 5 … Gramm je PK fehlt“).
