@@ -39,6 +39,7 @@
   .choices button { font-size: 2.3vh; min-height: 8vh; }
   .choices button.sel { outline: 4px solid var(--accent); outline-offset: 2px; }
   .chosen { font-size: 2.3vh; font-weight: 700; color: var(--ok); }
+  .card.warn .chosen { color: var(--high); }  /* offen = rot, nicht grün (Michael 23.11., 11:56) */
   .bottom { position: sticky; bottom: 0; background: #fff; padding: 1vh 0; }
   .cam { position: relative; background: #111; border-radius: var(--radius); overflow: hidden; max-height: 40vh; }
   .cam video { width: 100%; max-height: 40vh; display: block; object-fit: cover; }
@@ -194,6 +195,28 @@
     return result || null;
   }
 
+  // Gewicht je Mengeneinheit verständlich abfragen (Michael 23.11., 11:56: „g je Liter verwirrt“)
+  const UNIT_WORD = { L: "Liter", DS: "Dose", ST: "Stück", BT: "Beutel", KT: "Karton", EI: "Eimer", FL: "Flasche",
+                      KA: "Kanister", PK: "Paket", SCK: "Sack", VE: "Verpackungseinheit", BL: "Block", TB: "Tube" };
+  function uw(unit) { return UNIT_WORD[unit] || unit; }
+  async function askGpu(unit, name, pack) {
+    const word = uw(unit);
+    const liter = unit === "L";
+    const text = (name ? name + (pack ? " (" + pack + ")" : "") + " – " : "")
+      + (liter ? "Wasser, Milch, Sahne ≈ 1000 g · Alkohol ≈ 950 g · Öl ≈ 920 g · Sirup ≈ 1300 g"
+               : "Gewicht des Inhalts von 1 " + word + " in Gramm (z. B. 1 Dose Kirschen = 4400 g)");
+    const g = await askNumber("Wie schwer ist 1 " + word + "?", text, "g");
+    if (!g) return null;
+    const odd = liter ? (g < 500 || g > 2000) : g < 10;
+    if (odd) {
+      const ok = await RB.dialog({ nearTap: true, title: "Wirklich " + Math.round(g) + " g?",
+        text: "1 " + word + " wiegt " + Math.round(g) + " g – das ist ungewöhnlich" + (liter ? " (1 Liter ≈ 1000 g)." : "."),
+        buttons: [{ label: "Nochmal eingeben", value: false }, { label: "Ja, stimmt", value: true, kind: "primary" }] });
+      if (!ok) return askGpu(unit, name, pack);
+    }
+    return Math.round(g);
+  }
+
   async function askNumber(title, text, unit, value) {
     const v = await RB.numpad({ nearTap: true, title: title, text: text, unit: unit, decimal: true, value: value });
     if (v === null || v === "") return null;
@@ -289,7 +312,7 @@
         state.textContent = "→ " + line.raw_material_name;
         if (line.needs_gpu) {
           c.classList.add("warn");
-          state.textContent += " · Gramm je " + line.unit_code + " fehlt";
+          state.textContent += " · Gewicht je " + uw(line.unit_code) + " fehlt";
           c.appendChild(gpuButton(line, decisions, state, c));
         }
       } else if (line.target === "other") {
@@ -330,7 +353,7 @@
     bottom.appendChild(btn("Beleg speichern", async () => {
       const open = missing();
       if (open.length) {
-        msg("Noch offen: Pos. " + open.map((l) => l.line_no).join(", ") + " – bitte zuordnen bzw. Gramm eintragen.", "orange");
+        msg("Noch offen: Pos. " + open.map((l) => l.line_no).join(", ") + " – bitte zuordnen bzw. Gewicht eintragen.", "orange");
         const first = cards[String(open[0].line_no)];
         if (first) first.card.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
@@ -365,19 +388,18 @@
   }
 
   function gpuButton(line, decisions, state, card) {
-    return btn("Gramm je " + line.unit_code + " eintragen", async () => {
-      const g = await askNumber("Gewicht je " + line.unit_code, line.description + (line.pack_text ? " (" + line.pack_text + ")" : ""), "g");
+    return btn("Gewicht je " + uw(line.unit_code) + " eintragen", async () => {
+      const g = await askGpu(line.unit_code, line.description, line.pack_text);
       if (!g) return;
       decisions[String(line.line_no)] = Object.assign(decisions[String(line.line_no)] || {}, { grams_per_unit: Math.round(g) });
-      state.textContent = "→ " + (line.raw_material_name || state.dataset.name || "") + " · " + Math.round(g) + " g je " + line.unit_code;
+      state.textContent = "→ " + (line.raw_material_name || state.dataset.name || "") + " · " + Math.round(g) + " g je " + uw(line.unit_code);
       if (card) { card.classList.remove("warn"); card.classList.add("done"); }
     });
   }
 
   async function needGpu(line) {
     if (!line.needs_gpu) return {};
-    const g = await askNumber("Gewicht je " + line.unit_code, "Wie viel Gramm sind 1 " + line.unit_code + "?"
-      + (line.pack_text ? " (" + line.pack_text + ")" : ""), "g");
+    const g = await askGpu(line.unit_code, line.description, line.pack_text);
     if (!g) return null;
     return { grams_per_unit: Math.round(g) };
   }
@@ -387,7 +409,7 @@
     card.classList.remove("warn"); card.classList.add("done");
     const text = { assign: "→ ", aid_assign: "→ Hilfs- und Betriebsstoff ", new: "→ neu: ", aid_new: "→ neu (Hilfs- und Betriebsstoff): ",
                    other: "→ Sonstiger Artikel", substitute: "→ Ersatz für " }[action];
-    state.textContent = text + (extra.name || "") + (extra.grams_per_unit ? " · " + extra.grams_per_unit + " g je " + line.unit_code : "")
+    state.textContent = text + (extra.name || "") + (extra.grams_per_unit ? " · " + extra.grams_per_unit + " g je " + uw(line.unit_code) : "")
       + (copied ? " (wie Pos. " + copied + ")" : "");
     // gleicher Artikel nochmal im Beleg (z. B. Pfand): Entscheidung übernehmen, solange dort noch nichts gewählt ist
     if (copied || !line.article_no || !S.cards) return;
@@ -553,7 +575,7 @@
       if (!r) return;
       let gpu = null;
       if (l.unit_code !== "KG") {
-        gpu = await askNumber("Gewicht je " + l.unit_code, r.name + ": wie viel Gramm sind 1 " + l.unit_code + "?", "g");
+        gpu = await askGpu(l.unit_code, r.name, l.pack_text);
         if (!gpu) return;
       }
       m.sub = { raw_material_id: r.id, name: r.name, grams_per_unit: gpu ? Math.round(gpu) : null };

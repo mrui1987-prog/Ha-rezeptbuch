@@ -237,4 +237,4 @@ def test_missing_gpu_on_known_line_says_so(conn, env):
     assert pre["lines"][0]["needs_gpu"]
     with pytest.raises(ValidationError) as e:
         rec.commit(conn, {"token": pre["token"], "decisions": {}})
-    assert e.value.code == "gpu_missing" and "Pos. 1" in str(e.value) and "Gramm je BT" in str(e.value)
+    assert e.value.code == "gpu_missing" and "Pos. 1" in str(e.value) and "Gewicht je Beutel" in str(e.value)

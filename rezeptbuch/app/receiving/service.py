@@ -25,6 +25,8 @@ READER = "baeko-beleg"
 KINDS = {"auftragsbestaetigung": "order_confirmation", "rechnung": "invoice", "gutschrift": "credit_note"}
 KIND_TEXT = {"order_confirmation": "Auftragsbestätigung", "invoice": "Rechnung", "credit_note": "Gutschrift"}
 RECEIVING = "receiving"
+UNIT_WORDS = {"L": "Liter", "DS": "Dose", "ST": "Stück", "BT": "Beutel", "KT": "Karton", "EI": "Eimer", "FL": "Flasche",
+              "KA": "Kanister", "PK": "Paket", "SCK": "Sack", "VE": "Verpackungseinheit", "BL": "Block", "TB": "Tube"}
 PACK_NAMES = {"SCK": "Sack", "KT": "Karton", "EI": "Eimer", "BT": "Beutel", "DS": "Dose", "FL": "Flasche",
               "KA": "Kanister", "ST": "Stück", "VE": "VE", "PK": "Paket", "BL": "Block", "TB": "Tube"}
 _PACK = re.compile(r"^\s*(\d+)\s+(\S+)\s+(?:à|a)\s+([\d.,]+)\s+(\S+)\s*$", re.I)
@@ -158,12 +160,13 @@ def _preview(conn, res: dict, sha: str) -> dict:
 
 def _gpu(value, field: str, where: str = "", unit: str = "") -> int:
     if value is None or value == "":
-        raise ValidationError(f"{where}: Gramm je {unit} fehlt – bitte „Gramm je {unit} eintragen“ tippen.".lstrip(": "),
+        word = UNIT_WORDS.get(unit, unit)
+        raise ValidationError(f"{where}: Gewicht je {word} fehlt – bitte „Gewicht je {word} eintragen“ tippen.".lstrip(": "),
                               field=field, code="gpu_missing")
     try:
         return _int(value, field, minimum=1, maximum=1_000_000)
     except ValidationError:
-        raise ValidationError(f"{where}: Gramm je {unit} ungültig (1 bis 1 000 000).".lstrip(": "),
+        raise ValidationError(f"{where}: Gewicht je {UNIT_WORDS.get(unit, unit)} ungültig (1 bis 1 000 000).".lstrip(": "),
                               field=field, code="gpu_invalid") from None
 
 

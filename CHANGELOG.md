@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.10.28 – Wareneingang: offene Positionen rot, Gewicht verständlich abfragen
+
+- „Noch nicht zugeordnet“ und „Gewicht … fehlt“ stehen jetzt rot statt grün (Karte war schon rot umrandet; Michael 23.11.2026, 11:56).
+- Statt „Gewicht je L – Wie viel Gramm sind 1 L?“ fragt die Seite „Wie schwer ist 1 Liter?“ mit Anhaltswerten (Wasser/Milch/Sahne ≈ 1000 g, Alkohol ≈ 950 g, Öl ≈ 920 g, Sirup ≈ 1300 g); bei Dose, Beutel, Karton … „Wie schwer ist 1 Dose?“. Einheiten ausgeschrieben auch auf Tasten, Hinweisen und Server-Meldungen („Gewicht je Liter eintragen“).
+- Ungewöhnliche Werte (1 Liter unter 500 g oder über 2000 g, sonst unter 10 g) fragen „Wirklich … g?“ mit „Nochmal eingeben“. Gilt auch für Ersatz am Liefertag. Keine Migration.
+
 ## 0.10.27 – Wareneingang: Toleranz-Hinweis immer sichtbar, Einheiten nur aus der eigenen Gruppe
 
 - Neuer Hilfs- und Betriebsstoff: die Einheiten-Tasten zeigen neben Karton, Paket, Eimer, Sack, Dose nur Einheiten, die schon an Hilfs- und Betriebsstoffen stehen (nicht mehr die Waagen-Gebinde der Rohstoffe wie Ei, Löffel, Würfel; Wunsch Michael 10:47).
