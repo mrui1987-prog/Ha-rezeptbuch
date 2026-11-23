@@ -393,13 +393,8 @@
       const tol = el("input"); tol.inputMode = "decimal"; tol.value = "5";
       const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
       wrap.appendChild(el("label", "Toleranz beim Wiegen (g)")); wrap.appendChild(tol);
-      const tolHint = el("p", "", "hint");
+      const tolHint = el("p", "Hinweis: 0 g = wird nicht gewogen (Zugabe von Hand, ohne Waage)", "hint");
       tolHint.style.margin = ".2vh 0 .6vh"; tolHint.style.fontSize = "2.2vh";
-      function paintTol() {
-        const v = tol.value.trim().replace(",", ".");
-        tolHint.textContent = (v !== "" && Number(v) === 0) ? "0 g = wird nicht gewogen (Zugabe von Hand, ohne Waage)" : "";
-      }
-      tol.addEventListener("input", paintTol); paintTol();
       wrap.appendChild(tolHint);
       const ok = await RB.dialog({ nearTap: true, title: "Neuer Rohstoff", content: wrap, buttons: [{ label: "Abbrechen", value: false },
         { label: "Weiter", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });

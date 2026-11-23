@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.10.27 – Wareneingang: Toleranz-Hinweis immer sichtbar
+
+- Neuer Rohstoff: der Hinweis „0 g = wird nicht gewogen (Zugabe von Hand, ohne Waage)“ steht dauerhaft unter dem Toleranzfeld, nicht erst bei 0 (Wunsch Michael 23.11.2026, 10:46). Keine Migration.
+
 ## 0.10.26 – Wareneingang: Fenster auf Höhe des angetippten Artikels, Einheiten-Vorauswahl
 
 - Rückfrage-, Auswahl- und Zahlenfenster der Seite `/wareneingang` erscheinen auf Höhe der zuletzt angetippten Zeile statt mittig (in der HA-App ist die Seite so hoch wie ihr Inhalt, das Fenster lag weit weg).
