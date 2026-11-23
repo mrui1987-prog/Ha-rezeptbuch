@@ -108,7 +108,7 @@
     b.addEventListener("click", onClick);
     return b;
   }
-  function setView(title, back) { $("title").textContent = title; S.back = back; $("main").textContent = ""; }
+  function setView(title, back) { $("title").textContent = title; S.back = back; S.view = "view"; $("main").textContent = ""; }
   $("back").addEventListener("click", () => {
     stopCam();
     if (S.back) S.back(); else location.href = RB.BASE;
@@ -242,8 +242,22 @@
     { id: "substitute", label: "Ersatz für Rohstoff" },
   ];
 
+  // Sitzung offen halten, solange die Zuordnung eines Belegs auf dem Schirm ist (Meldung Michael 23.11.2026, 10:18):
+  // die Zuordnung braucht keine PIN-Anfragen, die Sitzung (5 min) lief währenddessen ab.
+  let keepTimer = null;
+  function stopKeep() { if (keepTimer) { clearInterval(keepTimer); keepTimer = null; } }
+  function startKeep(view) {
+    stopKeep();
+    keepTimer = setInterval(() => {
+      if (S.view !== view) { stopKeep(); return; }
+      RB.api("admin/receiving/documents").catch(() => { /* beim Speichern wird neu angemeldet */ });
+    }, 60000);
+  }
+
   function preview(pre) {
     setView(pre.kind_text + " " + (pre.doc_no || ""), uploadView);
+    S.view = "preview:" + pre.token;
+    startKeep(S.view);
     const decisions = {};
     const head = el("div", null, "card" + (pre.duplicate ? " warn" : ""));
     head.appendChild(el("div", "Lieferung voraussichtlich " + date(pre.expected_date), "title"));
@@ -287,7 +301,16 @@
     const bottom = el("div", null, "bottom");
     bottom.appendChild(btn("Beleg speichern", async () => {
       try {
-        const doc = await RB.api("admin/receiving/commit", { method: "POST", body: { token: pre.token, decisions: decisions } });
+        const send = () => RB.api("admin/receiving/commit", { method: "POST", body: { token: pre.token, decisions: decisions } });
+        let doc;
+        try { doc = await send(); }
+        catch (e) {
+          if (e.status !== 401) throw e;
+          msg("Sitzung abgelaufen – bitte PIN erneut eingeben. Deine Zuordnungen bleiben erhalten.", "orange");
+          if (!(await ensurePin())) return;
+          doc = await send();
+        }
+        stopKeep();
         msg("Gespeichert – Lieferung " + doc.doc_no + " wartet.", "blue");
         openDelivery(doc.id);
       } catch (e) { fail(e); }
