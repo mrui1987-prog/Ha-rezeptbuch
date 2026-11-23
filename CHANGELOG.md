@@ -1,6 +1,6 @@
 # Änderungen
 
-## 0.10.31 – Rechnung/Gutschrift einlesen (W2a), Export für die Buchführung (B1), Ersatzware (M03-35/36) – ENTWURF, Migration 0013 noch nicht freigegeben
+## 0.10.31 – Rechnung/Gutschrift einlesen (W2a), Export für die Buchführung (B1), Ersatzware (M03-35/36), Beleg-Foto (M03-37), „Weiter“ ohne neue Tara (M09-17/18) – ENTWURF, Migration 0013 noch nicht freigegeben
 
 - **Migration 0013:** Buchungsgruppen (neun Vorgaben: Leergut, Wurst, Spirituosen, Feinkost, Handelsware, Kaffee, Zeitung, Rohstoffe, Unkosten), gelernte Zuordnung Warengruppe → Gruppe, Gruppe + „geprüft“ an Rohstoff und sonstigem Artikel, Gruppe/Betrag nach Skonto/Ersatz-Bezug an der Belegposition, Marke „Ersatzware im Bestand“ am Rohstoff.
 - **W2a:** „Beleg hochladen“ nimmt jetzt auch BÄKO-Rechnungen und -Gutschriften. Zuordnen wie bei der AB, dazu je Position die Buchungsgruppe (Vorschlag, „Ändern“); neue Warengruppe ohne Gruppe muss einmal gewählt werden und wird gelernt. Bucht keinen Bestand, keine Preise (W2b später).
@@ -8,6 +8,9 @@
 - **M03-35:** Ersatz am Liefertag (Taste, Scan, Ersatz von der AB) setzt am Rohstoff „Ersatzware im Bestand – Pass prüfen“; Liste unter „Buchführung“ mit „Pass geprüft“.
 - **M03-36:** Kommt derselbe Ersatz (gleiche fremde Artikelnummer bzw. gleicher Code) ein zweites Mal, fragt die Seite „Dauerhaft umstellen?“ und öffnet „Rohstoff austauschen“ bei den Rezepten (neu: `admin/rezepte?view=replace&old=…`).
 - **M03-37 (Beleg-Foto zu „Zugang buchen“):** kein Beleg-Zwang; neue Taste „📷 Beleg fotografieren“ am Rohstoff (Reiter Bestand) und „📷 Beleg“ in der Schnellerfassung (nur Zugang). Das Foto wird auf dem Gerät auf höchstens 1600 px verkleinert und nach der Buchung an den Zugang gehängt (ohne PIN, nur Zugänge, ein Foto, bis 60 Minuten nach der Buchung). Ablage `belege/zugang/` neben der Datenbank; im Verlauf „📎 Beleg“ (Ansicht mit PIN). Migration 0013: `stock_movement.attachment`. Station folgt mit Modul 10 C2.
+
+- **M09-17 (Wiegeablauf, „Weiter“ ohne neue Tara):** „Weiter“ an derselben Waage tariert nicht mehr neu, wenn die Gesamtlast höchstens 5 g vom Stand beim Pausieren abweicht – das Ist der angefangenen Zutat läuft weiter (Handwaage, Pause, 45 s Waagenausfall, Neustart des Add-ons). Weicht sie ab, fragt die Station: „Schon in den Kessel gegeben“ (bisher Gewogenes zählt als Teilmenge, Rest wiegen; nur bei angefangener Zutat), „Behälter neu aufgestellt, nichts zugegeben“ (neue Tara) oder „Abbrechen“. Migration 0013: Spalten `snap_*` an `batch` (Stand der Waage dauerhaft).
+- **M09-18:** Eine angefangene Zutat wird nach einer automatischen Pause nicht an der anderen Waage übernommen (wie der Stationswechsel im Normalbetrieb): „Die Zutat ist an Waage X angefangen – bitte dort fertig wiegen und quittieren.“
 
 ## 0.10.30 – Wareneingang: Kamerabild füllt den Rahmen, Ersatz immer auf den bestellten Artikel
 

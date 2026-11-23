@@ -240,6 +240,7 @@ def _complete(conn: sqlite3.Connection, row, item, ack_type: str, actual_g, stat
         # Bestand (VC03-b, B4): Ist abziehen; nach Bedarf (Ist leer) und Unterrezept-Zeilen nichts
         stock.consume_in_tx(conn, item["raw_material_id"], actual_g, batch_id=row["id"], batch_item_id=item["id"],
                             station=station)
+    _clear_snap(conn, row["id"])                 # Stand der Zutat gilt nicht mehr (M09-17)
     nxt = _next_position(conn, row["id"], after=item["position"])
     if nxt is None:
         conn.execute("UPDATE batch SET status = 'done', finished_at = ?, current_position = NULL WHERE id = ?",
@@ -552,10 +553,11 @@ def tare(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | N
     if reference is None:
         raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
     reference = runner.tare_total(station)
-    if row["current_position"] is not None:
-        item = conn.execute("SELECT id FROM batch_item WHERE batch_id = ? AND position = ?",
-                            (batch_id, row["current_position"])).fetchone()
-        with transaction(conn):
+    with transaction(conn):
+        _clear_snap(conn, batch_id)
+        if row["current_position"] is not None:
+            item = conn.execute("SELECT id FROM batch_item WHERE batch_id = ? AND position = ?",
+                                (batch_id, row["current_position"])).fetchone()
             _event(conn, item["id"], "tare_set", station, now, tare_g=reference, note="von Hand")
     return get_batch(conn, batch_id, runner)
 
@@ -564,18 +566,82 @@ def tare(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | N
 # Pause, Handwaage, Weiter (Abschnitte 7 und 9)
 # ---------------------------------------------------------------------------
 
+SNAP_COLUMNS = ("snap_station_id", "snap_position", "snap_load_g", "snap_tare_g", "snap_scale_tare_g",
+                "snap_actual_g")
+SNAP_MIN_INTERVAL_S = 1.0       # Stand höchstens einmal je Sekunde schreiben (außer Zeile/Tara geändert)
+SNAP_MIN_CHANGE_G = 2           # … und nur, wenn sich Gesamtlast oder Ist um mindestens 2 g geändert hat
+
+
+def _clear_snap(conn, batch_id: int) -> None:
+    conn.execute("UPDATE batch SET " + ", ".join(f"{c} = NULL" for c in SNAP_COLUMNS) + " WHERE id = ?",
+                 (batch_id,))
+
+
+def _write_snap(conn, batch_id: int, station: int, position, snap: dict) -> None:
+    conn.execute(
+        "UPDATE batch SET snap_station_id = ?, snap_position = ?, snap_load_g = ?, snap_tare_g = ?, "
+        "snap_scale_tare_g = ?, snap_actual_g = ? WHERE id = ?",
+        (station, position, snap["load_g"], snap["tare_g"], snap["scale_tare_g"], snap["actual_g"], batch_id))
+
+
+def record_snapshot(conn, row, station: int, runner: ProductionRunner) -> bool:
+    """Stand der Waage für die laufende Zutat dauerhaft speichern (M09-17, aus ``automation``), damit „Weiter“
+    an derselben Station auch nach 45-s-Pause und Neustart ohne neue Tara weitergeht. Nur stabile Werte."""
+    if row["current_position"] is None:
+        return False
+    snap = runner.snapshot(station)
+    if snap is None:
+        return False
+    now = runner.clock()
+    key = (row["id"], row["current_position"], snap["tare_g"], snap["scale_tare_g"])
+    last = runner.snap_written(row["id"])
+    if last is not None and last[0] == key:
+        if now - last[1] < SNAP_MIN_INTERVAL_S:
+            return False
+        if (abs(snap["load_g"] - last[2]["load_g"]) < SNAP_MIN_CHANGE_G
+                and abs(snap["actual_g"] - last[2]["actual_g"]) < SNAP_MIN_CHANGE_G):
+            return False
+    with transaction(conn):
+        _write_snap(conn, row["id"], station, row["current_position"], snap)
+    runner.remember_snap(row["id"], key, now, snap)
+    return True
+
+
+def _current_open_item(conn, row):
+    if row["current_position"] is None:
+        return None
+    for item in _item_rows(conn, row["id"]):
+        if item["position"] == row["current_position"]:
+            return item if item["ack_type"] is None else None
+    return None
+
+
+def _started(row, item, check_g: int) -> bool:
+    """Ist die aktuelle Zutat angefangen? Teilmengen vorhanden oder Ist beim letzten Stand ≥ ``check_g``
+    (M09-16, Wert wie die Lastprüfung)."""
+    if item is None or item_kind(item) != "weigh":
+        return False
+    if item["partial_g"]:
+        return True
+    return (row["snap_position"] == item["position"] and row["snap_actual_g"] is not None
+            and row["snap_actual_g"] >= check_g)
+
+
 def pause(conn, batch_id: int, payload, runner=None, *, reason: str = "manual", now: str | None = None) -> dict:
-    """Pause (frei für jede Station, außer „Fest an Waage“) oder Handwaage (an der Station reserviert, K09-11)."""
+    """Pause (frei für jede Station, außer „Fest an Waage“) oder Handwaage (an der Station reserviert, K09-11).
+    Der Stand der Waage wird dauerhaft gespeichert (M09-17); bei Waagenausfall gilt der letzte stabile Stand."""
     now = now or utc_now()
     station = _station_of(payload)
     row = _batch_row(conn, batch_id)
     _require_running_at(row, station)
     owner = station if reason == "hand_scale" else row["fixed_station_id"]
     load = None
+    snap = None
     if runner is not None and reason != "scale_offline":
         if runner.flow(station) is not None:
             raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
         load = runner.gross(station)
+        snap = runner.snapshot(station, need_stable=False)
     with transaction(conn):
         changed = conn.execute(
             "UPDATE batch SET status = 'paused', pause_reason = ?, paused_at = ?, owner_station_id = ?, "
@@ -583,39 +649,76 @@ def pause(conn, batch_id: int, payload, runner=None, *, reason: str = "manual", 
             (reason, now, owner, load, batch_id, station)).rowcount
         if changed != 1:
             raise ConflictError("Der Teig wurde inzwischen geändert.", code="batch_changed")
+        if snap is not None and row["current_position"] is not None:
+            _write_snap(conn, batch_id, station, row["current_position"], snap)
     if runner is not None:
-        runner.remember_pause(batch_id, station, load)
+        runner.forget_snap(batch_id)
         runner.clear(station)
     return get_batch(conn, batch_id, runner)
 
 
-def _load_check(conn, row, station: int, payload, runner) -> tuple[int, int, int] | None:
-    """Lastprüfung beim „Weiter“ an derselben Station (K09-12): Gesamtlast jetzt gegen die beim Pausieren.
-    Gibt (vorher, jetzt, Abweichung) zurück, wenn die Abweichung bestätigt wurde; wirft sonst 409."""
-    memo = runner.pause_memo(row["id"]) if runner is not None else None
-    if memo is None or memo[0] != station:
-        return None                              # andere Waage oder Gesamtlast unbekannt: keine Prüfung
-    now_g = runner.gross(station)
-    if now_g is None:
-        if runner.sample(station).status == "invalid":
-            # Befund Michael 22:38: Handwaage, Behälter getauscht, an der Waage tariert und wieder abgenommen –
-            # die Waage zeigt „-----“ (unter 0 oder Überlast). Ohne gültigen Wert kein „Weiter“.
-            raise ConflictError("Die Waage zeigt keinen gültigen Wert (unter 0 oder Überlast). Bitte den Behälter "
-                                "des Teigs wieder aufstellen, dann „Weiter“.", code="resume_invalid")
-        return None                              # Waage getrennt oder Gesamtlast unbekannt: keine Prüfung
-    before = memo[1]
+RESUME_CHOICES = ("poured", "new_container")
+
+
+def _resume_plan(conn, row, station: int, payload, runner) -> dict:
+    """Was beim „Weiter“ passiert (M09-17, M09-18). Ergebnis ``mode``:
+
+    * ``keep`` – Lastprüfung bestanden: Tara-Bezug bleibt, das Ist läuft weiter,
+    * ``poured`` – „Schon in den Kessel gegeben“: Ist beim Pausieren wird Teilmenge, neue Tara,
+    * ``new_container`` – „Behälter neu aufgestellt, nichts zugegeben“: neue Tara (Ist beginnt bei 0),
+    * ``tare`` – kein gespeicherter Stand, andere Station oder Waage ohne Wert: neue Tara wie bisher.
+    Wirft 409 ``resume_deviation`` (Auswahl nötig), ``resume_invalid`` oder ``resume_started_elsewhere``."""
+    check_g = load_settings(conn)["resume_check_g"]
+    item = _current_open_item(conn, row)
+    started = _started(row, item, check_g)
+    same = row["snap_station_id"] == station
+    if not same:
+        if started:
+            # M09-18 (Michael 20:50): wie der Stationswechsel im Normalbetrieb (M09-16) – eine angefangene
+            # Zutat wird nicht an eine andere Waage übergeben
+            other = row["snap_station_id"]
+            where = f" an Waage {other}" if other else ""
+            raise ConflictError(f"Die Zutat ist{where} angefangen – bitte dort fertig wiegen und quittieren.",
+                                code="resume_started_elsewhere", station_started=other)
+        return {"mode": "tare"}
+    if runner is None or row["snap_load_g"] is None or row["snap_position"] != row["current_position"]:
+        return {"mode": "tare"}
+    sample = runner.sample(station)
+    if sample.status == "invalid":
+        # Befund Michael 22:38: Handwaage, Behälter getauscht, an der Waage tariert und wieder abgenommen –
+        # die Waage zeigt „-----“ (unter 0 oder Überlast). Ohne gültigen Wert kein „Weiter“.
+        raise ConflictError("Die Waage zeigt keinen gültigen Wert (unter 0 oder Überlast). Bitte den Behälter "
+                            "des Teigs wieder aufstellen, dann „Weiter“.", code="resume_invalid")
+    if not sample.ok:
+        return {"mode": "tare"}                  # Waage getrennt: keine Prüfung möglich
+    scale_tare = 0 if sample.net is False else row["snap_scale_tare_g"]
+    if scale_tare is None:
+        return {"mode": "tare"}
+    before = row["snap_load_g"]
+    now_g = scale_tare + sample.weight_g
     deviation = now_g - before
-    if abs(deviation) <= load_settings(conn)["resume_check_g"]:
-        return None
-    if payload.get("confirm_deviation") is not True:
-        raise ConflictError(f"Gewicht weicht um {deviation:+d} g ab – richtiger Behälter?",
-                            code="resume_deviation", deviation_g=deviation, before_g=before, now_g=now_g)
-    return before, now_g, deviation
+    plan = {"before": before, "now_g": now_g, "deviation": deviation, "scale_tare": scale_tare,
+            "tare_g": row["snap_tare_g"], "actual": row["snap_actual_g"] or 0, "item": item, "started": started}
+    if abs(deviation) <= check_g:
+        return {**plan, "mode": "keep"}
+    choice = payload.get("resume_choice")
+    if choice is None and payload.get("confirm_deviation") is True:
+        choice = "new_container"                 # bisherige Bestätigung (Prüfseite) = neu aufgestellt
+    if choice == "poured" and started:
+        return {**plan, "mode": "poured"}
+    if choice == "new_container":
+        return {**plan, "mode": "new_container"}
+    choices = (["poured"] if started else []) + ["new_container"]
+    text = f"Gewicht weicht um {deviation:+d} g ab."
+    if started:
+        text += f" Beim Pausieren lagen {plan['actual']} g der Zutat im Behälter."
+    raise ConflictError(text + " Was ist passiert?", code="resume_deviation", deviation_g=deviation,
+                        before_g=before, now_g=now_g, started=started, actual_g=plan["actual"], choices=choices)
 
 
 def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None, *, now: str | None = None) -> dict:
     """Weiter an dieser Station – atomar: die zweite Station bekommt „bereits übernommen“ (M09-11).
-    Lastprüfung an derselben Station (K09-12), danach neue Tara an dieser Station (K09-4)."""
+    An derselben Station mit bestandener Lastprüfung ohne neue Tara (M09-17), sonst neue Tara (K09-4)."""
     now = now or utc_now()
     station = station_row(conn, _station_of(payload))["id"]
     row = _batch_row(conn, batch_id)
@@ -631,7 +734,8 @@ def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None,
     busy = station_busy(conn, station)
     if busy is not None and busy["id"] != batch_id:
         raise ConflictError(f"An Waage {station} ist noch Teig {busy['batch_no']} offen.", code="station_busy")
-    checked = _load_check(conn, row, station, payload, runner)
+    plan = _resume_plan(conn, row, station, payload, runner)
+    mode = plan["mode"]
     try:
         with transaction(conn):
             changed = conn.execute(
@@ -641,17 +745,32 @@ def resume(conn, batch_id: int, payload, runner: ProductionRunner | None = None,
             if changed != 1:
                 raise ConflictError("Der Teig wurde bereits an einer anderen Waage übernommen.",
                                     code="already_resumed")
-            if checked is not None and row["current_position"] is not None:
+            item = plan.get("item")
+            if item is None and row["current_position"] is not None:
                 item = conn.execute("SELECT id FROM batch_item WHERE batch_id = ? AND position = ?",
                                     (batch_id, row["current_position"])).fetchone()
-                _event(conn, item["id"], "resume_deviation", station, now, weight_g=checked[2],
-                       note=f"Pause {checked[0]} g, jetzt {checked[1]} g – bestätigt")
+            if mode in ("poured", "new_container") and item is not None:
+                text = ("schon in den Kessel gegeben" if mode == "poured"
+                        else "Behälter neu aufgestellt, nichts zugegeben")
+                _event(conn, item["id"], "resume_deviation", station, now, weight_g=plan["deviation"],
+                       note=f"Pause {plan['before']} g, jetzt {plan['now_g']} g – bestätigt: {text}")
+                if mode == "poured":
+                    _event(conn, item["id"], "partial", station, now, weight_g=plan["actual"],
+                           tare_g=plan["tare_g"], stable=True, note="Weiter: schon in den Kessel gegeben")
+            if mode == "keep" and item is not None:
+                _event(conn, item["id"], "tare_set", station, now, tare_g=plan["tare_g"],
+                       note=f"Weiter ohne neue Tara (Pause {plan['before']} g, jetzt {plan['now_g']} g)")
+            if mode != "keep":
+                _clear_snap(conn, batch_id)
     except sqlite3.IntegrityError as exc:
         raise ConflictError(f"An Waage {station} läuft bereits ein Teig.", code="station_busy") from exc
     if runner is not None:
-        runner.forget_pause(batch_id)
-        runner.set_reference(station)
-    return get_batch(conn, batch_id, runner)
+        runner.forget_snap(batch_id)
+        if mode != "keep" or runner.keep_tare(station, plan["tare_g"], plan["scale_tare"]) is None:
+            runner.set_reference(station)
+    data = get_batch(conn, batch_id, runner)
+    data["resume_mode"] = mode
+    return data
 
 
 def pause_running(conn: sqlite3.Connection, *, reason: str = "restart", now: str | None = None) -> int:
@@ -783,6 +902,8 @@ def container(conn, batch_id: int, payload, runner: ProductionRunner, *, now: st
         # Nur beim Wechseln zählt das bisher Gewogene als Teilmenge (K09-14). Beim „Behälter wiegen“
         # beginnt die Zutat im neuen Behälter wieder bei 0 (Michael 19.11.2026, 16:18).
         partial = _store_partial(conn, row, station, runner, now) if action == "change" else 0
+        with transaction(conn):
+            _clear_snap(conn, batch_id)              # neuer Tara-Bezug folgt (M09-17)
         runner.start_flow(station, action, batch_id)
         data = get_batch(conn, batch_id, runner)
         data["partial_saved_g"] = partial

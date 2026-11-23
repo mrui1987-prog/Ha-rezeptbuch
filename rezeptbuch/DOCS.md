@@ -146,7 +146,8 @@ Aufträge, Teige, Zutaten und Protokoll liegen im Rezeptbuch; die Tablets (Modul
 - **Waage getrennt:** Nach 45 s ohne Waage wird der Teig pausiert. **Höchstlast:** Warnung 1 kg vor der Höchstlast der Waage.
 - **Pause / Weiter:** Ein pausierter Teig kann an jeder eingerichteten Waage weitergehen (außer „Fest an Waage“). „Handwaage“ hält den Teig an der Station. Nach einem Neustart des Add-ons sind laufende Teige pausiert.
 - **Abschließen:** Nach der letzten Zutat den Behälter abnehmen – die Software stellt die Waage auf Null und gibt die Station frei. Ohne Waage gibt es die Taste „Abschließen (Station frei)“.
-- **Weiter an derselben Waage:** Weicht die Gesamtlast um mehr als 5 g vom Stand bei der Pause ab, fragt die Software „richtiger Behälter?“.
+- **Weiter an derselben Waage:** Passt die Gesamtlast (höchstens 5 g Abweichung zum Stand bei der Pause), geht es **ohne neue Tara** weiter – das schon Gewogene der Zutat zählt weiter, auch nach 45 s Waagenausfall oder Neustart. Weicht sie ab, fragt die Station: „Schon in den Kessel gegeben“ (zählt als Teilmenge, Rest wiegen), „Behälter neu aufgestellt, nichts zugegeben“ (neue Tara) oder „Abbrechen“.
+- **Angefangene Zutat:** wird nicht an der anderen Waage übernommen – erst an der Waage fertig wiegen, an der sie angefangen wurde.
 - **Einstellungen** (Zeit und Wanderung der Auto-Quittung, 45 s, Vorwarnung, Tara-Bestätigung, Lastprüfung) auf der Prüfseite, Ändern mit PIN.
 - Ablauf und Regeln im Einzelnen: `docs/ablauf.md` im Repository.
 

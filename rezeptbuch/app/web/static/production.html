@@ -194,15 +194,22 @@ async function act(path, body, okText) {
     await refresh();
     return data;
   } catch (err) {
-    const EXTRA = { confirm_required: { confirm: true }, resume_deviation: { confirm_deviation: true },
+    const EXTRA = { confirm_required: { confirm: true }, resume_deviation: { resume_choice: "new_container" },
                     stock_short: { confirm_stock: true }, stock_question: { stock_keep: true } };
     if (err.status === 409 && EXTRA[err.data.code]) {
       pending = { path: path, body: Object.assign({}, body, EXTRA[err.data.code]), okText: okText };
       // Bestand (VC03-b): beim Abbruch „abgezogen lassen?“ – Ja = bleibt, „Nein, zurückbuchen“ = Rückbuchung
       pending.alt = err.data.code === "stock_question" ? Object.assign({}, body, { stock_keep: false }) : null;
+      // M09-17: „Schon in den Kessel gegeben“ nur, wenn die Zutat angefangen war
+      if (err.data.code === "resume_deviation" && (err.data.choices || []).indexOf("poured") >= 0) {
+        pending.alt = Object.assign({}, body, { resume_choice: "poured" });
+      }
       $("confirm-alt").classList.toggle("hidden", !pending.alt);
+      if (err.data.code === "resume_deviation") $("confirm-alt").textContent = "Schon in den Kessel gegeben";
+      else if (err.data.code === "stock_question") $("confirm-alt").textContent = "Nein, zurückbuchen";
       $("confirm-yes").textContent = err.data.code === "stock_question" ? "Ja, abgezogen lassen"
-        : err.data.code === "stock_short" ? "OK, trotzdem starten" : "Ja, bestätigen";
+        : err.data.code === "stock_short" ? "OK, trotzdem starten"
+        : err.data.code === "resume_deviation" ? "Behälter neu aufgestellt" : "Ja, bestätigen";
       $("confirm-no").textContent = err.data.code === "stock_question" || err.data.code === "stock_short" ? "Abbrechen" : "Nein";
       $("confirm-text").textContent = err.message;
       $("confirm").classList.remove("hidden");

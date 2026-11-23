@@ -275,14 +275,21 @@
       await refresh();
       return data;
     } catch (err) {
-      if (err.status === 409 && (err.code === "confirm_required" || err.code === "resume_deviation")) {
-        const ok = await RB.dialog({ title: err.code === "resume_deviation" ? "Gewicht weicht ab" : "Bitte bestätigen",
-          text: err.message, buttons: [{ label: "Nein", value: false },
-            { label: err.code === "resume_deviation" ? "Trotzdem weiter" : "Ja", value: true, kind: "primary" }] });
-        if (ok) {
-          const extra = err.code === "resume_deviation" ? { confirm_deviation: true } : { confirm: true };
-          return act(button, path, Object.assign({}, body || { station: ST }, extra));
-        }
+      if (err.status === 409 && err.code === "resume_deviation") {
+        // M09-17: Lastprüfung beim „Weiter“ nicht bestanden – was ist passiert? („Schon in den Kessel“ nur,
+        // wenn die Zutat angefangen war)
+        const choices = err.data.choices || ["new_container"];
+        const buttons = [{ label: "Abbrechen", value: null }];
+        if (choices.indexOf("new_container") >= 0) buttons.push({ label: "Behälter neu aufgestellt, nichts zugegeben", value: "new_container" });
+        if (choices.indexOf("poured") >= 0) buttons.push({ label: "Schon in den Kessel gegeben", value: "poured", kind: "primary" });
+        const choice = await RB.dialog({ title: "Gewicht weicht ab", text: err.message, buttons: buttons });
+        if (choice) return act(button, path, Object.assign({}, body || { station: ST }, { resume_choice: choice }));
+      } else if (err.status === 409 && err.code === "confirm_required") {
+        const ok = await RB.dialog({ title: "Bitte bestätigen", text: err.message, buttons: [{ label: "Nein", value: false },
+          { label: "Ja", value: true, kind: "primary" }] });
+        if (ok) return act(button, path, Object.assign({}, body || { station: ST }, { confirm: true }));
+      } else if (err.status === 409 && err.code === "resume_started_elsewhere") {
+        await RB.dialog({ title: "Übernahme nicht möglich", text: err.message });
       } else if (err.status === 409 && err.code === "stock_question") {
         // Bestand (VC03-b, B5): Abbruch – Gewogenes abgezogen lassen oder zurückbuchen; „Zurück“ bricht nicht ab
         const keep = await RB.dialog({ title: "Teig abbrechen – Bestand", text: err.message, buttons: [

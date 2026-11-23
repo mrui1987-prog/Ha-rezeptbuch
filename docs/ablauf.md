@@ -143,7 +143,7 @@ Sind alle Zutaten erledigt: Charge `done`, Abschlussanzeige mit Rezepthinweis un
 
 - Nur die **Besitzer-Station** darf wiegen/quittieren; die andere sieht „in Arbeit an Waage X“.
 - **Pause:** Charge `paused`, Besitzer leer (außer „Fest an Waage“: bleibt gebunden).
-- **Weiter:** `UPDATE batch SET status='running', owner_station_id=? WHERE id=? AND status='paused' AND (fest IS NULL OR fest=?)` – zählt nur, wenn genau eine Zeile geändert wurde; die zweite Station bekommt „bereits an Waage X übernommen“. Danach **neue Tara an dieser Station** (K09-4), dann Auswahl der Zutat.
+- **Weiter:** `UPDATE batch SET status='running', owner_station_id=? WHERE id=? AND status='paused' AND (fest IS NULL OR fest=?)` – zählt nur, wenn genau eine Zeile geändert wurde; die zweite Station bekommt „bereits an Waage X übernommen“. Danach **neue Tara an dieser Station** (K09-4), dann Auswahl der Zutat. **Seit M09-17 (23.11.2026):** an **derselben** Station mit bestandener Lastprüfung **keine neue Tara**, das Ist der angefangenen Zutat läuft weiter (Abschnitt 9). **Seit M09-18 (23.11.2026, 20:50):** eine **angefangene Zutat** (Teilmenge vorhanden oder Ist ≥ 5 g beim letzten gespeicherten Stand) wird **nicht an der anderen Station übernommen** – wie beim Stationswechsel im Normalbetrieb (M09-16); Meldung „Die Zutat ist an Waage X angefangen – bitte dort fertig wiegen und quittieren“ (`resume_started_elsewhere`).
 - Eine Station hat höchstens eine laufende Charge.
 - **Neustart des Add-ons:** beim Start werden alle `running` → `paused` (Grund „Neustart“).
 
@@ -157,7 +157,7 @@ Je Station ohne laufende Charge: Anzeige netto mit derselben Tara-Logik (6.2) ü
 
 **Handwaage mitten in der Verwiegung (K09-11, Michael 11:53):** Taste „Handwaage“ an der laufenden Charge → Charge `paused` mit Grund `hand_scale`, **bleibt an dieser Station reserviert** (die andere Station sieht „pausiert – Handwaage an Waage X“ und kann nicht übernehmen). Die Waage läuft als normale Waage mit Tara; jemand kann zwischendurch etwas anderes abwiegen.
 
-**Prüfung beim Zurückkehren (K09-12):** Beim Wechsel merkt sich die Software die **Gesamtlast** (Behälter + bisherige Zutaten). Bei „Weiter“ vergleicht sie die aktuelle Gesamtlast damit: Abweichung ≤ **5 g** (Einstellung `resume_check_g`) → weiter mit neuer Tara; größer → Meldung „Gewicht weicht um … g ab – richtiger Behälter?“, Weitermachen nur mit Bestätigung, die Abweichung wird protokolliert (Ereignis mit beiden Werten). Die Prüfung gilt auch für normale Pausen an derselben Station; bei Übernahme an der anderen Waage entfällt sie (andere Waage). **Zeigt die Waage beim „Weiter“ keinen gültigen Wert** (`-----`, unter 0 oder Überlast), wird „Weiter“ abgelehnt mit „Bitte den Behälter des Teigs wieder aufstellen“ (Befund Michael 19.11.2026, 22:38).
+**Prüfung beim Zurückkehren (K09-12):** Beim Wechsel merkt sich die Software die **Gesamtlast** (Behälter + bisherige Zutaten). Bei „Weiter“ vergleicht sie die aktuelle Gesamtlast damit: Abweichung ≤ **5 g** (Einstellung `resume_check_g`) → weiter mit neuer Tara; größer → Meldung „Gewicht weicht um … g ab – richtiger Behälter?“, Weitermachen nur mit Bestätigung, die Abweichung wird protokolliert (Ereignis mit beiden Werten). Die Prüfung gilt auch für normale Pausen an derselben Station; bei Übernahme an der anderen Waage entfällt sie (andere Waage). **Geändert durch M09-17 (Michael 23.11.2026, 20:28):** Abweichung ≤ 5 g → **keine neue Tara**, das Ist läuft weiter. Gilt nach Handwaage, Pause, 45-s-Pause und Neustart des Add-ons: Der Stand der Waage (Gesamtlast, Tara-Bezug als Gesamtlast, Tara der Waage, Ist, Zeile, Station) steht dauerhaft in `batch.snap_*` (Migration 0013) – geschrieben beim Pausieren und im Hintergrund bei stabilen Werten (höchstens einmal je Sekunde, ab 2 g Änderung), gelöscht nach jeder Quittung, Tara von Hand und Behälter wiegen/wechseln. Größere Abweichung → Fenster mit **drei Tasten** (`resume_choice`): **„Schon in den Kessel gegeben“** (`poured`, nur wenn die Zutat angefangen war: das Ist beim Pausieren wird Teilmenge, neue Tara, Rest = Soll − Teilmengen), **„Behälter neu aufgestellt, nichts zugegeben“** (`new_container`, neue Tara, Ist beginnt bei 0; die alte Bestätigung `confirm_deviation` gilt als diese Wahl) und **„Abbrechen“** (bleibt pausiert). Protokoll: `resume_deviation` mit der Wahl, bei „Kessel“ zusätzlich `partial`; ohne neue Tara ein `tare_set` „Weiter ohne neue Tara“. **Zeigt die Waage beim „Weiter“ keinen gültigen Wert** (`-----`, unter 0 oder Überlast), wird „Weiter“ abgelehnt mit „Bitte den Behälter des Teigs wieder aufstellen“ (Befund Michael 19.11.2026, 22:38).
 
 ## 10. Einstellungen (M09-4, Admin mit PIN)
 
@@ -191,7 +191,7 @@ Tabelle `setting` (Modul 02), Lesen ohne PIN, Ändern mit PIN (`/api/v1/admin/pr
 | `POST …/tare` | Tara von Hand |
 | `POST …/container {action: start\|none\|set, container_g?}` | Behälter wiegen, ohne Behälter, Gewicht von Hand ändern (K09-13) |
 | `POST …/container-change` | Behälter wechseln, Teilmenge speichern (K09-14) |
-| `POST …/pause` · `…/resume {station, confirm_deviation?}` | Pause / Weiter (mit Lastprüfung, K09-12) |
+| `POST …/pause` · `…/resume {station, resume_choice?}` | Pause / Weiter (Lastprüfung K09-12; ohne neue Tara bei bestandener Prüfung, sonst `resume_choice` `poured`/`new_container`, M09-17; Antwort `resume_mode` `keep`/`poured`/`new_container`/`tare`) |
 | `POST …/hand-scale` | Handwaage während der Verwiegung (Pause, reserviert, K09-11) |
 | `POST …/finish` | Abschließen von Hand (nur nötig ohne Waage; sonst schließt das Abnehmen ab) |
 | `GET/PUT /api/v1/admin/production-settings` | Einstellungen (PUT mit PIN) |
@@ -284,6 +284,7 @@ docs/ablauf.md                               dieses Dokument (ins Repo mit C1)
 | 19.11.2026, 12:22 | Michael: „Behälter wiegen“ jederzeit (mit Teilmenge mitten in einer Zutat); beim Behälterwechsel nach dem Abnehmen `tare` + `zero`. Abschnitte 6.2a, 6.2b, 15 angepasst. |
 | 19.11.2026, 12:25 | **Konzept freigegeben (Michael).** Nächster Schritt: Teil C1 (0.9.0) auf Zweig `modul09`. |
 | 19.11.2026, 22:38 | Michael: nach dem Behälter wiegen ½ s nach der letzten Tara `zero` (6.2a 4a); Befund: „Weiter“ bei ungültigem Waagenwert wird abgelehnt (9). |
+| 23.11.2026, 20:28 / 20:50 | M09-17 „Weiter“ ohne neue Tara, drei Tasten; M09-18 angefangene Zutat nicht an der anderen Station (Abschnitte 7, 9, 11). Umsetzung in 0.10.31 mit Migration 0013 (`batch.snap_*`). |
 | 19.11.2026, 23:02 | Michael: KERN verwirft `tare`/`zero` bei Unruhe und piept trotzdem → bei beiden Nullungen `tare`, ½ s, `zero`, stabil abwarten, `zero` erneut (6.2a 2 und 4a). |
 | 19.11.2026, 17:14 | Michael: beim Behälter wiegen/wechseln Pause zwischen `tare` und `zero`, `zero` bis zu zweimal wiederholen, wenn nicht bestätigt. Abschnitte 6.2a, 6.2b. |
 

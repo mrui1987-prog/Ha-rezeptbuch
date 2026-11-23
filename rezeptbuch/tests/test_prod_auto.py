@@ -353,11 +353,112 @@ def test_resume_refused_while_scale_invalid(conn, brot, runner, hub):
 
 def test_resume_other_station_no_load_check(conn, brot, runner, hub):
     conn.execute("UPDATE station SET active = 1 WHERE id = 2")
-    hub.put(1, 1300)
+    hub.put(1, 802)                                               # Zutat nicht angefangen (2 g Unruhe)
     batches.pause(conn, brot["id"], st(), runner)
     hub.put(2, 5000)
     batch = batches.resume(conn, brot["id"], st(2), runner)
-    assert batch["status"] == "running" and batch["owner_station"] == 2
+    assert batch["status"] == "running" and batch["owner_station"] == 2 and batch["resume_mode"] == "tare"
+
+
+# -- „Weiter“ ohne neue Tara, drei Tasten (M09-17) und angefangene Zutat an anderer Waage (M09-18) ------
+
+def actual_now(conn, runner, batch_id):
+    return batches.get_batch(conn, batch_id, runner)["scale"]["actual_g"]
+
+
+def test_resume_same_station_keeps_tare(conn, brot, runner, hub):
+    # Michael 20:15: 300 von 500 g, Handwaage, „Weiter“ → das Ist bleibt 300 g, keine neue Tara
+    hub.put(1, 1100)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    commands = len(hub.commands)
+    hub.put(1, 1102)
+    batch = batches.resume(conn, brot["id"], st(), runner)
+    assert batch["resume_mode"] == "keep" and len(hub.commands) == commands      # kein tare an die Waage
+    assert actual_now(conn, runner, brot["id"]) == 302
+    hub.put(1, 1800)                                              # Rest dazu: 1 000 g Mehl
+    assert actual_now(conn, runner, brot["id"]) == 1000
+    assert "Weiter ohne neue Tara" in events(conn, "tare_set")[-1][4]
+
+
+def test_resume_deviation_poured_into_kettle(conn, brot, runner, hub):
+    # Behälter mit 300 g in den Kessel gekippt, leer wieder aufgestellt (800 g) → Rest 700 g wiegen
+    hub.put(1, 1100)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    hub.put(1, 800)
+    with pytest.raises(ConflictError) as exc:
+        batches.resume(conn, brot["id"], st(), runner)
+    assert exc.value.code == "resume_deviation"
+    assert exc.value.extra["started"] is True and exc.value.extra["actual_g"] == 300
+    assert exc.value.extra["choices"] == ["poured", "new_container"]
+    batch = batches.resume(conn, brot["id"], st(resume_choice="poured"), runner)
+    assert batch["resume_mode"] == "poured"
+    assert events(conn, "partial")[-1][1] == 300
+    assert "schon in den Kessel gegeben" in events(conn, "resume_deviation")[-1][4]
+    hub.put(1, 1500)                                              # 700 g dazu (neue Tara auf 800 g)
+    assert actual_now(conn, runner, brot["id"]) == 700
+    mehl = batches.get_batch(conn, brot["id"], runner)["items"][0]
+    assert mehl["partial_g"] == 300                               # Ist gesamt 300 + 700 = 1 000 g
+
+
+def test_resume_deviation_new_container(conn, brot, runner, hub):
+    hub.put(1, 1100)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    hub.put(1, 1000)                                              # anderer, leerer Behälter
+    batch = batches.resume(conn, brot["id"], st(resume_choice="new_container"), runner)
+    assert batch["resume_mode"] == "new_container" and events(conn, "partial") == []
+    assert actual_now(conn, runner, brot["id"]) == 0
+
+
+def test_resume_deviation_not_started_two_choices(conn, brot, runner, hub):
+    hub.put(1, 801)
+    batches.pause(conn, brot["id"], st(), runner)
+    hub.put(1, 900)
+    with pytest.raises(ConflictError) as exc:
+        batches.resume(conn, brot["id"], st(resume_choice="poured"), runner)   # nicht angefangen: nicht erlaubt
+    assert exc.value.extra["started"] is False and exc.value.extra["choices"] == ["new_container"]
+
+
+def test_resume_after_offline_pause_keeps_tare(conn, brot, runner, hub, clock):
+    hub.put(1, 1100)
+    run(conn, runner, clock, 1.2)                                 # stabiler Stand wird gespeichert
+    assert conn.execute("SELECT snap_actual_g, snap_load_g FROM batch").fetchone()[:] == (300, 1100)
+    hub.put(1, None, status="offline")
+    run(conn, runner, clock, 46)
+    assert batches.get_batch(conn, brot["id"])["pause_reason"] == "scale_offline"
+    hub.put(1, 1100)
+    batch = batches.resume(conn, brot["id"], st(), runner)
+    assert batch["resume_mode"] == "keep" and actual_now(conn, runner, brot["id"]) == 300
+
+
+def test_resume_after_restart_keeps_tare(conn, brot, runner, hub, clock):
+    from app.production.runner import ProductionRunner
+    hub.put(1, 1100)
+    run(conn, runner, clock, 1.2)
+    assert batches.pause_running(conn) == 1                       # Neustart des Add-ons
+    fresh = ProductionRunner(hub, clock=clock)                    # Arbeitsspeicher leer, Waage tariert (netto)
+    batch = batches.resume(conn, brot["id"], st(), fresh)
+    assert batch["resume_mode"] == "keep" and actual_now(conn, fresh, brot["id"]) == 300
+
+
+def test_started_ingredient_not_taken_over_elsewhere(conn, brot, runner, hub, clock):
+    # M09-18 (Michael 20:50): wie der Stationswechsel im Normalbetrieb – angefangene Zutat nur an derselben Waage
+    conn.execute("UPDATE station SET active = 1 WHERE id = 2")
+    hub.put(1, 1100)
+    run(conn, runner, clock, 1.2)
+    hub.put(1, None, status="offline")
+    run(conn, runner, clock, 46)
+    hub.put(2, 700)
+    with pytest.raises(ConflictError) as exc:
+        batches.resume(conn, brot["id"], st(2), runner)
+    assert exc.value.code == "resume_started_elsewhere" and "Waage 1" in exc.value.message
+    hub.put(1, 1100)
+    assert batches.resume(conn, brot["id"], st(1), runner)["resume_mode"] == "keep"
+
+
+def test_snapshot_cleared_after_ack(conn, brot, runner, hub, clock):
+    hub.put(1, 1800)
+    batches.ack_weighed(conn, brot["id"], st(), runner)
+    assert conn.execute("SELECT snap_position, snap_actual_g FROM batch").fetchone()[:] == (None, None)
 
 
 # -- Behälter wiegen und wechseln (K09-13, K09-14) ----------------------------------------------------

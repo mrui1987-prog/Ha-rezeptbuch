@@ -1,4 +1,4 @@
--- Migration 0013 – Export für die Buchführung (B1) und Rechnung/Gutschrift einlesen (W2a), Ersatzware (M03-35/36)
+-- Migration 0013 – Export für die Buchführung (B1) und Rechnung/Gutschrift einlesen (W2a), Ersatzware (M03-35/36), „Weiter“ ohne neue Tara (M09-17)
 -- Modul 03, docs/buchfuehrung-export.md (freigegeben 23.11.2026), docs/wareneingang.md 3.
 -- ENTWURF auf Zweig `w2a-export` – Michael 23.11.2026, 20:19: „warte mit der Migration, bestimmt noch was“.
 --
@@ -52,3 +52,18 @@ ALTER TABLE receiving_line ADD COLUMN substitute_ref TEXT;
 -- M03-37: „Zugang buchen“ ohne Beleg-Zwang, aber mit Kamerataste „Beleg fotografieren“.
 -- Dateiname (ohne Pfad) in der Ablage belege/zugang neben der Datenbank; leer = kein Foto.
 ALTER TABLE stock_movement ADD COLUMN attachment TEXT;
+
+-- M09-17 (Modul 09, 23.11.2026, 20:28/20:41): „Weiter“ an derselben Station ohne neue Tara.
+-- Stand der Waage für die laufende Zutat, dauerhaft gespeichert (übersteht 45-s-Pause und Neustart):
+-- snap_station_id  Station, an der gewogen wurde
+-- snap_position    Zeile, für die der Stand gilt
+-- snap_load_g      Gesamtlast (Tara der Waage + Anzeige) – für die Lastprüfung beim „Weiter“
+-- snap_tare_g      Tara-Bezug als Gesamtlast (Gesamtlast − Ist) – Ist = Gesamtlast − snap_tare_g
+-- snap_scale_tare_g Tara der Waage selbst – damit nach einem Neustart die Gesamtlast rechenbar bleibt
+-- snap_actual_g    Ist der Zutat (ohne Teilmengen) – „angefangen“ (M09-16/M09-18) und „Schon in den Kessel“
+ALTER TABLE batch ADD COLUMN snap_station_id INTEGER;
+ALTER TABLE batch ADD COLUMN snap_position INTEGER;
+ALTER TABLE batch ADD COLUMN snap_load_g INTEGER;
+ALTER TABLE batch ADD COLUMN snap_tare_g INTEGER;
+ALTER TABLE batch ADD COLUMN snap_scale_tare_g INTEGER;
+ALTER TABLE batch ADD COLUMN snap_actual_g INTEGER;

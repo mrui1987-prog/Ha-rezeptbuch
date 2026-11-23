@@ -111,7 +111,7 @@ class ProductionRunner:
         self._stations: dict[int, StationWeigh] = {}
         self._flows: dict[int, ContainerFlow] = {}
         self._offline_seen: dict[int, float] = {}
-        self._pause_memo: dict[int, tuple[int, int]] = {}
+        self._snap_written: dict[int, tuple] = {}
         self._last_emit: dict[int, tuple[float, dict]] = {}
         self._lock = threading.RLock()
         self._task: asyncio.Task | None = None
@@ -229,22 +229,54 @@ class ProductionRunner:
             self._flows.pop(station, None)
             self._offline_seen.pop(station, None)
 
-    # ------------------------------------------------------------------ Pause und Weiter (K09-12)
+    # ------------------------------------------------------------------ Gespeicherter Stand (M09-17)
 
-    def remember_pause(self, batch_id: int, station: int, gross_g: int | None) -> None:
+    def snap_written(self, batch_id: int):
         with self._lock:
-            if gross_g is None:
-                self._pause_memo.pop(batch_id, None)
-            else:
-                self._pause_memo[batch_id] = (station, gross_g)
+            return self._snap_written.get(batch_id)
 
-    def pause_memo(self, batch_id: int) -> tuple[int, int] | None:
+    def remember_snap(self, batch_id: int, key, at: float, snap: dict) -> None:
         with self._lock:
-            return self._pause_memo.get(batch_id)
+            self._snap_written[batch_id] = (key, at, snap)
 
-    def forget_pause(self, batch_id: int) -> None:
+    def forget_snap(self, batch_id: int) -> None:
         with self._lock:
-            self._pause_memo.pop(batch_id, None)
+            self._snap_written.pop(batch_id, None)
+
+    # ------------------------------------------------------------------ Stand für „Weiter“ (M09-17)
+
+    def snapshot(self, station: int, *, need_stable: bool = True) -> dict | None:
+        """Stand der Waage für die laufende Zutat: Gesamtlast, Tara-Bezug als Gesamtlast, Tara der Waage, Ist.
+        Nur mit gültigem Wert, ohne laufende Tara und ohne Behälter-Schritt; sonst ``None``."""
+        with self._lock:
+            sw, sample, _ = self.observe(station)
+            if station in self._flows or sw.taring or not sample.ok:
+                return None
+            if need_stable and not sample.stable:
+                return None
+            gross = sw.gross(sample)
+            actual = sw.actual(sample)
+            if gross is None or actual is None:
+                return None
+            scale_tare = 0 if sample.net is False else sw.scale_tare_g
+            return {"load_g": gross, "tare_g": gross - actual, "scale_tare_g": scale_tare, "actual_g": actual}
+
+    def keep_tare(self, station: int, tare_g: int, scale_tare_g: int | None) -> int | None:
+        """„Weiter“ ohne neue Tara (M09-17): Tara der Waage und Bezug so setzen, dass Ist = Gesamtlast − ``tare_g``.
+        Gibt das Ist zurück (``None`` ohne gültigen Wert)."""
+        with self._lock:
+            sw, sample, _ = self.observe(station)
+            if not sample.ok:
+                return None
+            sw.reset_ack()
+            sw.taring_since = None
+            sw.late_tare_g = None
+            sw.hint = None
+            sw.scale_tare_g = 0 if sample.net is False else scale_tare_g
+            if sw.scale_tare_g is None:
+                return None
+            sw.reference_g = tare_g - sw.scale_tare_g
+            return sw.actual(sample)
 
     # ------------------------------------------------------------------ Behälter (K09-13, K09-14)
 

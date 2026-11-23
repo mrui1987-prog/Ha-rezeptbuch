@@ -78,6 +78,7 @@ def _station_tick(conn: sqlite3.Connection, runner: ProductionRunner, station: i
         else:
             item = _current_item(conn, row)
             if item is not None and batches.item_kind(item) == "weigh":
+                batches.record_snapshot(conn, row, station, runner)        # Stand für „Weiter“ (M09-17)
                 part = sw.actual(sample)
                 actual = None if part is None else item["partial_g"] + part
                 if sw.auto_ack(runner.clock(), actual, item["rest_target_g"], item["tolerance_g"],
