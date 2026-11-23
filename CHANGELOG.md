@@ -1,6 +1,6 @@
 # Änderungen
 
-## 0.10.31 – Rechnung/Gutschrift einlesen (W2a), Export für die Buchführung (B1), Ersatzware (M03-35/36), Beleg-Foto (M03-37), „Weiter“ ohne neue Tara (M09-17/18) – ENTWURF, Migration 0013 noch nicht freigegeben
+## 0.10.31 – Rechnung/Gutschrift einlesen (W2a), Export für die Buchführung (B1), Ersatzware (M03-35/36), Beleg-Foto (M03-37), „Weiter“ ohne neue Tara (M09-17/18)
 
 - **Migration 0013:** Buchungsgruppen (neun Vorgaben: Leergut, Wurst, Spirituosen, Feinkost, Handelsware, Kaffee, Zeitung, Rohstoffe, Unkosten), gelernte Zuordnung Warengruppe → Gruppe, Gruppe + „geprüft“ an Rohstoff und sonstigem Artikel, Gruppe/Betrag nach Skonto/Ersatz-Bezug an der Belegposition, Marke „Ersatzware im Bestand“ am Rohstoff.
 - **W2a:** „Beleg hochladen“ nimmt jetzt auch BÄKO-Rechnungen und -Gutschriften. Zuordnen wie bei der AB, dazu je Position die Buchungsgruppe (Vorschlag, „Ändern“); neue Warengruppe ohne Gruppe muss einmal gewählt werden und wird gelernt. Bucht keinen Bestand, keine Preise (W2b später).

@@ -1,6 +1,6 @@
 -- Migration 0013 – Export für die Buchführung (B1) und Rechnung/Gutschrift einlesen (W2a), Ersatzware (M03-35/36), „Weiter“ ohne neue Tara (M09-17)
 -- Modul 03, docs/buchfuehrung-export.md (freigegeben 23.11.2026), docs/wareneingang.md 3.
--- ENTWURF auf Zweig `w2a-export` – Michael 23.11.2026, 20:19: „warte mit der Migration, bestimmt noch was“.
+-- Freigegeben von Michael am 23.11.2026, 21:46 („Dann zieh jetzt alles auf Main und in HA“).
 --
 -- * booking_group: pflegbare Buchungsgruppen (K03-79), Reihenfolge = Spaltenfolge im Export
 -- * commodity_group_booking: gelernte Zuordnung Warengruppe des Händlers → Buchungsgruppe (K03-84)
