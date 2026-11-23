@@ -581,17 +581,12 @@
     arow.appendChild(btn("Fehlt", () => { m.on = true; m.qty = 0; paintDelivery(); }));
     if (l.target !== "other") arow.appendChild(btn(m.sub ? "Ersatz entfernen" : "Ersatz", async () => {
       if (m.sub) { m.sub = null; Object.keys(S.temp).forEach((c) => { if (S.temp[c].lineId === l.id) delete S.temp[c]; }); paintDelivery(); return; }
-      // Ersatz aus derselben Art: Hilfs- und Betriebsstoff nur durch Hilfs- und Betriebsstoff (Michael 23.11., 18:04: Cola → Mehl-Liste)
-      const aid = l.raw_material_type === "aid";
-      const r = await pickMaterial(aid ? "Ersatz – was kam stattdessen?" : "Ersatz – welcher Rohstoff kam?",
-        "Statt " + (l.raw_material_name || l.description), (x) => (x.type === "aid") === aid);
-      if (!r) return;
-      let gpu = null;
-      if (l.unit_code !== "KG" && !aid) {
-        gpu = await askGpu(l.unit_code, r.name, l.pack_text);
-        if (!gpu) return;
-      }
-      m.sub = { raw_material_id: r.id, name: r.name, grams_per_unit: gpu ? Math.round(gpu) : null };
+      const ok = await RB.dialog({ nearTap: true, title: "Ersatz für " + (l.raw_material_name || l.description) + "?",
+        text: "Andere Marke oder anderer Hersteller statt des bestellten Artikels. Gebucht wird auf "
+          + (l.raw_material_name || l.description) + " mit Vermerk „Ersatz … anderer Hersteller, Pass prüfen“.",
+        buttons: [{ label: "Abbrechen", value: false }, { label: "Ja, Ersatz", value: true, kind: "primary" }] });
+      if (!ok) return;
+      if (!(await makeSub(l))) return;
       m.on = true; paintDelivery();
     }));
     if (m.on && m.qty < l.remaining_milli) {
@@ -738,16 +733,23 @@
   }
 
   async function substituteScan(raw, codeText, lines) {
-    const l = await chooseLine("Ersatz für welchen Rohstoff?", "Code " + codeText + " gilt nur für diese Lieferung.", lines);
+    const l = await chooseLine("Ersatz für welchen Artikel?", "Code " + codeText + " gilt nur für diese Lieferung.", lines);
     if (!l) return;
-    if (l.raw_material_type === "aid") {      // Hilfs- und Betriebsstoff: 1 Scan = 1 Einheit, keine kg-Frage
-      const m0 = S.marks[l.id];
-      m0.sub = { raw_material_id: l.raw_material_id, name: l.raw_material_name, grams_per_unit: null, pack_g: null };
-      m0.qty = 0;
-      const st = (l.pack && l.pack.step_milli) || 1000;   // 1 Scan = 1 Gebinde laut Beleg (z. B. 1 Tray à 12 FL)
-      S.temp[raw] = { lineId: l.id, step: st };
-      countLine(l, null, st);
-      return;
+    const r = await makeSub(l);
+    if (!r) return;
+    S.marks[l.id].qty = 0;
+    S.temp[raw] = { lineId: l.id, step: r.step };
+    countLine(l, null, r.step);
+  }
+
+  // Ersatz = andere Marke/anderer Hersteller für den BESTELLTEN Artikel; gebucht wird immer auf ihn
+  // (M03-17; Michael 23.11.2026, 19:48: keine Auswahlliste, kein neuer Artikel – sonst zerfällt Bestand,
+  // Rezepte, Meldewert, Inventur und Kasse auf Einmal-Artikel). Nur die Gebindegröße wird gefragt.
+  async function makeSub(l) {
+    const m = S.marks[l.id];
+    if (l.raw_material_type === "aid") {      // Hilfs- und Betriebsstoff/Handelsware: in Einheiten, keine kg-Frage
+      m.sub = { raw_material_id: l.raw_material_id, name: l.raw_material_name, grams_per_unit: null, pack_g: null };
+      return { step: (l.pack && l.pack.step_milli) || 1000 };
     }
     const gpu = l.unit_code === "KG" ? 1000 : l.grams_per_unit;
     const curG = l.rm_pack_g || (l.pack && l.pack.step_milli && gpu ? Math.round(l.pack.step_milli * gpu / 1000) : null);
@@ -757,22 +759,18 @@
           + ". Hat das Ersatz-Gebinde dieselbe Größe?",
         buttons: [{ label: "Abbrechen", value: null }, { label: "Nein, andere Größe", value: "no" },
                   { label: "Ja, gleich", value: "yes", kind: "primary" }] });
-      if (same === null || same === undefined) return;
+      if (same === null || same === undefined) return null;
       if (same === "no") packG = null;
     }
     if (!packG) {
       const kg = await askNumber("Größe des Ersatz-Gebindes", (l.raw_material_name || "") + ": wie viel kg hat 1 Gebinde?", "kg");
-      if (!kg) return;
+      if (!kg) return null;
       packG = Math.round(kg * 1000);
     }
-    const m = S.marks[l.id];
     const useGpu = l.unit_code === "KG" ? null : (packG !== curG || !gpu ? packG : gpu);
     m.sub = { raw_material_id: l.raw_material_id, name: l.raw_material_name, grams_per_unit: useGpu,
               pack_g: packG !== curG ? packG : null };
-    m.qty = 0;
-    const step = Math.round(packG * 1000 / (useGpu || gpu || 1000));
-    S.temp[raw] = { lineId: l.id, step: step };
-    countLine(l, null, step);
+    return { step: Math.round(packG * 1000 / (useGpu || gpu || 1000)) };
   }
 
   // ------------------------------------------------------------ Kamera (wie Scan-Seite)

@@ -1,9 +1,9 @@
 # Änderungen
 
-## 0.10.30 – Wareneingang: Kamerabild füllt den Rahmen, Ersatz aus derselben Art
+## 0.10.30 – Wareneingang: Kamerabild füllt den Rahmen, Ersatz immer auf den bestellten Artikel
 
 - Liefertag mit Kamera (iPhone): das Bild lag klein oben, der Scan-Rahmen darunter im Schwarzen. Jetzt feste Höhe, das Bild füllt die Fläche, der Rahmen liegt im Bild (Michael 23.11.2026, 18:05).
-- „Ersatz“ bei einem Hilfs- und Betriebsstoff (z. B. Coca Cola) zeigt nur Hilfs- und Betriebsstoffe statt der Mehle und fragt kein Gewicht ab (18:04). Ersatz per Scan bei Hilfs- und Betriebsstoffen zählt 1 Gebinde je Scan ohne kg-Rückfrage. Keine Migration.
+- „Ersatz“ am Liefertag bucht immer auf den bestellten Artikel (andere Marke/anderer Hersteller, Vermerk „Pass prüfen“) – keine Auswahlliste mehr, kein neuer Artikel; nur die Gebindegröße wird gefragt, bei Hilfs- und Betriebsstoffen gar nichts (Michael 18:04/19:48: als Ersatz für Cola nicht in Apfelschorle buchen, für Weizenmehl 550 von Hersteller Y keinen neuen Rohstoff anlegen). Taste und Scan nutzen denselben Ablauf. Keine Migration.
 
 ## 0.10.29 – Wareneingang: Auswahlliste auf dem iPhone, PDF im Archiv, Löschen mit Zurückbuchen, Bestandsführung vorgehakt
 
