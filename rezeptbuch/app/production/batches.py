@@ -945,6 +945,34 @@ def container(conn, batch_id: int, payload, runner: ProductionRunner, *, now: st
 # Handbetrieb (Abschnitt 9, M09-13)
 # ---------------------------------------------------------------------------
 
+HAND_ZERO_LIMIT_G = 50      # Null am Tablet nur, wenn die Gesamtlast der Software höchstens so groß ist (M09-19)
+
+
+def hand_zero(conn, station_no, runner: ProductionRunner) -> dict:
+    """Taste „Null“ am Tablet (Handwaage, Handbetrieb; Michael 24.11.2026, 04:37: „Nummer 2“): nur bei wirklich
+    leerer Waage. Geprüft wird die **Gesamtlast der Software**, nicht die Anzeige – eine tarierte Waage mit
+    Behälter zeigt netto 0 und sähe leer aus; die KERN würde beim Nullen die Tara löschen (M09-19)."""
+    station = station_row(conn, station_no)["id"]
+    if conn.execute("SELECT 1 FROM batch WHERE owner_station_id = ? AND status = 'running'", (station,)).fetchone():
+        raise ConflictError("An dieser Station läuft ein Teig – Null nur in Handwaage oder Handbetrieb.",
+                            code="batch_running")
+    if runner.flow(station) is not None:
+        raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
+    sample = runner.sample(station)
+    if sample.status != "invalid":                 # „-----“ = Last abgenommen (Z07-2): Null erlaubt
+        if not sample.ok:
+            raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
+        gross = runner.gross(station)
+        if gross is None or abs(gross) > HAND_ZERO_LIMIT_G:
+            load = "" if gross is None else f" (auf der Waage liegen {gross} g)"
+            raise ConflictError(f"Null nur bei leerer Waage{load}. Erst alles von der Waage nehmen.",
+                                code="scale_not_empty", gross_g=gross)
+    result = runner.zero(station)
+    if result != "sent":
+        raise ConflictError(f"Null nicht gesendet ({result}).", code="zero_not_sent")
+    return runner.reading(station).to_dict()
+
+
 def hand_tare(conn, station_no, runner: ProductionRunner) -> dict:
     """Tara im Handbetrieb: nur ohne laufenden Teig an der Station (Handwaage-Pause ist erlaubt)."""
     station = station_row(conn, station_no)["id"]

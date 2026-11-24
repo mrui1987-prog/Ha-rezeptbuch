@@ -56,6 +56,7 @@ class StationWeigh:
     last: Sample | None = None
     last_at: float | None = None         # Zeit des letzten Werts (Sprung-Erkennung)
     hidden_g: int = 0                    # Last, die ein Nullstellen von Hand an der Waage „versteckt“ hat
+    manual_delta_g: int | None = None    # letzter erkannter Sprung durch eine Taste an der Waage
     # Auto-Quittung
     ack_since: float | None = None
     ack_min: int | None = None
@@ -98,31 +99,32 @@ class StationWeigh:
         else:
             self.scale_tare_g, self.hidden_g = offset, 0
 
-    def _manual_jump(self, previous: Sample | None, sample: Sample, now: float, span_g: int) -> str | None:
-        """Tara oder Null von Hand an der Waage, während kein Teig gewogen wird (Handwaage, Pause).
-        Erkannt, wenn die tarierte Waage (netto) von einem Wert über ``span_g`` **ohne Zwischenwert** innerhalb
-        zwischen zwei Beobachtungen (höchstens ``MANUAL_JUMP_S`` auseinander) auf ~0 springt – Abnehmen geht bei tarierter Waage ins Minus (``-----``), Abheben
-        von Hand zeigt meist Zwischenwerte. Oder die Waage springt von brutto auf netto (~0) = Tara von Hand.
-        Die Gesamtlast bleibt dadurch richtig (Michael 23.11.2026, 21:36: Null während der Handwaage)."""
+    def _manual_jump(self, previous: Sample | None, sample: Sample, now: float, span_g: int) -> tuple[str, int] | None:
+        """Tara oder Null von Hand an der Waage (M09-19: Tasten an der Waage ändern nie Ist oder Tara der Software).
+        Erkannt, wenn eine ruhige, tarierte Anzeige (netto) zwischen zwei Beobachtungen (höchstens
+        ``MANUAL_JUMP_S`` auseinander) **ohne Zwischenwert** auf ~0 springt – Abnehmen geht bei tarierter Waage ins
+        Minus (``-----``). Netto danach = Tara von Hand; brutto danach = Null von Hand (die KERN löscht dabei die
+        Tara und „versteckt“ die Last). Ebenso brutto → netto ~0 = Tara von Hand. Der Ausgleich (Gesamtlast −
+        Anzeige) wächst um den Sprung, die Gesamtlast bleibt. Gibt (Art, Sprung in g) zurück."""
         if previous is None or not previous.ok or not previous.stable or not sample.ok or abs(sample.weight_g) > span_g:
             return None                                    # vorher muss die Last ruhig gelegen haben
         if self.last_at is None or now - self.last_at > MANUAL_JUMP_S:
             return None
+        delta = previous.weight_g - sample.weight_g
         if previous.net is False and sample.net is True:
-            # Tara von Hand auf einer brutto zeigenden Waage
             if abs(previous.weight_g) <= span_g:
                 return None
-            self.scale_tare_g = previous.weight_g
-            return "manual_tare"
+            self.scale_tare_g = delta                      # Tara von Hand auf brutto zeigender Waage
+            return "manual_tare", delta
         if previous.net is True and previous.weight_g > span_g:
             if self.scale_tare_g is None:
                 return None
             if sample.net is True:
-                self.scale_tare_g += previous.weight_g           # Tara von Hand auf tarierter Waage
-                return "manual_tare"
-            self.hidden_g += self.scale_tare_g + previous.weight_g   # Null von Hand: Bezug verschoben
+                self.scale_tare_g += delta                 # Tara von Hand auf tarierter Waage
+                return "manual_tare", delta
+            self.hidden_g += self.scale_tare_g + delta     # Null von Hand: Tara gelöscht, Last „versteckt“
             self.scale_tare_g = 0
-            return "manual_zero"
+            return "manual_zero", delta
         return None
 
     def tare_total(self) -> int | None:
@@ -192,15 +194,21 @@ class StationWeigh:
         """Neuer Zustand der Waage: Tara-Bestätigung, Zeitablauf, verspäteter Sprung, Tara der Waage.
 
         Gibt Ereignisse zurück: ``tare_confirmed``, ``tare_timeout``, ``late_tare``, ``manual_tare``,
-        ``manual_zero`` (nur mit ``watch_manual``: kein Teig wird gewogen, kein eigener Befehl unterwegs).
+        ``manual_zero`` (nur mit ``watch_manual``: kein eigener Befehl unterwegs, kein Behälter-Schritt).
         """
         events: list[str] = []
         previous = self.last
         changed = previous is None or sample != previous
-        if changed and watch_manual and not self.taring and self.reference_g is None:
+        if changed and watch_manual and not self.taring and self.late_tare_g is None:
             jump = self._manual_jump(previous, sample, now, span_g)
             if jump:
-                events.append(jump)
+                kind, delta = jump
+                events.append(kind)
+                self.manual_delta_g = delta
+                if self.reference_g is not None:
+                    # auch beim laufenden Wiegen: das Ist bleibt (M09-19)
+                    self.reference_g -= delta
+                    self.reset_ack()
         self.last = sample
         self.last_at = now                                 # letzte Beobachtung (Hintergrund alle 0,2 s)
         if sample.ok and sample.net is False and "manual_zero" not in events:

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.10.32 – Tara-Modell M09-19
+
+- **Nach „Behälter wiegen/wechseln“ nur noch Tara, kein Null mehr mit dem Behälter auf der Waage.** Die KERN löscht beim Nullen die Tara und „versteckt“ den Behälter – dadurch stimmte die Gesamtlast nicht mehr. Wird die Tara nicht bestätigt, sendet die Software sie bei ruhiger Anzeige bis zu zweimal neu. Null gibt es nur noch auf leerer Waage.
+- **Tasten an der Waage ändern nie Ist oder Tara der Software** – jetzt auch beim laufenden Wiegen. Erkannte Tara/Null von Hand steht nur im Protokoll („… von Hand an der Waage erkannt – Ist und Gesamtlast bleiben“), ohne Fenster am Tablet.
+- **Taste „Null“ am Tablet** (Handwaage, Handbetrieb) nur noch bei wirklich leerer Waage: Der Server prüft die Gesamtlast (höchstens 50 g) statt der Anzeige; bei `-----` (Last abgenommen) erlaubt. Neu: `POST /api/v1/stations/{nr}/hand/zero`.
+
 ## 0.10.31 – Rechnung/Gutschrift einlesen (W2a), Export für die Buchführung (B1), Ersatzware (M03-35/36), Beleg-Foto (M03-37), „Weiter“ ohne neue Tara (M09-17/18)
 
 - **Migration 0013:** Buchungsgruppen (neun Vorgaben: Leergut, Wurst, Spirituosen, Feinkost, Handelsware, Kaffee, Zeitung, Rohstoffe, Unkosten), gelernte Zuordnung Warengruppe → Gruppe, Gruppe + „geprüft“ an Rohstoff und sonstigem Artikel, Gruppe/Betrag nach Skonto/Ersatz-Bezug an der Belegposition, Marke „Ersatzware im Bestand“ am Rohstoff.

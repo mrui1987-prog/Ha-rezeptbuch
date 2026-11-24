@@ -485,14 +485,10 @@ def test_container_weigh_flow(conn, recipes, runner, hub, clock):
     assert runner.flow(1).step == "place"
     hub.put(1, 1250)                                              # Behälter aufstellen
     run(conn, runner, clock, 0.4)
-    assert runner.flow(1).step == "final_zero" and hub.commands[-1] == (1, "tare")
-    assert runner.reading(1).hint == "Waage wird genullt – bitte warten"
-    run(conn, runner, clock, 0.6)                                 # Michael 22:38: ½ s nach der Tara Null
-    assert hub.commands[-2:] == [(1, "tare"), (1, "zero")] and runner.flow(1).step == "final_settle"
-    run(conn, runner, clock, 0.6)                                 # stabil: Null erneut (Michael 23:02)
-    assert hub.commands[-3:] == [(1, "tare"), (1, "zero"), (1, "zero")]
-    run(conn, runner, clock, 0.6)                                 # neuer Bezug = Anzeige nach Null
-    assert runner.flow(1) is None
+    # M09-19: nach dem Behälter nur Tara, kein Null mit Last (die KERN würde die Tara löschen)
+    assert hub.commands[-1] == (1, "tare") and runner.flow(1) is None
+    run(conn, runner, clock, 2.0)
+    assert hub.commands[-1] == (1, "tare")
     batch = batches.get_batch(conn, batch["id"], runner)
     assert batch["container_g"] == 1250 and batch["scale"]["actual_g"] == 0 and batch["scale"]["gross_g"] == 1250
     assert events(conn, "container")[0][1] == 1250 and events(conn, "container")[0][4] == "gewogen"
@@ -580,9 +576,9 @@ def test_container_change_other_container_needs_confirm(conn, recipes, runner, h
     run(conn, runner, clock, 2.8)
     assert runner.flow(1).step == "confirm"
     batch = batches.container(conn, batch["id"], st(action="confirm"), runner)
-    assert batch["container_g"] == 1200 and runner.flow(1).step == "final_zero"
+    assert batch["container_g"] == 1200
     run(conn, runner, clock, 2.0)
-    assert runner.flow(1) is None and hub.commands[-2:] == [(1, "zero"), (1, "zero")]
+    assert runner.flow(1) is None and hub.commands[-1] == (1, "tare")
     assert batches.get_batch(conn, batch["id"], runner)["scale"]["actual_g"] == 0
     assert events(conn, "container")[-1][4] == "gewogen, Abweichung bestätigt"
 
@@ -680,3 +676,47 @@ def test_manual_zero_detected_in_weigh():
     sw3 = StationWeigh(scale_tare_g=800)
     sw3.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
     assert sw3.observe(5, Sample("ok", 0, True, net=True), 3, 5, watch_manual=True) == []
+
+
+def test_container_tare_repeated_when_not_confirmed(conn, brot, runner, hub, clock):
+    # M09-19: Tara nach dem Behälter wird bei ruhiger Anzeige bis zu zweimal wiederholt
+    hub.put(1, 0)
+    batch = batches.container(conn, brot["id"], st(action="weigh"), runner)
+    run(conn, runner, clock, ZEROED + 0.4)
+    assert runner.flow(1).step == "place"
+    hub.ignore_commands = True                                    # die Waage verwirft die Tara
+    hub.put(1, 1250)
+    run(conn, runner, clock, 0.4)
+    assert runner.flow(1).step == "final_tare"
+    run(conn, runner, clock, 14)
+    tares = [c for c in hub.commands if c == (1, "tare")]
+    assert runner.flow(1) is None and len(tares) >= 3             # erste Tara + zwei Wiederholungen
+    assert batches.get_batch(conn, batch["id"], runner)["scale"]["actual_g"] == 0   # Software rechnet weiter
+
+
+def test_manual_zero_while_weighing_keeps_actual(conn, brot, runner, hub, clock):
+    # M09-19: eine Taste an der Waage ändert beim laufenden Wiegen weder Ist noch Gesamtlast
+    hub.put(1, 1100)                                              # 300 g Mehl
+    run(conn, runner, clock, 3.2)
+    hub.offset[1] = 1100                                          # Tara von Hand → Anzeige 0
+    run(conn, runner, clock, 0.4)
+    data = batches.get_batch(conn, brot["id"], runner)["scale"]
+    assert data["actual_g"] == 300 and data["gross_g"] == 1100
+    hub.put(1, 1200)                                              # weiter einwiegen
+    run(conn, runner, clock, 0.4)
+    assert batches.get_batch(conn, brot["id"], runner)["scale"]["actual_g"] == 400
+
+
+def test_hand_zero_only_on_empty_scale(conn, brot, runner, hub, clock):
+    # Michael 24.11.2026, 04:37: Taste „Null“ am Tablet bleibt, aber nur bei leerer Waage (Gesamtlast)
+    hub.put(1, 1100)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    hub.offset[1] = 1100                                          # tariert: Anzeige netto 0, sieht leer aus
+    run(conn, runner, clock, 3.4)
+    with pytest.raises(ConflictError) as exc:
+        batches.hand_zero(conn, 1, runner)
+    assert exc.value.code == "scale_not_empty" and (1, "zero") not in hub.commands[-1:]
+    hub.put(1, 0, status="invalid")                               # alles abgenommen: „-----“
+    run(conn, runner, clock, 0.4)
+    batches.hand_zero(conn, 1, runner)
+    assert hub.commands[-1] == (1, "zero")

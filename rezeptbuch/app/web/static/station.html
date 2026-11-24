@@ -784,11 +784,8 @@
 
   function handButtons(actions) {
     actions.appendChild(btn("Tara", "", (bt) => act(bt, "stations/" + ST + "/hand/tare", undefined).then(() => {})));
-    actions.appendChild(btn("Null", "", async (bt) => {
-      const ok = await RB.dialog({ title: "Null setzen", text: "Null nur bei leerer Waage. Ist die Waage leer?",
-        buttons: [{ label: "Nein", value: false }, { label: "Ja, Null setzen", value: true, kind: "primary" }] });
-      if (ok) await act(bt, "stations/" + ST + "/scale/zero", undefined);
-    }));
+    // M09-19: Null nur bei wirklich leerer Waage – der Server prüft die Gesamtlast, nicht die Anzeige
+    actions.appendChild(btn("Null", "", (bt) => act(bt, "stations/" + ST + "/hand/zero", undefined)));
   }
 
   function viewHandScale(main) {

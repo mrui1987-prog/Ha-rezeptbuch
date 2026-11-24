@@ -128,6 +128,11 @@ def hand_tare(station: int, request: Request, db: sqlite3.Connection = Depends(g
     return batches.hand_tare(db, station, get_runner(request))
 
 
+@router.post("/stations/{station}/hand/zero")
+def hand_zero(station: int, request: Request, db: sqlite3.Connection = Depends(get_db)):
+    return batches.hand_zero(db, station, get_runner(request))
+
+
 # -- Einstellungen ---------------------------------------------------------------------------
 
 @router.get("/production-settings")

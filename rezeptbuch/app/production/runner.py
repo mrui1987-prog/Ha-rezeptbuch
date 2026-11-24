@@ -84,12 +84,8 @@ class ContainerFlow:
         ("change", "zeroing"): "Waage wird genullt – bitte warten",
         ("weigh", "place"): "Behälter jetzt aufstellen",
         ("change", "place"): "Leeren Behälter aufstellen",
-        ("weigh", "final_zero"): "Waage wird genullt – bitte warten",
-        ("change", "final_zero"): "Waage wird genullt – bitte warten",
-        ("weigh", "final_settle"): "Waage wird genullt – bitte warten",
-        ("change", "final_settle"): "Waage wird genullt – bitte warten",
-        ("weigh", "final_ref"): "Waage wird genullt – bitte warten",
-        ("change", "final_ref"): "Waage wird genullt – bitte warten",
+        ("weigh", "final_tare"): "Waage wird tariert – bitte warten",
+        ("change", "final_tare"): "Waage wird tariert – bitte warten",
         ("weigh", "confirm"): "Anderer Behälter? Bitte bestätigen",
         ("change", "confirm"): "Anderer Behälter? Bitte bestätigen",
     }
@@ -157,8 +153,9 @@ class ProductionRunner:
                                 self.settings["auto_ack_span_g"], watch_manual=quiet and station not in self._flows)
             for event in events:
                 if event in ("manual_tare", "manual_zero"):
-                    log.info("Waage %d: %s von Hand an der Waage erkannt – Gesamtlast nachgeführt (Ausgleich %s g)",
-                             station, "Tara" if event == "manual_tare" else "Null", sw.offset(sample))
+                    log.info("Waage %d: %s von Hand an der Waage erkannt (Sprung %s g) – Ist und Gesamtlast "
+                             "bleiben (M09-19, Ausgleich jetzt %s g)", station,
+                             "Tara" if event == "manual_tare" else "Null", sw.manual_delta_g, sw.offset(sample))
                 if event == "tare_timeout":
                     log.warning("Waage %d: Tara nicht bestätigt – Software-Tara", station)
                 elif event == "late_tare":
@@ -311,13 +308,13 @@ class ProductionRunner:
             return flow
 
     def finish_container(self, station: int, kind: str, batch_id: int) -> None:
-        """Behälter gemerkt: ``tare`` mit dem Behälter, danach Schritt ``final_zero`` – nach der bestätigten
-        Tara ½ s warten und ``zero`` senden; das Piepen der Waage zeigt dem Bediener das Ende an
-        (Michael 19.11.2026, 22:38)."""
+        """Behälter gemerkt: nur noch ``tare`` mit dem Behälter (M09-19, Michael 24.11.2026: kein ``zero`` mit
+        Last – die KERN löscht dabei die Tara und versteckt den Behälter). Schritt ``final_tare`` wartet auf die
+        Bestätigung und wiederholt die Tara bei ruhiger Anzeige höchstens zweimal."""
         with self._lock:
             self._flows.pop(station, None)
             self.set_reference(station)
-            self._flows[station] = ContainerFlow(kind, batch_id, "final_zero", sent_at=self.clock())
+            self._flows[station] = ContainerFlow(kind, batch_id, "final_tare", sent_at=self.clock())
 
     def end_flow(self, station: int) -> None:
         with self._lock:

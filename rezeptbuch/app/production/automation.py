@@ -19,6 +19,7 @@ from . import batches
 from .runner import ProductionRunner
 from .weigh import EMPTY_LIMIT_G, capacity_warning, zone
 
+FINAL_TARE_REPEATS = 2      # Tara nach dem Behälter höchstens zweimal wiederholen (M09-19)
 log = logging.getLogger("rezeptbuch.production")
 
 TARE_PAUSE_S = 0.5      # ½ s nach der Tara das erste zero (Michael 23:02, vorher 2 s)
@@ -26,8 +27,6 @@ SETTLE_MIN_S = 0.5      # nach dem ersten zero mindestens so lange warten, damit
 SETTLE_MAX_S = 3.0      # höchstens so lange auf eine stabile Anzeige warten, dann das zweite zero trotzdem
 ZERO_WAIT_S = 2.0       # so lange auf die Bestätigung der Null warten, dann erneut senden
 ZERO_REPEATS = 2        # Null nach dem zweiten zero höchstens zweimal wiederholen (Michael 17:14)
-FINAL_ZERO_DELAY_S = 0.5  # nach der letzten Tara beim Behälter wiegen ½ s warten, dann zero (Michael 22:38)
-FINAL_REF_TIMEOUT_S = 3.0  # danach ohne neuen Bezug weiter
 ZERO_OK_G = 5           # Null bestätigt: Waage stabil, ohne Tara, Anzeige höchstens ±5 g
 
 
@@ -157,33 +156,23 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
                 log.warning("Waage %d: Null nach %d Versuchen nicht bestätigt – bitte von Hand", station,
                             flow.zero_sent)
         return
-    if flow.step == "final_zero":
-        if sw.taring:                                    # erst die Tara-Bestätigung abwarten
-            flow.sent_at = now
+    if flow.step == "final_tare":
+        # M09-19: nach dem Behälter nur Tara. Bestätigt = Waage zeigt netto ~0; sonst bei ruhiger Anzeige
+        # bis zu FINAL_TARE_REPEATS-mal neu senden, danach rechnet die Software selbst weiter (Hinweis bleibt)
+        if sw.taring:
             return
-        if now - flow.sent_at < FINAL_ZERO_DELAY_S:
-            return
-        if sample.ok and abs(sample.weight_g) <= EMPTY_LIMIT_G:
-            runner.zero(station)
-            flow.step, flow.sent_at = "final_settle", now
-        else:
-            log.info("Waage %d: Null nach dem Behälter ausgelassen (Anzeige %s)", station, sample.weight_g)
+        if sample.ok and sample.net is True and abs(sample.weight_g) <= runner.settings["auto_ack_span_g"]:
             runner.end_flow(station)
-        return
-    if flow.step == "final_settle":                      # auf stabile Anzeige warten, zero erneut (23:02)
+            return
+        if flow.zero_sent >= FINAL_TARE_REPEATS:
+            log.warning("Waage %d: Tara nach dem Behälter nicht bestätigt – die Software rechnet weiter", station)
+            runner.end_flow(station)
+            return
         if _settled(sample, now - flow.sent_at):
-            runner.zero(station)
-            flow.step, flow.sent_at = "final_ref", now
-        return
-    if flow.step == "final_ref":
-        # Was die Waage nach zero zeigt (0 oder wieder brutto), wird der neue Bezug (Software-Tara, 6.1)
-        if sample.ok and sample.stable and now - flow.sent_at >= FINAL_ZERO_DELAY_S:
-            sw.reference_g = sample.weight_g
-            sw.reset_ack()
-            runner.end_flow(station)
-        elif now - flow.sent_at >= FINAL_REF_TIMEOUT_S:
-            log.warning("Waage %d: nach Null kein stabiler Wert – Bezug unverändert", station)
-            runner.end_flow(station)
+            flow.zero_sent += 1
+            flow.sent_at = now
+            log.info("Waage %d: Tara nicht bestätigt, %d. Wiederholung", station, flow.zero_sent)
+            runner.set_reference(station)
         return
     if flow.step == "place":
         if sample.ok and sample.stable and sample.net is not True and sample.weight_g > EMPTY_LIMIT_G:
