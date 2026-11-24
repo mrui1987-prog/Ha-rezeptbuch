@@ -2,6 +2,7 @@
 
 ## Nächste Version (Nummer beim Übernehmen)
 
+- **Warengruppen mit Namen (Planer, Modul 10):** Neuer Import „Namen der Warengruppen aus der Vectron (.xlsx)“ unter Rezepte → Import/Export (Spalten Nummer/Name, Probelauf → Übernehmen, PIN). Planer an der Station, Artikelliste und Artikel zeigen „12 Kuchen“ statt „WG 12“; ohne Namen bleibt die Nummer. Gespeichert als Einstellung, keine Migration. Neu: `GET /api/v1/articles/group-names`, `POST /api/v1/admin/articles/group-names/import` (Michael 24.11.2026, 12:56/13:03).
 - **Hinweis nach Tastendruck an der Waage:** Erkennt die Software Tara/Null von Hand, steht 30 s lang ein gelber Hinweis an der Station („Hey! Die Waage bitte nicht über ihre Tasten bedienen – das geht hier am Tablet.“) – beim Wiegen im Hinweisfeld, in Handwaage/Handbetrieb über der Taste „Weiter“; ohne Bestätigung (Michael 24.11.2026, 12:51).
 - **Tara bei Strichen:** Tara bleibt ohne gültigen Wert verboten, die Meldung sagt jetzt „Leere Waage: bitte „Null“ drücken“.
 - **Tara/Null von Hand an der Waage wird jetzt wirklich erkannt** (Befund Michael 24.11.2026, 12:37: im Probelauf nie erkannt). Die KERN zeigt beim Tastendruck kurz Striche – die alte Regel (zwei Werte direkt hintereinander, höchstens 0,7 s) griff deshalb nie. Neu: letzter ruhiger Wert als Anker; kommt innerhalb von 3 s ein Wert bei 0 ohne Zwischengewicht (Striche erlaubt), war es eine Taste. Weiterhin nur im Add-on-Protokoll („… von Hand an der Waage erkannt“), kein Fenster.

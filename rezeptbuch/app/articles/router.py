@@ -12,7 +12,7 @@ from fastapi import APIRouter, Body, Depends, Response
 from ..auth.dependencies import require_admin
 from ..deps import get_db
 from ..imports.router import upload_body
-from . import export, service, vectron
+from . import export, group_names, service, vectron
 
 router = APIRouter(prefix="/api/v1", tags=["articles"])
 admin = [Depends(require_admin)]
@@ -29,6 +29,19 @@ def list_articles(q: str | None = None, group: int | None = None, status: str = 
 @router.get("/articles/groups")
 def article_groups(db: sqlite3.Connection = Depends(get_db)):
     return service.groups(db)
+
+
+@router.get("/articles/group-names")
+def article_group_names(db: sqlite3.Connection = Depends(get_db)):
+    """Namen der Warengruppen (Nummer → Name), ohne PIN lesbar."""
+    return {str(k): v for k, v in group_names.get_names(db).items()}
+
+
+@router.post("/admin/articles/group-names/import", dependencies=admin)
+def import_group_names(mode: str = "check", body: bytes = Depends(upload_body),
+                       db: sqlite3.Connection = Depends(get_db)):
+    """Warengruppen-Export der Vectron (.xlsx, Spalten Nummer/Name): ``mode=check`` → ``mode=run``."""
+    return group_names.import_groups(db, body, mode=mode)
 
 
 @router.get("/articles/{article_id}")

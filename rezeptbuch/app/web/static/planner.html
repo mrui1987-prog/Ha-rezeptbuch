@@ -272,7 +272,7 @@ async function loadGroups() {
   try {
     const groups = await api("articles/groups");
     sel.length = 1;
-    groups.forEach((g) => { const o = el("option", "WG " + g.group + " (" + g.count + ")"); o.value = g.group; sel.appendChild(o); });
+    groups.forEach((g) => { const o = el("option", (g.name ? g.group + " " + g.name : "WG " + g.group) + " (" + g.count + ")"); o.value = g.group; sel.appendChild(o); });
     sel.value = keep;
   } catch (err) { handleError(err); }
 }
@@ -304,7 +304,7 @@ function renderList() {
     if (!a.in_register) name.appendChild(el("span", " (nicht mehr in der Kasse)", "small"));
     if (a.has_warning) name.appendChild(el("span", " ⚠", "warn"));
     tr.appendChild(name);
-    tr.appendChild(el("td", a.register_group, "num"));
+    tr.appendChild(el("td", a.register_group_name ? a.register_group + " " + a.register_group_name : a.register_group));
     tr.appendChild(el("td", a.pieces_per_whole || "–", "num"));
     tr.appendChild(el("td", a.line_count || "–", "num" + (a.line_count ? "" : " warn")));
     tr.appendChild(el("td", a.plan_enabled ? "ja" : "nicht planen"));
@@ -459,7 +459,7 @@ async function openArticle(id) {
 function renderArticle() {
   $("e-title").textContent = art.register_no + " " + art.name;
   const facts = $("e-facts"); facts.textContent = "";
-  facts.appendChild(el("span", "Warengruppe " + art.register_group));
+  facts.appendChild(el("span", "Warengruppe " + art.register_group + (art.register_group_name ? " " + art.register_group_name : "")));
   facts.appendChild(el("span", art.in_register ? "in der Kasse" : "nicht mehr in der Kasse", art.in_register ? "" : "warn"));
   facts.appendChild(el("span", "zuletzt Auftrag " + art.last_order_no));
   $("e-ppw").value = art.pieces_per_whole || "";

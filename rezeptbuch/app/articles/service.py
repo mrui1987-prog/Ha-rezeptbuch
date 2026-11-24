@@ -15,6 +15,7 @@ import json
 from fractions import Fraction
 import sqlite3
 
+from . import group_names
 from ..db import transaction
 from ..errors import NotFoundError, ValidationError
 from ..raw_materials.models import normalize_text
@@ -112,7 +113,9 @@ def _line_view(r: sqlite3.Row) -> dict:
 def _view(conn: sqlite3.Connection, row: sqlite3.Row, with_lines: bool = True) -> dict:
     result = {
         "id": row["id"], "register_no": row["register_no"], "name": row["name"],
-        "register_group": row["register_group"], "pieces_per_whole": row["pieces_per_whole"],
+        "register_group": row["register_group"],
+        "register_group_name": group_names.get_names(conn).get(row["register_group"]),
+        "pieces_per_whole": row["pieces_per_whole"],
         "plan_enabled": bool(row["plan_enabled"]), "in_register": bool(row["in_register"]),
         "last_order_no": row["last_order_no"], "note": row["note"],
         "created_at": row["created_at"], "updated_at": row["updated_at"],
@@ -173,7 +176,8 @@ def list_articles(conn: sqlite3.Connection, *, search: str | None = None, group:
 
 def groups(conn: sqlite3.Connection) -> list[dict]:
     """Warengruppen der vorhandenen Artikel mit Anzahl (Filter der Liste)."""
-    return [{"group": r["register_group"], "count": r["n"]} for r in conn.execute(
+    names = group_names.get_names(conn)
+    return [{"group": r["register_group"], "name": names.get(r["register_group"]), "count": r["n"]} for r in conn.execute(
         "SELECT register_group, count(*) AS n FROM sales_article WHERE in_register = 1 "
         "GROUP BY register_group ORDER BY register_group")]
 

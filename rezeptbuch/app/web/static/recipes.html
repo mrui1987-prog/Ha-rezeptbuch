@@ -309,6 +309,18 @@
       <div id="va-report"></div>
     </div>
     <div class="panel">
+      <h2>Namen der Warengruppen aus der Vectron (.xlsx)</h2>
+      <p class="small">Warengruppen-Export der Kasse (Spalten Nummer, Name). Danach zeigen Planer und Artikelliste
+        „12 Kuchen“ statt „WG 12“. Name „-“ und leere Zeilen werden übersprungen. Erst „Probelauf“, dann „Übernehmen“.</p>
+      <input id="wg-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div class="toolbar">
+        <button type="button" id="wg-check">Probelauf</button>
+        <button type="button" id="wg-run" disabled>Übernehmen</button>
+      </div>
+      <div id="wg-msg" class="msg hidden" role="alert"></div>
+      <div id="wg-report"></div>
+    </div>
+    <div class="panel">
       <h2>Verkaufsartikel exportieren (.xlsx)</h2>
       <p class="small">Blätter „Artikel“ und „Stückliste“ (alle Artikel, auch „nicht mehr in der Kasse“).</p>
       <div class="toolbar"><button type="button" id="va-export">Export herunterladen</button></div>
@@ -1795,6 +1807,36 @@ $("va-run").addEventListener("click", async () => {
     showMsg("va-msg", "Import abgeschlossen. Stücklisten pflegen: Planer → Artikel.", "info");
   } catch (err) { $("va-run").disabled = false; handleError(err, "va-msg"); }
 });
+// ---- Namen der Warengruppen (Michael 24.11.2026, 13:03) -----------------------------------
+let wgFile = null;
+function renderWgReport(report) {
+  const box = $("wg-report"); box.textContent = "";
+  const c = report.counts;
+  box.appendChild(el("p", (report.imported ? "Übernommen: " : "Probelauf: ") + c.total + " Warengruppen, davon "
+    + c.used + " bei Artikeln in Gebrauch, " + c.new + " neu benannt, " + c.changed + " umbenannt."));
+  addList(box, "Warengruppen (" + c.total + ")", report.groups, (x) => el("li", x.number + " " + x.name
+    + (x.old_name && x.old_name !== x.name ? " (bisher " + x.old_name + ")" : "") + (x.used ? "" : " – ohne Artikel")));
+  if (report.without_name.length) box.appendChild(el("p", "Ohne Namen bleiben: WG " + report.without_name.join(", "), "small"));
+  $("wg-run").disabled = report.imported;
+}
+$("wg-file").addEventListener("change", () => {
+  wgFile = $("wg-file").files[0] || null; $("wg-report").textContent = ""; $("wg-run").disabled = true; showMsg("wg-msg", "");
+});
+$("wg-check").addEventListener("click", async () => {
+  showMsg("wg-msg", "");
+  if (!wgFile) { showMsg("wg-msg", "Bitte zuerst den Warengruppen-Export (.xlsx) wählen."); return; }
+  try { renderWgReport(await api("admin/articles/group-names/import?mode=check", { method: "POST", file: wgFile })); }
+  catch (err) { $("wg-report").textContent = ""; handleError(err, "wg-msg"); }
+});
+$("wg-run").addEventListener("click", async () => {
+  if (!wgFile) return;
+  $("wg-run").disabled = true;
+  try {
+    renderWgReport(await api("admin/articles/group-names/import?mode=run", { method: "POST", file: wgFile }));
+    showMsg("wg-msg", "Namen übernommen.", "info");
+  } catch (err) { $("wg-run").disabled = false; handleError(err, "wg-msg"); }
+});
+
 $("va-export").addEventListener("click", () => downloadFile(
   "admin/articles/export.xlsx", "verkaufsartikel.xlsx", "Export erstellt.", "va-export-msg"));
 

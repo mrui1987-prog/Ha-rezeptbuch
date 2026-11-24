@@ -185,7 +185,7 @@
   $("t-stock").addEventListener("click", () => show("stock"));
 
   // ------------------------------------------------------------ Eingabe
-  let articles = [], rows = [], day = addDays(today, 1), dirty = false, group = null;
+  let articles = [], rows = [], day = addDays(today, 1), dirty = false, group = null, groupNames = {};
   // rows: [{article_id, order_no, pieces, halves, wholes}]
 
   function setDirty(v) { dirty = v; $("dirty").textContent = v ? "Nicht gespeichert." : "Keine Änderungen."; $("dirty").classList.toggle("err", v); }
@@ -194,12 +194,16 @@
     try { articles = (await RB.api("articles?status=active")).filter((a) => a.plan_enabled); }
     catch (e) { fail(e); articles = []; }
     const groups = [...new Set(articles.map((a) => a.register_group))];
+    groupNames = {};
+    articles.forEach((a) => { if (a.register_group_name) groupNames[a.register_group] = a.register_group_name; });
     const box = $("f-groups"); box.textContent = "";
     box.appendChild(btn("Alle", group === null ? "on" : "", () => { group = null; loadArticlesUi(); }));
-    groups.forEach((gr) => box.appendChild(btn("WG " + gr, group === gr ? "on" : "", () => { group = gr; loadArticlesUi(); })));
+    groups.forEach((gr) => box.appendChild(btn(groupLabel(gr), group === gr ? "on" : "", () => { group = gr; loadArticlesUi(); })));
   }
+  // Warengruppe mit Namen aus der Vectron („12 Kuchen“), sonst „WG 12“ (Michael 24.11.2026, 12:56)
+  function groupLabel(gr) { return groupNames[gr] ? gr + " " + groupNames[gr] : "WG " + gr; }
   function loadArticlesUi() {
-    [...$("f-groups").children].forEach((b) => b.classList.toggle("on", b.textContent === (group === null ? "Alle" : "WG " + group)));
+    [...$("f-groups").children].forEach((b) => b.classList.toggle("on", b.textContent === (group === null ? "Alle" : groupLabel(group))));
     renderArts();
   }
 
@@ -240,7 +244,7 @@
       if (q && !(String(a.register_no) === q || a.name.toLowerCase().includes(q))) return;
       let mine = rowsOf(a);
       if (only && !mine.length) return;
-      if (a.register_group !== lastGroup) { box.appendChild(el("h2", "Warengruppe " + a.register_group)); lastGroup = a.register_group; }
+      if (a.register_group !== lastGroup) { box.appendChild(el("h2", a.register_group_name ? "Warengruppe " + a.register_group + " · " + a.register_group_name : "Warengruppe " + a.register_group)); lastGroup = a.register_group; }
       if (!mine.length) mine = [null];
       mine.forEach((r, i) => box.appendChild(artRow(a, r, i)));
     });
