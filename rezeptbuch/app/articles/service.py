@@ -110,11 +110,11 @@ def _line_view(r: sqlite3.Row) -> dict:
     }
 
 
-def _view(conn: sqlite3.Connection, row: sqlite3.Row, with_lines: bool = True) -> dict:
+def _view(conn: sqlite3.Connection, row: sqlite3.Row, with_lines: bool = True, info: dict | None = None) -> dict:
     result = {
         "id": row["id"], "register_no": row["register_no"], "name": row["name"],
         "register_group": row["register_group"],
-        "register_group_name": group_names.get_names(conn).get(row["register_group"]),
+        **group_names.describe(info if info is not None else group_names.lookup(conn), row["register_group"]),
         "pieces_per_whole": row["pieces_per_whole"],
         "plan_enabled": bool(row["plan_enabled"]), "in_register": bool(row["in_register"]),
         "last_order_no": row["last_order_no"], "note": row["note"],
@@ -161,13 +161,14 @@ def list_articles(conn: sqlite3.Connection, *, search: str | None = None, group:
            "FROM sales_article a" + (" WHERE " + " AND ".join(where) if where else "")
            + " ORDER BY a.register_group, a.register_no")
     result = []
+    info = group_names.lookup(conn)
     needle = normalize_text(search).casefold() if isinstance(search, str) and search.strip() else None
     for row in conn.execute(sql, params):
         if without_lines and row["line_count"]:
             continue
         if needle and not (needle == str(row["register_no"]) or needle in row["name"].casefold()):
             continue
-        item = _view(conn, row, with_lines=False)
+        item = _view(conn, row, with_lines=False, info=info)
         item["line_count"] = row["line_count"]
         item["has_warning"] = row["warn_count"] > 0
         result.append(item)
@@ -176,8 +177,11 @@ def list_articles(conn: sqlite3.Connection, *, search: str | None = None, group:
 
 def groups(conn: sqlite3.Connection) -> list[dict]:
     """Warengruppen der vorhandenen Artikel mit Anzahl (Filter der Liste)."""
-    names = group_names.get_names(conn)
-    return [{"group": r["register_group"], "name": names.get(r["register_group"]), "count": r["n"]} for r in conn.execute(
+    info = group_names.lookup(conn)
+    return [{"group": r["register_group"], "name": info["names"].get(r["register_group"]),
+             "main_group": info["main"].get(r["register_group"]),
+             "main_group_name": group_names.describe(info, r["register_group"])["main_group_name"],
+             "count": r["n"]} for r in conn.execute(
         "SELECT register_group, count(*) AS n FROM sales_article WHERE in_register = 1 "
         "GROUP BY register_group ORDER BY register_group")]
 

@@ -309,9 +309,11 @@
       <div id="va-report"></div>
     </div>
     <div class="panel">
-      <h2>Namen der Warengruppen aus der Vectron (.xlsx)</h2>
-      <p class="small">Warengruppen-Export der Kasse (Spalten Nummer, Name). Danach zeigen Planer und Artikelliste
-        „12 Kuchen“ statt „WG 12“. Name „-“ und leere Zeilen werden übersprungen. Erst „Probelauf“, dann „Übernehmen“.</p>
+      <h2>Waren- und Hauptgruppen aus der Vectron (.xlsx)</h2>
+      <p class="small">Beide Exporte der Kasse, nacheinander: Warengruppen (Nummer, Name, A-Hauptgruppe) und
+        Hauptgruppen (Nummer, Name) – die Art wird erkannt. Danach sortiert der Planer nach Hauptgruppen
+        („7 Kuchen“) und zeigt Namen statt „WG 12“. Name „-“ und leere Zeilen werden übersprungen.
+        Erst „Probelauf“, dann „Übernehmen“.</p>
       <input id="wg-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       <div class="toolbar">
         <button type="button" id="wg-check">Probelauf</button>
@@ -1812,11 +1814,15 @@ let wgFile = null;
 function renderWgReport(report) {
   const box = $("wg-report"); box.textContent = "";
   const c = report.counts;
-  box.appendChild(el("p", (report.imported ? "Übernommen: " : "Probelauf: ") + c.total + " Warengruppen, davon "
+  const main = report.kind === "main_groups";
+  const what = main ? "Hauptgruppen" : "Warengruppen";
+  box.appendChild(el("p", (report.imported ? "Übernommen: " : "Probelauf: ") + c.total + " " + what + ", davon "
     + c.used + " bei Artikeln in Gebrauch, " + c.new + " neu benannt, " + c.changed + " umbenannt."));
-  addList(box, "Warengruppen (" + c.total + ")", report.groups, (x) => el("li", x.number + " " + x.name
+  addList(box, what + " (" + c.total + ")", report.groups, (x) => el("li", x.number + " " + x.name
+    + (!main && x.main ? " → Hauptgruppe " + x.main + (x.main_name ? " " + x.main_name : "") : "")
     + (x.old_name && x.old_name !== x.name ? " (bisher " + x.old_name + ")" : "") + (x.used ? "" : " – ohne Artikel")));
-  if (report.without_name.length) box.appendChild(el("p", "Ohne Namen bleiben: WG " + report.without_name.join(", "), "small"));
+  if (report.without_name.length) box.appendChild(el("p", "Ohne Namen bleiben: " + (main ? "HG " : "WG ") + report.without_name.join(", "), "small"));
+  if (report.hint) box.appendChild(el("p", report.hint, "small"));
   $("wg-run").disabled = report.imported;
 }
 $("wg-file").addEventListener("change", () => {
@@ -1824,7 +1830,7 @@ $("wg-file").addEventListener("change", () => {
 });
 $("wg-check").addEventListener("click", async () => {
   showMsg("wg-msg", "");
-  if (!wgFile) { showMsg("wg-msg", "Bitte zuerst den Warengruppen-Export (.xlsx) wählen."); return; }
+  if (!wgFile) { showMsg("wg-msg", "Bitte zuerst den Waren- oder Hauptgruppen-Export (.xlsx) wählen."); return; }
   try { renderWgReport(await api("admin/articles/group-names/import?mode=check", { method: "POST", file: wgFile })); }
   catch (err) { $("wg-report").textContent = ""; handleError(err, "wg-msg"); }
 });

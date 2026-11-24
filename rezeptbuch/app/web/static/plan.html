@@ -185,7 +185,7 @@
   $("t-stock").addEventListener("click", () => show("stock"));
 
   // ------------------------------------------------------------ Eingabe
-  let articles = [], rows = [], day = addDays(today, 1), dirty = false, group = null, groupNames = {};
+  let articles = [], rows = [], day = addDays(today, 1), dirty = false, group = null, groupNames = {}, byMain = false;
   // rows: [{article_id, order_no, pieces, halves, wholes}]
 
   function setDirty(v) { dirty = v; $("dirty").textContent = v ? "Nicht gespeichert." : "Keine Änderungen."; $("dirty").classList.toggle("err", v); }
@@ -193,15 +193,30 @@
   async function loadArticles() {
     try { articles = (await RB.api("articles?status=active")).filter((a) => a.plan_enabled); }
     catch (e) { fail(e); articles = []; }
-    const groups = [...new Set(articles.map((a) => a.register_group))];
+    // Sortiert nach Hauptgruppe der Kasse, sobald die Zuordnung übernommen ist (Michael 24.11.2026, 13:2x);
+    // sonst wie bisher nach Warengruppe. Artikel ohne Hauptgruppe ans Ende.
+    byMain = articles.some((a) => a.main_group != null);
     groupNames = {};
-    articles.forEach((a) => { if (a.register_group_name) groupNames[a.register_group] = a.register_group_name; });
+    articles.forEach((a) => {
+      if (byMain) { if (a.main_group != null && a.main_group_name) groupNames[a.main_group] = a.main_group_name; }
+      else if (a.register_group_name) groupNames[a.register_group] = a.register_group_name;
+    });
+    const big = 1e9;
+    articles.sort((x, y) => ((byMain ? (x.main_group ?? big) - (y.main_group ?? big) : 0)
+      || x.register_group - y.register_group || x.register_no - y.register_no));
+    const groups = [...new Set(articles.map(groupKey))];
+    if (group !== null && !groups.includes(group)) group = null;
     const box = $("f-groups"); box.textContent = "";
     box.appendChild(btn("Alle", group === null ? "on" : "", () => { group = null; loadArticlesUi(); }));
     groups.forEach((gr) => box.appendChild(btn(groupLabel(gr), group === gr ? "on" : "", () => { group = gr; loadArticlesUi(); })));
   }
-  // Warengruppe mit Namen aus der Vectron („12 Kuchen“), sonst „WG 12“ (Michael 24.11.2026, 12:56)
-  function groupLabel(gr) { return groupNames[gr] ? gr + " " + groupNames[gr] : "WG " + gr; }
+  // Hauptgruppe bzw. Warengruppe mit Namen aus der Vectron („7 Kuchen“), sonst „HG 7“/„WG 12“ (Michael 24.11.2026)
+  function groupKey(a) { return byMain ? (a.main_group ?? "none") : a.register_group; }
+  function groupLabel(gr) {
+    if (gr === "none") return "ohne Hauptgruppe";
+    return groupNames[gr] ? gr + " " + groupNames[gr] : (byMain ? "HG " : "WG ") + gr;
+  }
+  function wgLabel(a) { return a.register_group_name ? a.register_group + " " + a.register_group_name : "WG " + a.register_group; }
   function loadArticlesUi() {
     [...$("f-groups").children].forEach((b) => b.classList.toggle("on", b.textContent === (group === null ? "Alle" : groupLabel(group))));
     renderArts();
@@ -238,13 +253,23 @@
     const q = $("f-q").value.trim().toLowerCase();
     const only = $("f-only").checked;
     const box = $("arts"); box.textContent = "";
-    let lastGroup = null;
+    let lastGroup, lastWg;
+    // Warengruppen je Hauptgruppe: Zwischenüberschrift nur, wenn eine Hauptgruppe mehrere enthält
+    const wgsOf = {};
+    if (byMain) articles.forEach((a) => { (wgsOf[groupKey(a)] = wgsOf[groupKey(a)] || new Set()).add(a.register_group); });
     articles.forEach((a) => {
-      if (group !== null && a.register_group !== group) return;
+      const key = groupKey(a);
+      if (group !== null && key !== group) return;
       if (q && !(String(a.register_no) === q || a.name.toLowerCase().includes(q))) return;
       let mine = rowsOf(a);
       if (only && !mine.length) return;
-      if (a.register_group !== lastGroup) { box.appendChild(el("h2", a.register_group_name ? "Warengruppe " + a.register_group + " · " + a.register_group_name : "Warengruppe " + a.register_group)); lastGroup = a.register_group; }
+      if (key !== lastGroup) {
+        box.appendChild(el("h2", byMain ? (key === "none" ? "Ohne Hauptgruppe" : "Hauptgruppe " + groupLabel(key))
+          : (a.register_group_name ? "Warengruppe " + a.register_group + " · " + a.register_group_name : "Warengruppe " + a.register_group)));
+        lastGroup = key; lastWg = undefined;
+      }
+      if (byMain && a.register_group !== lastWg && wgsOf[key].size > 1) { box.appendChild(el("h3", wgLabel(a))); }
+      lastWg = a.register_group;
       if (!mine.length) mine = [null];
       mine.forEach((r, i) => box.appendChild(artRow(a, r, i)));
     });

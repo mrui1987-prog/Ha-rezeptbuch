@@ -271,8 +271,20 @@ async function loadGroups() {
   const keep = sel.value;
   try {
     const groups = await api("articles/groups");
-    sel.length = 1;
-    groups.forEach((g) => { const o = el("option", (g.name ? g.group + " " + g.name : "WG " + g.group) + " (" + g.count + ")"); o.value = g.group; sel.appendChild(o); });
+    // Warengruppen unter ihrer Hauptgruppe der Kasse (Michael 24.11.2026), ohne Zuordnung flach wie bisher
+    while (sel.children.length > 1) sel.removeChild(sel.lastChild);
+    const byMain = groups.some((g) => g.main_group != null);
+    if (byMain) groups.sort((x, y) => (x.main_group ?? 1e9) - (y.main_group ?? 1e9) || x.group - y.group);
+    let parent = sel, lastMain;
+    groups.forEach((g) => {
+      if (byMain && g.main_group !== lastMain) {
+        lastMain = g.main_group;
+        parent = document.createElement("optgroup");
+        parent.label = g.main_group == null ? "ohne Hauptgruppe" : g.main_group + " " + (g.main_group_name || "");
+        sel.appendChild(parent);
+      }
+      const o = el("option", (g.name ? g.group + " " + g.name : "WG " + g.group) + " (" + g.count + ")"); o.value = g.group; parent.appendChild(o);
+    });
     sel.value = keep;
   } catch (err) { handleError(err); }
 }
@@ -460,6 +472,7 @@ function renderArticle() {
   $("e-title").textContent = art.register_no + " " + art.name;
   const facts = $("e-facts"); facts.textContent = "";
   facts.appendChild(el("span", "Warengruppe " + art.register_group + (art.register_group_name ? " " + art.register_group_name : "")));
+  if (art.main_group != null) facts.appendChild(el("span", "Hauptgruppe " + art.main_group + (art.main_group_name ? " " + art.main_group_name : "")));
   facts.appendChild(el("span", art.in_register ? "in der Kasse" : "nicht mehr in der Kasse", art.in_register ? "" : "warn"));
   facts.appendChild(el("span", "zuletzt Auftrag " + art.last_order_no));
   $("e-ppw").value = art.pieces_per_whole || "";
