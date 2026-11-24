@@ -1,5 +1,9 @@
 # Änderungen
 
+## Nächste Version (Nummer beim Übernehmen)
+
+- **„Weiter“ mit abweichendem Gewicht:** Die Tasten sagen jetzt, was mit der gewogenen Menge passiert, und nennen sie: „1.907 g sind im Kessel – sie zählen“ (bisher „Schon in den Kessel gegeben“) und „Neu anfangen – 1.907 g zählen nicht“ (bisher „Behälter neu aufgestellt, nichts zugegeben“). Grund: Wer ausgekippt und den leeren Behälter zurückgestellt hat, für den klang beides richtig (Michael 24.11.2026, 12:13).
+
 ## 0.10.33 – Buchführung: leerer Export erklärt, Prüfliste behält geprüfte Artikel, Rechnung gegen Lieferung, Zuordnung im Archiv
 
 - **Export:** Die Seite zeigt, für welche Monate Rechnungen/Gutschriften eingelesen sind, und wählt den neuesten davon vor. Ohne Rechnung im Monat gibt es statt einer leeren Excel-Datei einen Hinweis – Auftragsbestätigungen zählen nicht für die Buchführung (K03-78). Neu: `GET /api/v1/admin/booking/months`.

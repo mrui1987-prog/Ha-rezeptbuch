@@ -278,10 +278,13 @@
       if (err.status === 409 && err.code === "resume_deviation") {
         // M09-17: Lastprüfung beim „Weiter“ nicht bestanden – was ist passiert? („Schon in den Kessel“ nur,
         // wenn die Zutat angefangen war)
+        // Beschriftung nach Michael 24.11.2026, 12:13: die Taste sagt, was mit der gewogenen Menge passiert
         const choices = err.data.choices || ["new_container"];
+        const amount = Number(err.data.actual_g || 0).toLocaleString("de-DE") + " g";
         const buttons = [{ label: "Abbrechen", value: null }];
-        if (choices.indexOf("new_container") >= 0) buttons.push({ label: "Behälter neu aufgestellt, nichts zugegeben", value: "new_container" });
-        if (choices.indexOf("poured") >= 0) buttons.push({ label: "Schon in den Kessel gegeben", value: "poured", kind: "primary" });
+        if (choices.indexOf("new_container") >= 0) buttons.push({ label: choices.indexOf("poured") >= 0
+          ? "Neu anfangen – " + amount + " zählen nicht" : "Neu anfangen (neue Tara)", value: "new_container" });
+        if (choices.indexOf("poured") >= 0) buttons.push({ label: amount + " sind im Kessel – sie zählen", value: "poured", kind: "primary" });
         const choice = await RB.dialog({ title: "Gewicht weicht ab", text: err.message, buttons: buttons });
         if (choice) return act(button, path, Object.assign({}, body || { station: ST }, { resume_choice: choice }));
       } else if (err.status === 409 && err.code === "confirm_required") {

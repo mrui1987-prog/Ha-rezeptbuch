@@ -205,11 +205,11 @@ async function act(path, body, okText) {
         pending.alt = Object.assign({}, body, { resume_choice: "poured" });
       }
       $("confirm-alt").classList.toggle("hidden", !pending.alt);
-      if (err.data.code === "resume_deviation") $("confirm-alt").textContent = "Schon in den Kessel gegeben";
+      if (err.data.code === "resume_deviation") $("confirm-alt").textContent = (err.data.actual_g || 0) + " g sind im Kessel – zählen";
       else if (err.data.code === "stock_question") $("confirm-alt").textContent = "Nein, zurückbuchen";
       $("confirm-yes").textContent = err.data.code === "stock_question" ? "Ja, abgezogen lassen"
         : err.data.code === "stock_short" ? "OK, trotzdem starten"
-        : err.data.code === "resume_deviation" ? "Behälter neu aufgestellt" : "Ja, bestätigen";
+        : err.data.code === "resume_deviation" ? "Neu anfangen – zählt nicht" : "Ja, bestätigen";
       $("confirm-no").textContent = err.data.code === "stock_question" || err.data.code === "stock_short" ? "Abbrechen" : "Nein";
       $("confirm-text").textContent = err.message;
       $("confirm").classList.remove("hidden");
