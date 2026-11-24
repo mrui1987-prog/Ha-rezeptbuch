@@ -3,6 +3,7 @@
 ## Nächste Version (Nummer beim Übernehmen)
 
 - **Planer → Artikel nach Hauptgruppen gegliedert:** Zwischenzeilen „Hauptgruppe 1 · Brot“, darin nach Warengruppe und Nummer sortiert; Spalte „Warengruppe“ sitzt jetzt richtig (Michael 24.11.2026, 14:32, Screenshot).
+- **Planer im Admin (Browser):** Der eingebettete Planer reicht bis zum unteren Fensterrand; „Plan speichern“ bleibt unten statt mitten über den Artikeln zu schweben (Michael 24.11.2026, 14:38).
 - **Schutz beim Vectron-Artikelimport:** Findet der Import keinen Artikel der gewählten Warengruppen (falsche Datei), bricht er ab und ändert nichts – vorher wurden dabei alle Artikel auf „nicht mehr in der Kasse“ gesetzt. Gehen Artikel auf „nicht mehr in der Kasse“, nennt die Rückfrage Anzahl und Namen, Taste „Trotzdem importieren“ (Michael 24.11.2026, Sprachchat).
 
 ## 0.10.34 – Waren- und Hauptgruppen im Planer, Hinweis bei Tasten an der Waage, klarere „Weiter“-Tasten

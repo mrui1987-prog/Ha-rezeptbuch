@@ -425,8 +425,18 @@ $("r-run").addEventListener("click", async () => {
 // ---- Planen (Teil P-B): eingebettete Seite /planer und Einstellung --------------------
 
 let planLoaded = false;
+// Eingebetteter Planer endet am unteren Fensterrand, damit seine Leiste „Plan speichern“ unten bleibt und nicht
+// mitten über den Artikeln steht, wenn die Admin-Seite scrollt (Michael 24.11.2026, 14:38, Browser).
+function fitPlanFrame() {
+  const f = $("plan-frame");
+  if (!f.offsetParent) return;
+  const top = f.getBoundingClientRect().top + window.scrollY;
+  f.style.height = Math.max(420, window.innerHeight - top - 12) + "px";
+}
+window.addEventListener("resize", fitPlanFrame);
 async function showPlan() {
   if (!planLoaded) { $("plan-frame").src = BASE + "planer?embedded=1"; planLoaded = true; }
+  requestAnimationFrame(() => { fitPlanFrame(); window.scrollTo(0, 0); });
   try { const s = await api("settings/planner"); $("set-presel").checked = s.in_preselection; } catch (err) { handleError(err); }
 }
 $("plan-open").href = BASE + "planer";
