@@ -98,6 +98,20 @@ def test_month_export_rates_groups_credit_note(conn, env):
     assert ws.cell(row=3, column=4).value == "Gutschrift GS1" and ws.cell(row=2, column=len(head)).value == "ok"
     with pytest.raises(ValidationError):
         bk.month_rows(conn, "2026-13")
+    m = bk.months(conn)
+    assert m["months"] == [{"month": "2026-11", "n": 1}, {"month": "2026-10", "n": 2}]
+
+
+def test_articles_list_keeps_checked(conn, env):
+    upload(conn, env, inv("RE4", [wpos(1, "1001", "100001", "Schokoriegel", 1000),
+                                  wpos(2, "1250", "370066", "Stäbchen", 800, mwst=19)]),
+           {"1": {"action": "other"}, "2": {"action": "other", "booking_group_id": bk.UNKOSTEN}})
+    arts = {a["name"]: a for a in bk.articles(conn)}
+    assert arts["Schokoriegel"]["checked"] is False and arts["Stäbchen"]["checked"] is True
+    assert list(arts)[0] == "Schokoriegel"          # ungeprüfte zuerst
+    a = arts["Schokoriegel"]
+    bk.confirm(conn, [{"kind": a["kind"], "id": a["id"], "booking_group_id": a["booking_group_id"]}])
+    assert all(x["checked"] for x in bk.articles(conn)) and len(bk.articles(conn)) == 2
 
 
 def test_substitute_mark_and_repeat(conn, env):
@@ -115,6 +129,16 @@ def test_substitute_mark_and_repeat(conn, env):
     assert r2["lines"][0]["repeat_substitute"] is True
     rec.clear_substitute(conn, rm)
     assert rec.list_substitutes(conn) == []
+
+
+def test_ab_substitute_pending_until_booked(conn, env):
+    rm = mehl(conn)
+    _, doc = load(conn, env, [position(1, "555001", "Speisequark Fremd", 5000)],
+                  {"1": {"action": "substitute", "raw_material_id": rm}})
+    pend = rec.pending_substitutes(conn)
+    assert [(p["id"], p["article_no"]) for p in pend] == [(rm, "555001")] and rec.list_substitutes(conn) == []
+    rec.book(conn, doc["id"], {"lines": [{"id": doc["lines"][0]["id"], "qty_milli": 5000}]})
+    assert rec.pending_substitutes(conn) == [] and [s["id"] for s in rec.list_substitutes(conn)] == [rm]
 
 
 def test_ab_substitute_prior_hint(conn, env):

@@ -22,6 +22,7 @@
   .card { border: 2px solid var(--line); border-radius: var(--radius); padding: 1.4vh 2vw; display: flex;
           flex-direction: column; gap: 1vh; }
   .card.done { border-color: var(--ok); background: #f1faf3; }
+  table.simple tr.checked td { background: #e6f4ea; }
   .card.warn { border-color: var(--high); }
   .card .title { font-size: 2.8vh; font-weight: 700; }
   .card .sub { font-size: 2vh; color: var(--muted); }
@@ -1060,36 +1061,63 @@
     stopCam();
     setView("Buchführung", home);
     const main = $("main");
-    let groups = [], unchecked = [], subs = [];
+    let groups = [], arts = [], subs = [], pend = [], months = { months: [], order_confirmations: 0 };
     try {
-      [groups, unchecked, subs] = await Promise.all([RB.api("admin/booking/groups?all=true"), RB.api("admin/booking/unchecked"),
-                                                     RB.api("admin/receiving/substitutes")]);
+      [groups, arts, subs, pend, months] = await Promise.all([RB.api("admin/booking/groups?all=true"), RB.api("admin/booking/articles"),
+                                                     RB.api("admin/receiving/substitutes"), RB.api("admin/receiving/substitutes/pending"),
+                                                     RB.api("admin/booking/months")]);
     } catch (e) { fail(e); return; }
+    const unchecked = arts.filter((a) => !a.checked);
     const active = groups.filter((g) => !g.archived);
 
     // 1. Export je Monat
     main.appendChild(el("h2", "Export für die Buchführung"));
     const now = new Date(); now.setDate(1); now.setMonth(now.getMonth() - 1);
     const month = el("input"); month.type = "month";
-    month.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    // Vorwahl: neuester Monat mit Rechnung/Gutschrift, sonst Vormonat
+    month.value = months.months.length ? months.months[0].month
+      : now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
     const r1 = el("div", null, "row");
     r1.appendChild(month);
     const out = el("div");
     r1.appendChild(btn("Anzeigen", () => showMonth(month.value, out)));
-    r1.appendChild(btn("Excel herunterladen", () => download("admin/booking/export.xlsx?month=" + month.value,
-                                                              "Wareneingang_" + month.value + ".xlsx"), "primary"));
+    r1.appendChild(btn("Excel herunterladen", () => {
+      if (!months.months.some((m) => m.month === month.value)) {
+        msg("Im " + monthName(month.value) + " ist keine Rechnung oder Gutschrift eingelesen – die Excel-Datei wäre leer.", "orange");
+        showMonth(month.value, out);
+        return;
+      }
+      download("admin/booking/export.xlsx?month=" + month.value, "Wareneingang_" + month.value + ".xlsx");
+    }, "primary"));
     main.appendChild(r1);
+    if (months.months.length) {
+      main.appendChild(el("p", "Eingelesen: " + months.months.map((m) => monthName(m.month) + " (" + m.n + ")").join(" · "), "hint"));
+    } else {
+      main.appendChild(el("p", "⚠ Noch keine Rechnung oder Gutschrift eingelesen" +
+        (months.order_confirmations ? " – Auftragsbestätigungen zählen nicht für die Buchführung" : "") +
+        ". Rechnung unter „Beleg hochladen“ einlesen.", "hint"));
+    }
     main.appendChild(el("p", "Nur BÄKO-Rechnungen und -Gutschriften nach Belegdatum. Spalte „Nr.“ bleibt leer (Nummer in Excel nach unten ziehen).", "hint"));
     main.appendChild(out);
 
     // 2. Ungeprüfte Buchungsgruppen (K03-84)
-    main.appendChild(el("h2", "Buchungsgruppen prüfen" + (unchecked.length ? " (" + unchecked.length + ")" : "")));
+    main.appendChild(el("h2", "Buchungsgruppen prüfen" + (unchecked.length ? " (" + unchecked.length + " offen)" : "")));
+    let showChecked = true;
+    try { showChecked = sessionStorage.getItem("rb.booking.showChecked") !== "0"; } catch (e) { /* egal */ }
+    const r2 = el("div", null, "row");
+    r2.appendChild(btn(showChecked ? "Geprüfte ausblenden" : "Geprüfte einblenden", () => {
+      try { sessionStorage.setItem("rb.booking.showChecked", showChecked ? "0" : "1"); } catch (e) { /* egal */ }
+      bookkeeping();
+    }));
+    main.appendChild(r2);
+    const shown = showChecked ? arts : unchecked;
     if (!unchecked.length) main.appendChild(el("p", "Alles geprüft.", "hint"));
-    else {
-      main.appendChild(el("p", "Automatisch gesetzte Gruppen. „Passt“ bestätigt, „Ändern“ stellt um und bestätigt.", "hint"));
+    if (shown.length) {
+      main.appendChild(el("p", "Weiß = automatisch gesetzt, noch offen. Grün = geprüft, jederzeit änderbar. „Passt“ bestätigt, „Ändern“ stellt um.", "hint"));
       const t = el("table", null, "simple");
-      unchecked.forEach((u) => {
+      shown.forEach((u) => {
         const tr = el("tr");
+        if (u.checked) tr.className = "checked";
         const info = el("td");
         info.appendChild(el("div", (u.number ? u.number + " " : "") + u.name));
         info.appendChild(el("div", u.group_name + " · " + (u.kind === "other_article" ? "Sonstiger Artikel" : u.type === "aid" ? "Hilfs- und Betriebsstoff" : "Rohstoff"), "sub"));
@@ -1099,13 +1127,14 @@
           try { await RB.api("admin/booking/confirm", { method: "POST", body: { items: [{ kind: u.kind, id: u.id, booking_group_id: gid }] } }); bookkeeping(); }
           catch (e) { fail(e); }
         };
-        a.appendChild(btn("Passt", () => send(u.booking_group_id), "primary"));
+        if (u.checked) a.appendChild(el("span", "✓ geprüft", "sub"));
+        else a.appendChild(btn("Passt", () => send(u.booking_group_id), "primary"));
         a.appendChild(btn("Ändern", async () => { const g = await pickGroup(active, u.name); if (g) send(g.id); }));
         tr.appendChild(a);
         t.appendChild(tr);
       });
       main.appendChild(t);
-      main.appendChild(btn("Alle " + unchecked.length + " bestätigen", async () => {
+      if (unchecked.length) main.appendChild(btn("Alle " + unchecked.length + " offenen bestätigen", async () => {
         try {
           await RB.api("admin/booking/confirm", { method: "POST", body: { items: unchecked.map((u) => ({ kind: u.kind, id: u.id, booking_group_id: u.booking_group_id })) } });
           bookkeeping();
@@ -1115,7 +1144,7 @@
 
     // 3. Ersatzware im Bestand (M03-35)
     main.appendChild(el("h2", "Ersatzware – Pass prüfen" + (subs.length ? " (" + subs.length + ")" : "")));
-    if (!subs.length) main.appendChild(el("p", "Keine.", "hint"));
+    if (!subs.length && !pend.length) main.appendChild(el("p", "Keine.", "hint"));
     const t3 = el("table", null, "simple");
     subs.forEach((x) => {
       const tr = el("tr");
@@ -1131,6 +1160,20 @@
       t3.appendChild(tr);
     });
     main.appendChild(t3);
+    if (pend.length) {
+      main.appendChild(el("p", "Auf einer Auftragsbestätigung als Ersatz eingetragen, noch nicht geliefert – erscheint oben, sobald am Liefertag gebucht:", "hint"));
+      const t3b = el("table", null, "simple");
+      pend.forEach((x) => {
+        const tr = el("tr");
+        const info = el("td");
+        info.appendChild(el("div", x.number + " " + x.name));
+        info.appendChild(el("div", "Ersatz: " + (x.article_no ? x.article_no + " " : "") + (x.description || "") + " · " + x.doc_no + " Pos. " + x.line_no, "sub"));
+        tr.appendChild(info);
+        tr.appendChild(el("td", "erwartet", "sub"));
+        t3b.appendChild(tr);
+      });
+      main.appendChild(t3b);
+    }
 
     // 4. Gruppen pflegen (K03-79)
     main.appendChild(el("h2", "Buchungsgruppen"));
@@ -1172,6 +1215,11 @@
       else await RB.api("admin/booking/groups", { method: "POST", body: body });
       bookkeeping();
     } catch (e) { fail(e); }
+  }
+
+  function monthName(m) {
+    const [y, mo] = m.split("-");
+    return ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"][+mo - 1] + " " + y;
   }
 
   async function showMonth(month, out) {

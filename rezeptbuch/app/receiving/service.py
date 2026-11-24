@@ -365,6 +365,17 @@ def list_substitutes(conn: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def pending_substitutes(conn: sqlite3.Connection) -> list[dict]:
+    """Ersatz auf einer AB eingetragen, aber noch nicht geliefert/gebucht (Marke M03-35 kommt erst beim Buchen)."""
+    rows = conn.execute(
+        "SELECT l.id AS line_id, d.doc_no, l.line_no, l.description, l.article_no, r.id, r.number, r.name "
+        "FROM receiving_line l JOIN receiving_document d ON d.id = l.document_id "
+        "JOIN raw_material r ON r.id = l.raw_material_id "
+        "WHERE l.target = 'substitute' AND l.state IN ('open', 'backorder') AND l.delivered_qty_milli = 0 "
+        "ORDER BY d.doc_no, l.line_no").fetchall()
+    return [dict(r) for r in rows]
+
+
 def clear_substitute(conn: sqlite3.Connection, rm_id: int) -> None:
     with transaction(conn):
         if not conn.execute("UPDATE raw_material SET substitute_note = NULL WHERE id = ?", (rm_id,)).rowcount:

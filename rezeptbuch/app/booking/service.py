@@ -153,6 +153,27 @@ def unchecked(conn: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def articles(conn: sqlite3.Connection) -> list[dict]:
+    """Alle nicht archivierten Artikel mit Buchungsgruppe, geprüfte und ungeprüfte (Prüfliste, M03-40)."""
+    rows = conn.execute(
+        "SELECT 'raw_material' AS kind, r.id, r.number, r.name, r.type, r.booking_group_id, g.name AS group_name, "
+        "r.booking_group_checked AS checked FROM raw_material r JOIN booking_group g ON g.id = r.booking_group_id "
+        "WHERE r.archived = 0 "
+        "UNION ALL SELECT 'other_article', o.id, NULL, coalesce(o.description, o.article_no), 'other', "
+        "o.booking_group_id, g.name, o.booking_group_checked FROM other_article o "
+        "JOIN booking_group g ON g.id = o.booking_group_id WHERE o.archived = 0 ORDER BY 8, 7, 4").fetchall()
+    return [dict(r) | {"checked": bool(r["checked"])} for r in rows]
+
+
+def months(conn: sqlite3.Connection) -> dict:
+    """Monate mit eingelesenen Rechnungen/Gutschriften (neueste zuerst) und Zahl der ABs (zählen nicht)."""
+    rows = conn.execute(
+        "SELECT substr(doc_date, 1, 7) AS month, count(*) AS n FROM receiving_document "
+        "WHERE kind IN ('invoice', 'credit_note') AND doc_date IS NOT NULL GROUP BY 1 ORDER BY 1 DESC").fetchall()
+    ab = conn.execute("SELECT count(*) FROM receiving_document WHERE kind = 'order_confirmation'").fetchone()[0]
+    return {"months": [dict(r) for r in rows], "order_confirmations": ab}
+
+
 def confirm(conn: sqlite3.Connection, items: list) -> int:
     """Gruppen bestätigen bzw. umstellen: [{kind, id, booking_group_id}] – bestätigt ist danach jede."""
     if not isinstance(items, list) or not items:

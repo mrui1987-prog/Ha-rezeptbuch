@@ -39,6 +39,16 @@ def unchecked(db: sqlite3.Connection = Depends(get_db)):
     return service.unchecked(db)
 
 
+@router.get("/booking/articles")
+def articles(db: sqlite3.Connection = Depends(get_db)):
+    return service.articles(db)
+
+
+@router.get("/booking/months")
+def months(db: sqlite3.Connection = Depends(get_db)):
+    return service.months(db)
+
+
 @router.post("/booking/confirm")
 def confirm(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
     return {"confirmed": service.confirm(db, payload.get("items"))}
@@ -60,6 +70,11 @@ def export(month: str = Query(...), db: sqlite3.Connection = Depends(get_db)):
 def substitutes(db: sqlite3.Connection = Depends(get_db)):
     """M03-35: Rohstoffe mit Marke „Ersatzware im Bestand – Pass prüfen“."""
     return receiving.list_substitutes(db)
+
+
+@router.get("/receiving/substitutes/pending")
+def substitutes_pending(db: sqlite3.Connection = Depends(get_db)):
+    return receiving.pending_substitutes(db)
 
 
 @router.post("/receiving/substitutes/{rm_id}/clear", status_code=204)

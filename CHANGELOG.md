@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.10.33 – Buchführung: leerer Export erklärt, Prüfliste behält geprüfte Artikel, angekündigter Ersatz
+
+- **Export:** Die Seite zeigt, für welche Monate Rechnungen/Gutschriften eingelesen sind, und wählt den neuesten davon vor. Ohne Rechnung im Monat gibt es statt einer leeren Excel-Datei einen Hinweis – Auftragsbestätigungen zählen nicht für die Buchführung (K03-78). Neu: `GET /api/v1/admin/booking/months`.
+- **„Buchungsgruppen prüfen“ (Wunsch Michael 24.11., 10:08):** Bestätigte Artikel verschwinden nicht mehr, sondern stehen grün hinterlegt in der Liste und bleiben über „Ändern“ bearbeitbar; offene zuerst. Taste oben „Geprüfte ausblenden/einblenden“ (merkt sich die Wahl). Neu: `GET /api/v1/admin/booking/articles`.
+- **„Ersatzware – Pass prüfen“:** zeigt zusätzlich Ersatz, der auf einer Auftragsbestätigung eingetragen, aber noch nicht geliefert ist („erwartet“). Die Marke am Rohstoff (M03-35) kommt weiterhin erst beim Buchen am Liefertag. Neu: `GET /api/v1/admin/receiving/substitutes/pending`.
+
 ## 0.10.32 – Tara-Modell M09-19
 
 - **Nach „Behälter wiegen/wechseln“ nur noch Tara, kein Null mehr mit dem Behälter auf der Waage.** Die KERN löscht beim Nullen die Tara und „versteckt“ den Behälter – dadurch stimmte die Gesamtlast nicht mehr. Wird die Tara nicht bestätigt, sendet die Software sie bei ruhiger Anzeige bis zu zweimal neu. Null gibt es nur noch auf leerer Waage.
