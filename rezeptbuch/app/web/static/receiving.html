@@ -23,6 +23,8 @@
           flex-direction: column; gap: 1vh; }
   .card.done { border-color: var(--ok); background: #f1faf3; }
   table.simple tr.checked td { background: #e6f4ea; }
+  table.simple tr.miss td { background: #fde8e8; }
+  table.simple tr.miss td .sub { color: #b71c1c; }
   .card.warn { border-color: var(--high); }
   .card .title { font-size: 2.8vh; font-weight: 700; }
   .card .sub { font-size: 2vh; color: var(--muted); }
@@ -399,7 +401,7 @@
           doc = await send();
         }
         stopKeep();
-        if (pre.billing) { msg(doc.kind_text + " " + doc.doc_no + " gespeichert – erscheint im Export für die Buchführung.", "blue"); bookkeeping(); return; }
+        if (pre.billing) { msg(doc.kind_text + " " + doc.doc_no + " gespeichert – erscheint im Export für die Buchführung.", "blue"); showAssignment(doc.id, archive); return; }
         msg("Gespeichert – Lieferung " + doc.doc_no + " wartet.", "blue");
         openDelivery(doc.id);
       } catch (e) {
@@ -1008,6 +1010,7 @@
       tr.appendChild(info);
       const a = el("td");
       a.appendChild(btn("PDF", () => openPdf(d.id, d.doc_no)));
+      a.appendChild(btn("Zuordnung", () => showAssignment(d.id, archive)));
       a.appendChild(btn("Löschen", async () => {
         const ok = await RB.dialog({ nearTap: true, title: "Beleg " + d.doc_no + " löschen?", text: "Das PDF und alle Zuordnungen dieses Belegs werden gelöscht.",
           buttons: [{ label: "Abbrechen", value: false }, { label: "Löschen", value: true, kind: "danger" }] });
@@ -1054,6 +1057,109 @@
       t2.appendChild(tr);
     });
     $("main").appendChild(t2);
+  }
+
+  // ------------------------------------------------------------ Zuordnung eines Belegs ansehen/ändern (M03-41/M03-42)
+  async function showAssignment(id, back) {
+    stopCam();
+    let a;
+    try { a = await RB.api("admin/receiving/documents/" + id + "/assignment"); } catch (e) { fail(e); return; }
+    setView(a.kind_text + " " + a.doc_no, back || archive);
+    const main = $("main");
+    const again = () => showAssignment(id, back);
+    main.appendChild(el("p", a.dealer_name + " · Beleg vom " + date(a.doc_date), "hint"));
+
+    // Rechnung gegen Lieferung: offene Positionen rot, „Nachbuchen“ (M03-41)
+    if (a.kind === "invoice") {
+      const miss = a.reconcile.filter((r) => r.status === "open" || r.status === "no_ab" || r.status === "unit");
+      main.appendChild(el("h2", miss.length ? "Nicht geliefert/gebucht (" + miss.length + ")" : "Lieferung passt zur Rechnung"));
+      if (!a.reconcile.length) main.appendChild(el("p", "Keine Rohstoff-Positionen auf dieser Rechnung.", "hint"));
+      if (miss.length) {
+        main.appendChild(el("p", "Auf der Rechnung, aber nicht (voll) in den Bestand gebucht. „Nachbuchen“ bucht die fehlende Menge als Zugang, „Nicht buchen“ lässt sie bewusst weg.", "hint"));
+        const t = el("table", null, "simple");
+        miss.forEach((r) => {
+          const tr = el("tr", null, "miss");
+          const info = el("td");
+          info.appendChild(el("div", "Pos. " + r.line_no + " " + (r.description || r.article_no || "")));
+          let why;
+          if (r.status === "open") why = "fehlt " + fmtMilli(r.missing_milli, r.unit_code) + " – AB " + r.ab_doc_no + " Pos. " + r.ab_line_no
+            + " geliefert " + fmtMilli(r.delivered_milli, r.unit_code);
+          else if (r.status === "no_ab") why = "fehlt " + fmtMilli(r.missing_milli, r.unit_code) + " – keine AB im System" + (r.order_no ? " (" + r.order_no + ")" : "");
+          else why = "Einheit auf AB und Rechnung verschieden – bitte von Hand prüfen";
+          info.appendChild(el("div", why, "sub"));
+          tr.appendChild(info);
+          const c = el("td");
+          if (r.status !== "unit") c.appendChild(btn("Nachbuchen", async () => {
+            const go = async (body) => RB.api("admin/receiving/documents/" + id + "/lines/" + r.line_id + "/rebook", { method: "POST", body: body });
+            try { await go({}); }
+            catch (e) {
+              if (e.code !== "gpu_missing") { fail(e); return; }
+              const g = await askGpu(r.unit_code, r.description);
+              if (!g) return;
+              try { await go({ grams_per_unit: g }); } catch (e2) { fail(e2); return; }
+            }
+            msg("Pos. " + r.line_no + " nachgebucht.", "blue"); again();
+          }, "primary"));
+          c.appendChild(btn("Nicht buchen", async () => {
+            try { await RB.api("admin/receiving/documents/" + id + "/lines/" + r.line_id + "/rebook", { method: "POST", body: { ignore: true } }); again(); }
+            catch (e) { fail(e); }
+          }));
+          tr.appendChild(c);
+          t.appendChild(tr);
+        });
+        main.appendChild(t);
+      }
+    }
+
+    // Zuordnung je Position (M03-42)
+    main.appendChild(el("h2", "Zuordnung"));
+    main.appendChild(el("p", a.billing ? "Artikel und Buchungsgruppe je Position. Gruppe ändern gilt für diese Position und künftig für den Artikel."
+      : "Artikel je Position. Schon in den Bestand gebuchte Positionen erst über „Löschen → Zurückbuchen“ umhängen.", "hint"));
+    const active = (a.groups || []).filter((g) => !g.archived);
+    const t2 = el("table", null, "simple");
+    a.lines.forEach((l) => {
+      const tr = el("tr");
+      const info = el("td");
+      info.appendChild(el("div", "Pos. " + l.line_no + " " + (l.description || "") + (l.article_no ? " · " + l.article_no : "")));
+      let what;
+      if (l.target === "raw_material") what = (l.raw_material_type === "aid" ? "Hilfs- und Betriebsstoff " : "Rohstoff ") + l.raw_material_number + " " + l.raw_material_name;
+      else if (l.target === "substitute") what = "Ersatz → " + l.raw_material_number + " " + l.raw_material_name;
+      else if (l.target === "other") what = "Kein Rohstoff (Sonstiger Artikel)";
+      else if (l.target === "strecke") what = "Streckenlieferung";
+      else what = "nicht zugeordnet";
+      if (a.billing) what += " · " + (l.group_name || "ohne Gruppe");
+      if (l.locked) what += " · gebucht";
+      info.appendChild(el("div", what, "sub"));
+      tr.appendChild(info);
+      const c = el("td");
+      const patch = async (body) => {
+        try { await RB.api("admin/receiving/lines/" + l.id, { method: "PATCH", body: body }); }
+        catch (e) {
+          if (e.code !== "gpu_missing") { fail(e); return; }
+          const g = await askGpu(l.unit_code, l.description);
+          if (!g) return;
+          try { await RB.api("admin/receiving/lines/" + l.id, { method: "PATCH", body: Object.assign({ grams_per_unit: g }, body) }); }
+          catch (e2) { fail(e2); return; }
+        }
+        msg("Pos. " + l.line_no + " geändert.", "blue"); again();
+      };
+      if (!l.locked && (l.target === "raw_material" || l.target === "other" || l.target === "unknown")) {
+        c.appendChild(btn("Artikel ändern", async () => {
+          const choice = await RB.dialog({ nearTap: true, title: "Pos. " + l.line_no + " zuordnen", text: l.description,
+            buttons: [{ label: "Abbrechen", value: null }, { label: "Kein Rohstoff", value: "other" },
+                      { label: "Rohstoff / HuB wählen", value: "rm", kind: "primary" }] });
+          if (choice === "other") patch({ other: true });
+          else if (choice === "rm") { const m = await pickMaterial("Zu welchem Artikel?", l.description); if (m) patch({ raw_material_id: m.id }); }
+        }));
+      }
+      if (a.billing) c.appendChild(btn("Gruppe ändern", async () => {
+        const g = await pickGroup(active, l.description);
+        if (g) patch({ booking_group_id: g.id });
+      }));
+      tr.appendChild(c);
+      t2.appendChild(tr);
+    });
+    main.appendChild(t2);
   }
 
   // ------------------------------------------------------------ Buchführung (B1, docs/buchfuehrung-export.md)

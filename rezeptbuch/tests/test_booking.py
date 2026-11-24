@@ -148,3 +148,75 @@ def test_ab_substitute_prior_hint(conn, env):
     env.append(ab([position(1, "555555", "Fremdmehl", 25000)], "AT1000002"))
     pre = rec.upload(conn, PDF + b"x2", "ab.pdf")
     assert pre["lines"][0]["prior_substitute"]["raw_material_id"] == rm
+
+
+def _ipos(nr, art, bez, menge, order):
+    p = wpos(nr, "201", art, bez, 2400, menge=menge, me="KG")
+    p["auftrag"] = {"referenz": "CL1", "auftrag": order, "auftragsdatum": "2026-11-20"}
+    return p
+
+
+def test_invoice_reconcile_and_rebook(conn, env):
+    """M03-41: Rechnungsposition nicht geliefert/gebucht → offen, „Nachbuchen“ bucht auf die AB-Position."""
+    rm = mehl(conn)
+    kw = mehl(conn, "Kirschwasser")
+    _, doc = load(conn, env, [position(1, "109037", "Weizenmehl 550", 25000), position(2, "777001", "Kirschwasser", 2000)],
+                  {"1": {"action": "assign", "raw_material_id": rm}, "2": {"action": "assign", "raw_material_id": kw}})
+    l1, l2 = doc["lines"]
+    rec.book(conn, doc["id"], {"lines": [{"id": l1["id"], "qty_milli": 25000, "start_tracking": True},
+                                         {"id": l2["id"], "qty_milli": 0, "rest": "cancel"}]})
+    _, invd = upload(conn, env, inv("RE7", [_ipos(1, "109037", "Weizenmehl 550", 25000, "AT1000001"),
+                                            _ipos(2, "777001", "Kirschwasser", 2000, "AT1000001"),
+                                            _ipos(3, "109037", "Weizenmehl 550", 5000, None)], date="2026-11-21"))
+    assert conn.execute("SELECT order_no FROM receiving_line WHERE document_id = ? AND line_no = 1",
+                        (invd["id"],)).fetchone()[0] == "AT1000001"
+    r = {x["line_no"]: x for x in rec.reconcile(conn, invd["id"])}
+    assert r[1]["status"] == "ok" and r[2]["status"] == "open" and r[2]["missing_milli"] == 2000
+    assert r[3]["status"] == "no_ab"
+    res = rec.rebook(conn, invd["id"], r[2]["line_id"])
+    assert res["status"] == "booked" and res["ab_doc_no"] == "AT1000001"
+    assert stock_g(conn, kw) == 2000
+    res = rec.rebook(conn, invd["id"], r[3]["line_id"])
+    assert stock_g(conn, rm) == 30000
+    assert {x["status"] for x in rec.reconcile(conn, invd["id"])} == {"ok"}
+    with pytest.raises(Exception):
+        rec.rebook(conn, invd["id"], r[2]["line_id"])
+
+
+def stock_g(conn, rm_id):
+    return conn.execute("SELECT stock_g FROM raw_material WHERE id = ?", (rm_id,)).fetchone()[0]
+
+
+def test_reconcile_ignore(conn, env):
+    rm = mehl(conn)
+    load(conn, env, [position(1, "109037", "Weizenmehl 550", 25000)], {"1": {"action": "assign", "raw_material_id": rm}})
+    _, invd = upload(conn, env, inv("RE8", [_ipos(1, "109037", "Weizenmehl 550", 25000, "AT1000001")], date="2026-11-21"))
+    line = rec.reconcile(conn, invd["id"])[0]
+    assert line["status"] == "open"
+    rec.rebook(conn, invd["id"], line["line_id"], {"ignore": True})
+    assert rec.reconcile(conn, invd["id"])[0]["status"] == "ignored"
+
+
+def test_change_assignment_after_save(conn, env):
+    """M03-42: Zuordnung nachträglich ändern, gebuchte Positionen nur die Gruppe."""
+    rm = mehl(conn)
+    rm2 = mehl(conn, "Weizenmehl 812")
+    _, doc = load(conn, env, [position(1, "109037", "Weizenmehl 550", 25000), position(2, "990164", "Pfand", 1000, me="ST")],
+                  {"1": {"action": "assign", "raw_material_id": rm}, "2": {"action": "other"}})
+    a = rec.assignment(conn, doc["id"])
+    l1 = a["lines"][0]
+    assert l1["raw_material_name"] == "Weizenmehl 550" and not l1["locked"]
+    a = rec.change_line(conn, l1["id"], {"raw_material_id": rm2})
+    assert a["lines"][0]["raw_material_name"] == "Weizenmehl 812"
+    # Artikelnummer wandert mit: nächste AB findet den neuen Rohstoff
+    assert rec._source_hit(conn, a["lines"] and saved_dealer(conn), "109037")["raw_material_id"] == rm2
+    rec.book(conn, doc["id"], {"lines": [{"id": l1["id"], "qty_milli": 25000, "start_tracking": True}]})
+    assert rec.assignment(conn, doc["id"])["lines"][0]["locked"]
+    with pytest.raises(Exception):
+        rec.change_line(conn, l1["id"], {"raw_material_id": rm})
+    # Rechnung: Gruppe je Position änderbar
+    _, invd = upload(conn, env, inv("RE9", [wpos(1, "1405", "990164", "Pfand", 300, mwst=19)]),
+                     {"1": {"action": "other"}})
+    il = rec.assignment(conn, invd["id"])["lines"][0]
+    a = rec.change_line(conn, il["id"], {"booking_group_id": bk.UNKOSTEN})
+    assert a["lines"][0]["booking_group_id"] == bk.UNKOSTEN

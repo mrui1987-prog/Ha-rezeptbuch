@@ -1,9 +1,12 @@
 # Änderungen
 
-## 0.10.33 – Buchführung: leerer Export erklärt, Prüfliste behält geprüfte Artikel, angekündigter Ersatz
+## 0.10.33 – Buchführung: leerer Export erklärt, Prüfliste behält geprüfte Artikel, Rechnung gegen Lieferung, Zuordnung im Archiv
 
 - **Export:** Die Seite zeigt, für welche Monate Rechnungen/Gutschriften eingelesen sind, und wählt den neuesten davon vor. Ohne Rechnung im Monat gibt es statt einer leeren Excel-Datei einen Hinweis – Auftragsbestätigungen zählen nicht für die Buchführung (K03-78). Neu: `GET /api/v1/admin/booking/months`.
 - **„Buchungsgruppen prüfen“ (Wunsch Michael 24.11., 10:08):** Bestätigte Artikel verschwinden nicht mehr, sondern stehen grün hinterlegt in der Liste und bleiben über „Ändern“ bearbeitbar; offene zuerst. Taste oben „Geprüfte ausblenden/einblenden“ (merkt sich die Wahl). Neu: `GET /api/v1/admin/booking/articles`.
+- **Rechnung gegen Lieferung (Wunsch Michael 24.11., 10:29, Anlass Kirschwasser):** Nach dem Einlesen einer Rechnung und im Archiv über „Zuordnung“ stehen Rohstoff-Positionen, die laut AB nicht (voll) geliefert/gebucht sind, **rot** mit „Nachbuchen“ (bucht die fehlende Menge auf die AB-Position, ohne AB direkt auf den Rohstoff; fehlt das Gewicht je Einheit, wird gefragt) und „Nicht buchen“. Neu: `POST /api/v1/admin/receiving/documents/{id}/lines/{line}/rebook`.
+- **Archiv: Taste „Zuordnung“** zwischen „PDF“ und „Löschen“: zeigt je Position Artikel (und bei Rechnungen die Buchungsgruppe) und lässt sie ändern. Noch nicht gebuchte Positionen: Artikel umhängen (die BÄKO-Artikelnummer wandert mit) oder „Kein Rohstoff“; gebuchte nur die Gruppe. Neu: `GET …/documents/{id}/assignment`, `PATCH /api/v1/admin/receiving/lines/{id}`.
+- **Korrektur:** AB-Nummer, Lieferschein und Lieferdatum je Rechnungsposition wurden aus dem Leser unter falschem Namen gelesen und blieben leer; jetzt gespeichert (alte Rechnungen: AB-Nummer wird aus dem gespeicherten Leserergebnis nachgelesen).
 - **„Ersatzware – Pass prüfen“:** zeigt zusätzlich Ersatz, der auf einer Auftragsbestätigung eingetragen, aber noch nicht geliefert ist („erwartet“). Die Marke am Rohstoff (M03-35) kommt weiterhin erst beim Buchen am Liefertag. Neu: `GET /api/v1/admin/receiving/substitutes/pending`.
 
 ## 0.10.32 – Tara-Modell M09-19

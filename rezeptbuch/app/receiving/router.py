@@ -59,6 +59,21 @@ def delete_document(doc_id: int, reverse: bool = False, db: sqlite3.Connection =
     return Response(status_code=204)
 
 
+@router.get("/admin/receiving/documents/{doc_id}/assignment", dependencies=admin)
+def assignment(doc_id: int, db: sqlite3.Connection = Depends(get_db)):
+    return service.assignment(db, doc_id)
+
+
+@router.patch("/admin/receiving/lines/{line_id}", dependencies=admin)
+def change_line(line_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return service.change_line(db, line_id, payload)
+
+
+@router.post("/admin/receiving/documents/{doc_id}/lines/{line_id}/rebook", dependencies=admin)
+def rebook(doc_id: int, line_id: int, payload: dict = Body(default={}), db: sqlite3.Connection = Depends(get_db)):
+    return service.rebook(db, doc_id, line_id, payload)
+
+
 @router.get("/receiving/deliveries")
 def deliveries(db: sqlite3.Connection = Depends(get_db)):
     return service.list_deliveries(db)

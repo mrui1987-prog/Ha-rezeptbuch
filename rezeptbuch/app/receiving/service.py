@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import nullcontext
 import re
 import shutil
 import sqlite3
@@ -309,8 +310,8 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                  p.get("preiseinheit"), p.get("netto_cent"), p.get("mwst_prozent"), 1 if line["order_item"] else 0,
                  target, rm_id, other_id, gpu_used, note, group_id, line["net_book_cents"],
                  line["article_no"] if target == "substitute" else None,
-                 (p.get("auftrag") or {}).get("nummer"), (p.get("lieferung") or {}).get("nummer"),
-                 (p.get("lieferung") or {}).get("datum")))
+                 _order_ref(p), (p.get("lieferung") or {}).get("lieferschein"),
+                 (p.get("lieferung") or {}).get("lieferdatum")))
         target_dir = documents_dir()
         target_dir.mkdir(parents=True, exist_ok=True)
         final = target_dir / f"{pre['doc_no']}-{token[:8]}.pdf"
@@ -522,7 +523,7 @@ def add_unexpected(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict
 
 # -- Buchen --------------------------------------------------------------------------------
 
-def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
+def book(conn: sqlite3.Connection, doc_id: int, payload: dict, *, tx: bool = True) -> dict:
     """Liefertag buchen (W3: eine Transaktion). Je Zeile: Menge in Belegeinheit (×1000), Rest „backorder“
     (Rückstand, K03-44) oder „cancel“ (streichen), optional Ersatz und „ab jetzt führen“ (K03-46)."""
     items = payload.get("lines")
@@ -530,7 +531,7 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
         raise ValidationError("Keine Positionen zum Buchen.", field="lines")
     device = stock._device(payload.get("device_id"), required=False)
     results = []
-    with transaction(conn):
+    with (transaction(conn) if tx else nullcontext()):
         doc = _doc(conn, doc_id)
         if doc["kind"] != "order_confirmation" or doc["status"] not in ("expected", "partial"):
             raise ConflictError("Diese Lieferung ist abgeschlossen.", code="closed")
@@ -630,6 +631,201 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
     for r in results:
         r["name"] = names.get(r["raw_material_id"])
     return {"status": status, "lines": results}
+
+
+# -- Rechnung gegen Lieferung, Zuordnung ansehen/ändern (M03-41/M03-42) -------------------
+
+def _order_ref(p: dict | None) -> str | None:
+    """AB-Nummer einer Rechnungsposition aus dem Leser (Abschnitt „Auftrag …“)."""
+    a = (p or {}).get("auftrag") or {}
+    return a.get("auftrag") or a.get("nummer")
+
+
+def _positions(doc) -> dict:
+    try:
+        return {p.get("nr"): p for p in json.loads(doc["reader_json"])["daten"].get("positionen") or []}
+    except (TypeError, ValueError, KeyError):
+        return {}
+
+
+def reconcile(conn: sqlite3.Connection, doc_id: int) -> list[dict]:
+    """Je Rohstoff-Position einer Rechnung: geliefert und gebucht? (ok / open / no_ab / ignored / unit)."""
+    doc = _doc(conn, doc_id)
+    if doc["kind"] != "invoice":
+        return []
+    pos = _positions(doc)
+    out = []
+    for l in conn.execute("SELECT * FROM receiving_line WHERE document_id = ? AND target IN ('raw_material', 'substitute') "
+                          "AND qty_milli > 0 ORDER BY line_no", (doc_id,)).fetchall():
+        order = l["order_no"] or _order_ref(pos.get(l["line_no"]))
+        ab = conn.execute(
+            "SELECT x.*, d.id AS ab_doc_id, d.doc_no AS ab_doc_no FROM receiving_line x JOIN receiving_document d "
+            "ON d.id = x.document_id WHERE d.kind = 'order_confirmation' AND d.dealer_id = ? AND d.doc_no = ? "
+            "AND (x.article_no = ? OR x.raw_material_id = ?) ORDER BY (x.article_no IS ?) DESC, x.line_no LIMIT 1",
+            (doc["dealer_id"], order, l["article_no"], l["raw_material_id"], l["article_no"])).fetchone() if order else None
+        r = {"line_id": l["id"], "line_no": l["line_no"], "article_no": l["article_no"], "description": l["description"],
+             "qty_milli": l["qty_milli"], "unit_code": l["unit_code"], "order_no": order,
+             "raw_material_id": l["raw_material_id"], "ab_doc_no": ab["ab_doc_no"] if ab else None,
+             "ab_line_no": ab["line_no"] if ab else None, "delivered_milli": 0, "missing_milli": 0}
+        if l["state"] == "cancelled":
+            r["status"] = "ignored"
+        elif ab is None:
+            r["delivered_milli"] = l["delivered_qty_milli"]
+            r["missing_milli"] = max(0, l["qty_milli"] - l["delivered_qty_milli"])
+            r["status"] = "ok" if not r["missing_milli"] else "no_ab"
+        elif ab["unit_code"] != l["unit_code"]:
+            r["status"] = "unit"
+        else:
+            r["delivered_milli"] = ab["delivered_qty_milli"] + l["delivered_qty_milli"]
+            r["missing_milli"] = max(0, l["qty_milli"] - r["delivered_milli"])
+            r["status"] = "ok" if not r["missing_milli"] else "open"
+        out.append(r)
+    return out
+
+
+def rebook(conn: sqlite3.Connection, doc_id: int, line_id: int, payload: dict | None = None) -> dict:
+    """„Nachbuchen“: fehlende Menge einer Rechnungsposition als Zugang buchen – auf die AB-Position, sonst direkt.
+    payload: {"ignore": true} = bewusst nicht buchen; {"grams_per_unit": n} wenn das Gewicht je Einheit fehlt."""
+    payload = payload or {}
+    with transaction(conn):
+        rec = next((r for r in reconcile(conn, doc_id) if r["line_id"] == line_id), None)
+        if rec is None:
+            raise NotFoundError("Position nicht gefunden.", code="not_found")
+        if payload.get("ignore"):
+            conn.execute("UPDATE receiving_line SET state = 'cancelled' WHERE id = ?", (line_id,))
+            return {"status": "ignored"}
+        if rec["status"] not in ("open", "no_ab"):
+            raise ConflictError(f"Pos. {rec['line_no']} ist nicht offen.", code="not_open")
+        inv = conn.execute("SELECT * FROM receiving_line WHERE id = ?", (line_id,)).fetchone()
+        doc = _doc(conn, doc_id)
+        if rec["status"] == "open":
+            ab = conn.execute("SELECT x.id, x.state, x.document_id, d.status FROM receiving_line x JOIN receiving_document d "
+                              "ON d.id = x.document_id WHERE d.kind = 'order_confirmation' AND d.dealer_id = ? "
+                              "AND d.doc_no = ? AND x.line_no = ?",
+                              (doc["dealer_id"], rec["ab_doc_no"], rec["ab_line_no"])).fetchone()
+            if ab["state"] not in ("open", "backorder"):
+                conn.execute("UPDATE receiving_line SET state = 'backorder' WHERE id = ?", (ab["id"],))
+            if ab["status"] not in ("expected", "partial"):
+                conn.execute("UPDATE receiving_document SET status = 'partial' WHERE id = ?", (ab["document_id"],))
+            res = book(conn, ab["document_id"], {"lines": [{"id": ab["id"], "qty_milli": rec["missing_milli"],
+                                                            "rest": "cancel", "start_tracking": True}]}, tx=False)
+            return {"status": "booked", "ab_doc_no": rec["ab_doc_no"], "lines": res["lines"]}
+        # ohne AB im System (K03-26): direkt auf den Rohstoff
+        gpu = _gpu_for(conn, inv, doc["dealer_id"])
+        if gpu is None:
+            if payload.get("grams_per_unit") is None:
+                raise ConflictError(f"Pos. {inv['line_no']} ({inv['description']}): Gewicht je "
+                                    f"{UNIT_WORDS.get(inv['unit_code'], inv['unit_code'])} fehlt.",
+                                    code="gpu_missing", line_id=line_id)
+            gpu = _gpu(payload.get("grams_per_unit"), "grams_per_unit", unit=inv["unit_code"])
+            if inv["target"] == "raw_material" and inv["article_no"]:
+                _attach_source(conn, inv["raw_material_id"], doc["dealer_id"], inv["article_no"], inv["unit_code"], gpu)
+        qty = rec["missing_milli"]
+        grams = qty * gpu // 1000
+        rm = stock._row(conn, inv["raw_material_id"])
+        if rm["archived"]:
+            raise ConflictError(f"„{rm['name']}“ ist archiviert.", code="archived")
+        before = rm["stock_g"]
+        mid = stock._book(conn, rm["id"], "receipt", before, (before or 0) + grams, source=RECEIVING,
+                          note=f"{doc['dealer_name']} {doc['doc_no']} Pos. {inv['line_no']} · nachgebucht laut Rechnung"[:500],
+                          device_id=None, receiving_line_id=line_id)
+        conn.execute("UPDATE receiving_line SET delivered_qty_milli = delivered_qty_milli + ?, grams = grams + ?, "
+                     "stock_movement_id = ?, grams_per_unit_used = coalesce(grams_per_unit_used, ?) WHERE id = ?",
+                     (qty, grams, mid, gpu, line_id))
+        return {"status": "booked", "ab_doc_no": None, "grams": grams}
+
+
+def assignment(conn: sqlite3.Connection, doc_id: int) -> dict:
+    """Zuordnung eines gespeicherten Belegs ansehen (Archiv, Taste „Zuordnung“)."""
+    doc = _doc(conn, doc_id)
+    lines = []
+    for l in conn.execute("SELECT l.*, r.name AS rm_name, r.number AS rm_number, r.type AS rm_type, "
+                          "o.description AS other_name, g.name AS group_name FROM receiving_line l "
+                          "LEFT JOIN raw_material r ON r.id = l.raw_material_id "
+                          "LEFT JOIN other_article o ON o.id = l.other_article_id "
+                          "LEFT JOIN booking_group g ON g.id = l.booking_group_id "
+                          "WHERE l.document_id = ? ORDER BY l.unexpected, l.line_no", (doc_id,)).fetchall():
+        booked = l["stock_movement_id"] is not None or (doc["kind"] == "order_confirmation" and l["delivered_qty_milli"] > 0)
+        lines.append({"id": l["id"], "line_no": l["line_no"], "article_no": l["article_no"], "description": l["description"],
+                      "qty_milli": l["qty_milli"], "unit_code": l["unit_code"], "target": l["target"],
+                      "raw_material_id": l["raw_material_id"], "raw_material_name": l["rm_name"],
+                      "raw_material_number": l["rm_number"], "raw_material_type": l["rm_type"],
+                      "other_article_id": l["other_article_id"], "other_name": l["other_name"],
+                      "booking_group_id": l["booking_group_id"], "group_name": l["group_name"],
+                      "state": l["state"], "delivered_milli": l["delivered_qty_milli"], "note": l["note"],
+                      "locked": booked})
+    return {"id": doc["id"], "kind": doc["kind"], "kind_text": KIND_TEXT[doc["kind"]], "doc_no": doc["doc_no"],
+            "doc_date": doc["doc_date"], "dealer_name": doc["dealer_name"], "billing": doc["kind"] != "order_confirmation",
+            "groups": booking.list_groups(conn) if doc["kind"] != "order_confirmation" else None,
+            "lines": lines, "reconcile": reconcile(conn, doc_id)}
+
+
+def _release_article_no(conn, rm_id: int | None, dealer_id: int, article_no: str | None) -> None:
+    """Artikelnummer von der Bezugsquelle des bisherigen Rohstoffs lösen (Rest der Bezugsquelle bleibt)."""
+    if rm_id and article_no:
+        conn.execute("UPDATE raw_material_source SET article_no = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+                     "WHERE raw_material_id = ? AND dealer_id = ? AND article_no = ?", (rm_id, dealer_id, article_no))
+
+
+def change_line(conn: sqlite3.Connection, line_id: int, payload: dict) -> dict:
+    """Zuordnung einer Belegposition nachträglich ändern. payload: booking_group_id und/oder
+    raw_material_id (+ grams_per_unit) bzw. other: true. Gebuchte Positionen: nur die Buchungsgruppe."""
+    with transaction(conn):
+        l = conn.execute("SELECT * FROM receiving_line WHERE id = ?", (line_id,)).fetchone()
+        if l is None:
+            raise NotFoundError("Position nicht gefunden.", code="not_found")
+        doc = _doc(conn, l["document_id"])
+        where = f"Pos. {l['line_no']} ({l['description']})"
+        booked = l["stock_movement_id"] is not None or (doc["kind"] == "order_confirmation" and l["delivered_qty_milli"] > 0)
+        target, rm_id, other_id = l["target"], l["raw_material_id"], l["other_article_id"]
+        if "raw_material_id" in payload or payload.get("other"):
+            if booked:
+                raise ConflictError(f"{where}: schon in den Bestand gebucht – erst den Beleg zurückbuchen.",
+                                    code="line_booked")
+            if l["target"] in ("substitute", "strecke"):
+                raise ConflictError(f"{where}: Ersatz/Strecke hier nicht umstellbar.", code="not_changeable")
+            if l["target"] == "raw_material":
+                _release_article_no(conn, l["raw_material_id"], doc["dealer_id"], l["article_no"])
+            if payload.get("other"):
+                row = conn.execute("SELECT id FROM other_article WHERE dealer_id = ? AND article_no IS ?",
+                                   (doc["dealer_id"], l["article_no"])).fetchone() if l["article_no"] else None
+                other_id = row["id"] if row else conn.execute(
+                    "INSERT INTO other_article (dealer_id, article_no, description, last_unit) VALUES (?, ?, ?, ?)",
+                    (doc["dealer_id"], l["article_no"], l["description"], l["unit_code"])).lastrowid
+                target, rm_id = "other", None
+            else:
+                rm_id = _int(payload.get("raw_material_id"), "raw_material_id", minimum=1)
+                rm = stock._row(conn, rm_id)
+                gpu = None
+                if l["unit_code"] != "KG" and rm["type"] != "aid" and doc["kind"] == "order_confirmation":
+                    src = conn.execute("SELECT grams_per_unit FROM raw_material_source WHERE raw_material_id = ? "
+                                       "AND dealer_id = ?", (rm_id, doc["dealer_id"])).fetchone()
+                    if not (src and src["grams_per_unit"]):
+                        if payload.get("grams_per_unit") is None:
+                            raise ConflictError(f"{where}: Gewicht je {UNIT_WORDS.get(l['unit_code'], l['unit_code'])} fehlt.",
+                                                code="gpu_missing", line_id=line_id)
+                        gpu = _gpu(payload.get("grams_per_unit"), "grams_per_unit", where, l["unit_code"])
+                if l["article_no"]:
+                    _attach_source(conn, rm_id, doc["dealer_id"], l["article_no"], l["unit_code"], gpu, where)
+                target, other_id = "raw_material", None
+            conn.execute("UPDATE receiving_line SET target = ?, raw_material_id = ?, other_article_id = ? WHERE id = ?",
+                         (target, rm_id, other_id, line_id))
+        if payload.get("booking_group_id") is not None:
+            gid = payload["booking_group_id"]
+            g = conn.execute("SELECT id FROM booking_group WHERE id = ? AND archived = 0", (gid,)).fetchone() \
+                if isinstance(gid, int) and not isinstance(gid, bool) else None
+            if g is None:
+                raise ValidationError(f"{where}: Buchungsgruppe ungültig.", field="booking_group_id")
+            conn.execute("UPDATE receiving_line SET booking_group_id = ? WHERE id = ?", (gid, line_id))
+            if target != "substitute" and payload.get("for_article", True):
+                booking.set_article_group(conn, raw_material_id=rm_id if target == "raw_material" else None,
+                                          other_article_id=other_id if target == "other" else None,
+                                          group_id=gid, checked=True)
+        elif doc["kind"] != "order_confirmation" and ("raw_material_id" in payload or payload.get("other")):
+            line = {"commodity_group": l["commodity_group"], "line_no": l["line_no"]}
+            gid = _line_group(conn, doc["dealer_id"], line, {}, where, target=target, rm_id=rm_id, other_id=other_id)
+            conn.execute("UPDATE receiving_line SET booking_group_id = ? WHERE id = ?", (gid, line_id))
+    return assignment(conn, l["document_id"])
 
 
 # -- Sonstige Artikel -------------------------------------------------------------------------
