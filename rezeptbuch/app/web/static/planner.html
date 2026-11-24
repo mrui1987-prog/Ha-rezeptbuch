@@ -43,6 +43,7 @@
   .lines td input.item { width: 100%; min-width: 14rem; }
   .sum { font-weight: bold; margin: .6rem 0; }
   .note { background: #fff7e0; border: 1px solid #e6c56b; padding: .4rem .6rem; border-radius: 4px; margin: .4rem 0; }
+  tr.grp td { background: #eef1f6; font-weight: bold; padding-top: .6em; }
 </style>
 </head>
 <body>
@@ -114,7 +115,7 @@
     <table>
       <thead><tr>
         <th><input id="sel-all" type="checkbox" aria-label="alle auswählen"></th>
-        <th class="num">Nr.</th><th>Name</th><th class="num">WG</th><th class="num">Stück/Ganzes</th>
+        <th class="num">Nr.</th><th>Name</th><th>Warengruppe</th><th class="num">Stück/Ganzes</th>
         <th class="num">Zeilen</th><th>Planen</th>
       </tr></thead>
       <tbody id="list"></tbody>
@@ -306,7 +307,18 @@ async function loadList() {
 
 function renderList() {
   const body = $("list"); body.textContent = "";
-  articles.forEach((a) => {
+  // Nach Hauptgruppe der Kasse gegliedert, sobald die Zuordnung übernommen ist (Michael 24.11.2026, 14:32)
+  const byMain = articles.some((a) => a.main_group != null);
+  const list = byMain ? [...articles].sort((x, y) => (x.main_group ?? 1e9) - (y.main_group ?? 1e9)
+    || x.register_group - y.register_group || x.register_no - y.register_no) : articles;
+  let lastMain;
+  list.forEach((a) => {
+    if (byMain && a.main_group !== lastMain) {
+      lastMain = a.main_group;
+      const hr = el("tr", null, "grp");
+      const td = el("td", a.main_group == null ? "ohne Hauptgruppe" : "Hauptgruppe " + a.main_group + (a.main_group_name ? " · " + a.main_group_name : ""));
+      td.colSpan = 7; hr.appendChild(td); body.appendChild(hr);
+    }
     const tr = el("tr", null, "click" + (a.in_register ? "" : " out"));
     const td0 = el("td"); const cb = el("input"); cb.type = "checkbox"; cb.checked = selected.has(a.id);
     cb.addEventListener("click", (ev) => { ev.stopPropagation(); cb.checked ? selected.add(a.id) : selected.delete(a.id); updateBulk(); });
@@ -316,7 +328,7 @@ function renderList() {
     if (!a.in_register) name.appendChild(el("span", " (nicht mehr in der Kasse)", "small"));
     if (a.has_warning) name.appendChild(el("span", " ⚠", "warn"));
     tr.appendChild(name);
-    tr.appendChild(el("td", a.register_group_name ? a.register_group + " " + a.register_group_name : a.register_group));
+    tr.appendChild(el("td", a.register_group_name ? a.register_group + " " + a.register_group_name : "WG " + a.register_group, "small"));
     tr.appendChild(el("td", a.pieces_per_whole || "–", "num"));
     tr.appendChild(el("td", a.line_count || "–", "num" + (a.line_count ? "" : " warn")));
     tr.appendChild(el("td", a.plan_enabled ? "ja" : "nicht planen"));

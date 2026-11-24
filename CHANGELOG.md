@@ -1,5 +1,10 @@
 # Änderungen
 
+## Nächste Version (Nummer beim Übernehmen)
+
+- **Planer → Artikel nach Hauptgruppen gegliedert:** Zwischenzeilen „Hauptgruppe 1 · Brot“, darin nach Warengruppe und Nummer sortiert; Spalte „Warengruppe“ sitzt jetzt richtig (Michael 24.11.2026, 14:32, Screenshot).
+- **Schutz beim Vectron-Artikelimport:** Findet der Import keinen Artikel der gewählten Warengruppen (falsche Datei), bricht er ab und ändert nichts – vorher wurden dabei alle Artikel auf „nicht mehr in der Kasse“ gesetzt. Gehen Artikel auf „nicht mehr in der Kasse“, nennt die Rückfrage Anzahl und Namen, Taste „Trotzdem importieren“ (Michael 24.11.2026, Sprachchat).
+
 ## 0.10.34 – Waren- und Hauptgruppen im Planer, Hinweis bei Tasten an der Waage, klarere „Weiter“-Tasten
 
 - **Waren- und Hauptgruppen mit Namen (Planer, Modul 10):** Neuer Import „Waren- und Hauptgruppen aus der Vectron (.xlsx)“ unter Rezepte → Import/Export (Probelauf → Übernehmen, PIN); erkennt Warengruppen-Export (Nummer, Name, A-Hauptgruppe) und Hauptgruppen-Export (Nummer, Name). Planer an der Station sortiert und filtert nach Hauptgruppe („7 Kuchen“, darunter Warengruppen, wenn mehrere), Artikelliste gliedert den Filter nach Hauptgruppen, Artikel zeigen Waren- und Hauptgruppe; ohne Namen bleibt die Nummer. Gespeichert als Einstellungen, keine Migration. Neu: `GET /api/v1/articles/group-names`, `POST /api/v1/admin/articles/group-names/import` (Michael 24.11.2026, 12:56/13:03/13:21).
