@@ -66,7 +66,7 @@ def test_page_without_pin_and_base(client):
 
 def test_admin_tab_and_station_button(client):
     page = client.get("/admin/planer").text
-    assert 'id="plan-frame"' in page and 'id="set-presel"' in page and 'id="r-run"' in page
+    assert 'id="plan-open"' in page and 'id="set-presel"' in page and 'id="r-run"' in page
     station = client.get("/station/1").text
     assert 'id="b-planner"' in station and "orders/\" + id + \"/articles" in station
 
