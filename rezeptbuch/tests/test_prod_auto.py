@@ -727,3 +727,27 @@ def test_hand_zero_only_on_empty_scale(conn, brot, runner, hub, clock):
     run(conn, runner, clock, 0.4)
     batches.hand_zero(conn, 1, runner)
     assert hub.commands[-1] == (1, "zero")
+
+
+def test_manual_key_shows_notice_for_a_while(conn, brot, runner, hub, clock):
+    # Michael 24.11.2026, 12:51: erkannter Tastendruck → Hinweis über der Weiter-Taste, ohne Bestätigung
+    from app.production.automation import _weigh_message
+    from app.production.runner import MANUAL_NOTICE_S
+    hub.put(1, 1100)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    run(conn, runner, clock, 3.4)
+    assert runner.notice(1) is None
+    hub.offset[1] = 1100                                          # Tara von Hand
+    run(conn, runner, clock, 0.4)
+    assert "nicht über ihre Tasten" in _weigh_message(conn, runner, 1, None)["notice"]
+    run(conn, runner, clock, MANUAL_NOTICE_S)
+    assert runner.notice(1) is None
+
+
+def test_tare_on_dashes_points_to_zero(conn, brot, runner, hub, clock):
+    # Michael 24.11.2026, 12:51: Tara bleibt ohne gültigen Wert verboten, aber mit Hinweis auf „Null“
+    hub.put(1, 0, status="invalid")
+    run(conn, runner, clock, 0.4)
+    with pytest.raises(ConflictError) as exc:
+        batches.tare(conn, brot["id"], st(), runner)
+    assert exc.value.code == "scale_invalid_use_zero" and "„Null“" in exc.value.message

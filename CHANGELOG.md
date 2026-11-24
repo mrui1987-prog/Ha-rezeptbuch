@@ -2,6 +2,8 @@
 
 ## Nächste Version (Nummer beim Übernehmen)
 
+- **Hinweis nach Tastendruck an der Waage:** Erkennt die Software Tara/Null von Hand, steht 30 s lang ein gelber Hinweis an der Station („Hey! Die Waage bitte nicht über ihre Tasten bedienen – das geht hier am Tablet.“) – beim Wiegen im Hinweisfeld, in Handwaage/Handbetrieb über der Taste „Weiter“; ohne Bestätigung (Michael 24.11.2026, 12:51).
+- **Tara bei Strichen:** Tara bleibt ohne gültigen Wert verboten, die Meldung sagt jetzt „Leere Waage: bitte „Null“ drücken“.
 - **Tara/Null von Hand an der Waage wird jetzt wirklich erkannt** (Befund Michael 24.11.2026, 12:37: im Probelauf nie erkannt). Die KERN zeigt beim Tastendruck kurz Striche – die alte Regel (zwei Werte direkt hintereinander, höchstens 0,7 s) griff deshalb nie. Neu: letzter ruhiger Wert als Anker; kommt innerhalb von 3 s ein Wert bei 0 ohne Zwischengewicht (Striche erlaubt), war es eine Taste. Weiterhin nur im Add-on-Protokoll („… von Hand an der Waage erkannt“), kein Fenster.
 - **„Weiter“ mit abweichendem Gewicht:** Die Tasten sagen jetzt, was mit der gewogenen Menge passiert, und nennen sie: „1.907 g sind im Kessel – sie zählen“ (bisher „Schon in den Kessel gegeben“) und „Neu anfangen – 1.907 g zählen nicht“ (bisher „Behälter neu aufgestellt, nichts zugegeben“). Grund: Wer ausgekippt und den leeren Behälter zurückgestellt hat, für den klang beides richtig (Michael 24.11.2026, 12:13).
 

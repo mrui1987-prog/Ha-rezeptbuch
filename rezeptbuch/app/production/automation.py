@@ -207,7 +207,8 @@ def _weigh_message(conn, runner: ProductionRunner, station: int, row) -> dict:
     data = {"actual_g": sw.actual(sample) if sample is not None else None, "gross_g": gross,
             "taring": sw.taring, "hint": flow.hint if flow else sw.hint,
             "container_step": flow.step if flow else None, "target_g": None, "tolerance_g": None,
-            "zone": None, "auto_ack_progress": 0, "capacity_warning": False}
+            "zone": None, "auto_ack_progress": 0, "capacity_warning": False,
+            "notice": runner.notice(station)}
     remaining = 0
     if row is not None:
         data["batch_id"] = row["id"]

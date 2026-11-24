@@ -541,6 +541,18 @@ def check_sub(conn, batch_id: int, payload, runner=None, *, now: str | None = No
     return get_batch(conn, batch_id, runner)
 
 
+INVALID_TARE_TEXT = ("Die Waage zeigt Striche (leer oder unter 0) – Tara geht nur mit Last darauf. "
+                     "Leere Waage: bitte „Null“ drücken.")
+
+
+def _no_tare_value(runner: ProductionRunner, station: int) -> ConflictError:
+    """Tara ohne gültigen Wert: bei Strichen Hinweis auf „Null“ (Michael 24.11.2026, 12:51: Tara bleibt so,
+    aber mit Hinweis)."""
+    if runner.sample(station).status == "invalid":
+        return ConflictError(INVALID_TARE_TEXT, code="scale_invalid_use_zero")
+    return ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
+
+
 def tare(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | None = None) -> dict:
     """Tara von Hand: neuer Bezug, dazu Tara an der Waage (6.2)."""
     now = now or utc_now()
@@ -551,7 +563,7 @@ def tare(conn, batch_id: int, payload, runner: ProductionRunner, *, now: str | N
         raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
     reference = runner.set_reference(station)
     if reference is None:
-        raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
+        raise _no_tare_value(runner, station)
     reference = runner.tare_total(station)
     with transaction(conn):
         _clear_snap(conn, batch_id)
@@ -979,5 +991,5 @@ def hand_tare(conn, station_no, runner: ProductionRunner) -> dict:
     if conn.execute("SELECT 1 FROM batch WHERE owner_station_id = ? AND status = 'running'", (station,)).fetchone():
         raise ConflictError("An dieser Station läuft ein Teig – Tara dort über den Teig.", code="batch_running")
     if runner.set_reference(station) is None:
-        raise ConflictError("Die Waage liefert keinen gültigen Wert.", code="scale_not_ok")
+        raise _no_tare_value(runner, station)
     return runner.reading(station).to_dict()

@@ -641,9 +641,10 @@
         fine.set(actual, target, tol, zone);
         // Feinbalken immer sichtbar (Michael 21:12: Einblenden verzögert), ohne Toleranz ausgeblendet
         fine.node.classList.toggle("hidden", !(tol > 0));
-        const h = w && w.hint;
+        const h = w && (w.hint || w.notice);
         hint.textContent = h || "";
         hint.classList.toggle("hidden", !h);
+        hint.classList.toggle("yellow", !!(w && !w.hint && w.notice));
         ackBtn.disabled = zone !== "ok" || ackBtn.classList.contains("busy");
       };
     }
@@ -773,8 +774,13 @@
     const sub = el("div", "", "tol");
     wrap.appendChild(st); wrap.appendChild(big); wrap.appendChild(sub);
     main.appendChild(wrap);
+    // Hinweis nach erkanntem Tastendruck an der Waage – über der Taste „Weiter“, ohne Bestätigung
+    const notice = el("div", "", "hint yellow hidden");
+    main.appendChild(notice);
     return function () {
       const s = S.station, w = S.weigh;
+      notice.textContent = (w && w.notice) || "";
+      notice.classList.toggle("hidden", !(w && w.notice));
       const ok = s && s.status === "ok";
       st.textContent = !S.configured ? "Nicht eingerichtet" : !ok ? "Stopp" : (S.mine ? "Wiegen" : "Bereit");
       st.className = "state " + (!ok ? "stop" : (S.mine ? "weigh" : "ready"));

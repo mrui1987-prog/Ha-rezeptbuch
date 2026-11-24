@@ -28,6 +28,8 @@ log = logging.getLogger("rezeptbuch.production")
 TICK_S = 0.2
 SETTINGS_EVERY_S = 5.0
 WEIGH_EMIT_MIN_S = 0.1
+MANUAL_NOTICE_S = 30.0     # so lange steht der Hinweis nach einem erkannten Tastendruck (ohne Bestätigung)
+MANUAL_NOTICE_TEXT = "Hey! Die Waage bitte nicht über ihre Tasten bedienen – das geht hier am Tablet."
 OWN_COMMAND_QUIET_S = 3.0   # so lange nach einem eigenen tare/zero keine „Tara/Null von Hand“ erkennen
 
 
@@ -110,6 +112,7 @@ class ProductionRunner:
         self._offline_seen: dict[int, float] = {}
         self._snap_written: dict[int, tuple] = {}
         self._last_command: dict[int, float] = {}
+        self._notice: dict[int, float] = {}       # Station → Zeit, bis zu der der Tasten-Hinweis steht
         self._last_emit: dict[int, tuple[float, dict]] = {}
         self._lock = threading.RLock()
         self._task: asyncio.Task | None = None
@@ -153,6 +156,7 @@ class ProductionRunner:
                                 self.settings["auto_ack_span_g"], watch_manual=quiet and station not in self._flows)
             for event in events:
                 if event in ("manual_tare", "manual_zero"):
+                    self._notice[station] = now + MANUAL_NOTICE_S
                     log.info("Waage %d: %s von Hand an der Waage erkannt (Sprung %s g) – Ist und Gesamtlast "
                              "bleiben (M09-19, Ausgleich jetzt %s g)", station,
                              "Tara" if event == "manual_tare" else "Null", sw.manual_delta_g, sw.offset(sample))
@@ -267,6 +271,13 @@ class ProductionRunner:
             # „scale_tare_g“ = Gesamtlast − Anzeige (Tara der Waage + von Hand Genulltes)
             return {"load_g": gross, "tare_g": gross - actual, "scale_tare_g": gross - sample.weight_g,
                     "actual_g": actual}
+
+    def notice(self, station: int) -> str | None:
+        """Hinweis nach erkanntem Tastendruck an der Waage (Michael 24.11.2026, 12:51: über der Weiter-Taste,
+        ohne Bestätigung; ändert M09-19 Punkt 3 „nur Protokoll“)."""
+        with self._lock:
+            until = self._notice.get(station)
+            return MANUAL_NOTICE_TEXT if until is not None and self.clock() < until else None
 
     def live_offset(self, station: int) -> int | None:
         """Gesamtlast − Anzeige, wie der Runner sie gerade verfolgt (``None`` = unbekannt, z. B. nach Neustart)."""
