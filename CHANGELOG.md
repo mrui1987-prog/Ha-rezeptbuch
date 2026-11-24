@@ -3,7 +3,9 @@
 ## Nächste Version (Nummer beim Übernehmen)
 
 - **Planer → Artikel nach Hauptgruppen gegliedert:** Zwischenzeilen „Hauptgruppe 1 · Brot“, darin nach Warengruppe und Nummer sortiert; Spalte „Warengruppe“ sitzt jetzt richtig (Michael 24.11.2026, 14:32, Screenshot).
-- **Planer im Admin (Browser):** Der eingebettete Planer reicht bis zum unteren Fensterrand; „Plan speichern“ bleibt unten statt mitten über den Artikeln zu schweben (Michael 24.11.2026, 14:38).
+- **Planer im Admin als ganze Seite:** Der Reiter „Planer → Planen“ bettet den Planer nicht mehr ein, sondern öffnet ihn mit „Planer öffnen“ als ganze Seite (oben „← Admin“ zurück). In Browser und HA-App stand „Plan speichern“ sonst mitten über den Artikeln (Michael 24.11.2026, 14:38/14:39).
+- **„Startseite“ im Planer und beim Scannen** zeigt die Startseite, statt sofort zur gemerkten Station zu springen (Michael 24.11.2026, 14:40).
+- **Reiter „Gruppen“ und „Import/Export“ auf allen Admin-Seiten** (fehlten bei Berechnung, Planer, Waagen, Ablauf; Michael 24.11.2026, 14:41).
 - **Schutz beim Vectron-Artikelimport:** Findet der Import keinen Artikel der gewählten Warengruppen (falsche Datei), bricht er ab und ändert nichts – vorher wurden dabei alle Artikel auf „nicht mehr in der Kasse“ gesetzt. Gehen Artikel auf „nicht mehr in der Kasse“, nennt die Rückfrage Anzahl und Namen, Taste „Trotzdem importieren“ (Michael 24.11.2026, Sprachchat).
 
 ## 0.10.34 – Waren- und Hauptgruppen im Planer, Hinweis bei Tasten an der Waage, klarere „Weiter“-Tasten
