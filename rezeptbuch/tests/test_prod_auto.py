@@ -664,18 +664,25 @@ def test_manual_zero_detected_in_weigh():
     sw.scale_tare_g = 800
     sw.observe(1, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
     assert sw.gross() == 1100
-    # Null von Hand: Waage zeigt brutto 0, die 1 100 g sind „versteckt“
-    assert sw.observe(1.3, Sample("ok", 0, True, net=False), 3, 5, watch_manual=True) == ["manual_zero"]
+    # Null von Hand: die KERN zeigt kurz Striche, dann brutto 0 – die 1 100 g sind „versteckt“
+    assert sw.observe(1.3, Sample("invalid", None, False), 3, 5, watch_manual=True) == []
+    assert sw.observe(2.0, Sample("ok", 0, False, net=False), 3, 5, watch_manual=True) == ["manual_zero"]
     assert sw.gross() == 1100 and sw.offset() == 1100
-    # langsames Abnehmen mit Zwischenwert ist kein Nullstellen
+    # Abnehmen mit Zwischengewicht ist keine Taste
     sw2 = StationWeigh(scale_tare_g=800)
     sw2.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
     sw2.observe(0.3, Sample("ok", 150, False, net=True), 3, 5, watch_manual=True)
     assert sw2.observe(0.6, Sample("ok", 0, True, net=True), 3, 5, watch_manual=True) == []
-    # Sprung erst nach langer Ruhe (> 0,7 s seit dem letzten Wert): kein Treffer
+    # Sprung erst lange nach dem letzten ruhigen Wert (> 3 s): kein Treffer
     sw3 = StationWeigh(scale_tare_g=800)
     sw3.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
     assert sw3.observe(5, Sample("ok", 0, True, net=True), 3, 5, watch_manual=True) == []
+    # Tara von Hand mit Strichen dazwischen
+    sw4 = StationWeigh(scale_tare_g=800)
+    sw4.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
+    sw4.observe(0.4, Sample("invalid", None, False), 3, 5, watch_manual=True)
+    assert sw4.observe(1.2, Sample("ok", 0, False, net=True), 3, 5, watch_manual=True) == ["manual_tare"]
+    assert sw4.gross() == 1100
 
 
 def test_container_tare_repeated_when_not_confirmed(conn, brot, runner, hub, clock):

@@ -24,7 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 LATE_TARE_WINDOW_S = 30.0       # so lange wird ein verspäteter Tara-Sprung noch erkannt
-MANUAL_JUMP_S = 0.7             # Tara/Null von Hand: Sprung auf ~0 ohne Zwischenwert in höchstens 0,7 s
+MANUAL_JUMP_S = 3.0             # Tara/Null von Hand: ruhiger Wert → ~0 ohne Zwischengewicht in höchstens 3 s
+                                # (die KERN zeigt beim Tarieren/Nullen kurz Striche; Befund Michael 24.11.2026, 12:37)
 EMPTY_LIMIT_G = 50              # „leer“ bzw. „Last weg“ (wie die Null-Grenze der Waage, Z07-1)
 
 
@@ -55,6 +56,9 @@ class StationWeigh:
     hint: str | None = None
     last: Sample | None = None
     last_at: float | None = None         # Zeit des letzten Werts (Sprung-Erkennung)
+    anchor: Sample | None = None         # letzter ruhiger gültiger Wert (Sprung-Erkennung, M09-19)
+    anchor_at: float | None = None
+    anchor_dirty: bool = False           # seit dem Anker ein Zwischengewicht gesehen (= Abheben, keine Taste)
     hidden_g: int = 0                    # Last, die ein Nullstellen von Hand an der Waage „versteckt“ hat
     manual_delta_g: int | None = None    # letzter erkannter Sprung durch eine Taste an der Waage
     # Auto-Quittung
@@ -101,31 +105,41 @@ class StationWeigh:
 
     def _manual_jump(self, previous: Sample | None, sample: Sample, now: float, span_g: int) -> tuple[str, int] | None:
         """Tara oder Null von Hand an der Waage (M09-19: Tasten an der Waage ändern nie Ist oder Tara der Software).
-        Erkannt, wenn eine ruhige, tarierte Anzeige (netto) zwischen zwei Beobachtungen (höchstens
-        ``MANUAL_JUMP_S`` auseinander) **ohne Zwischenwert** auf ~0 springt – Abnehmen geht bei tarierter Waage ins
-        Minus (``-----``). Netto danach = Tara von Hand; brutto danach = Null von Hand (die KERN löscht dabei die
-        Tara und „versteckt“ die Last). Ebenso brutto → netto ~0 = Tara von Hand. Der Ausgleich (Gesamtlast −
-        Anzeige) wächst um den Sprung, die Gesamtlast bleibt. Gibt (Art, Sprung in g) zurück."""
-        if previous is None or not previous.ok or not previous.stable or not sample.ok or abs(sample.weight_g) > span_g:
-            return None                                    # vorher muss die Last ruhig gelegen haben
-        if self.last_at is None or now - self.last_at > MANUAL_JUMP_S:
+        Anker = letzter **ruhige** gültige Wert. Kommt innerhalb von ``MANUAL_JUMP_S`` ein Wert bei ~0 und lag
+        dazwischen **kein Zwischengewicht** (nur Striche/ungültige Werte oder Werte beim Anker bzw. bei 0), war es
+        eine Taste: Netto danach = Tara von Hand; brutto danach = Null von Hand (die KERN löscht dabei die Tara und
+        „versteckt“ die Last); brutto → netto ~0 = Tara von Hand. Abheben zeigt Zwischengewichte, bei tarierter
+        Waage ins Minus (``-----``). Der Ausgleich (Gesamtlast − Anzeige) wächst um den Sprung, die Gesamtlast
+        bleibt. Gibt (Art, Sprung in g) zurück.
+        Befund Michael 24.11.2026, 12:37: Die alte Regel (zwei aufeinanderfolgende Werte ≤ 0,7 s) griff an der KERN
+        nie – sie zeigt beim Tastendruck kurz Striche."""
+        anchor = self.anchor
+        if sample.ok and sample.stable and abs(sample.weight_g) > span_g:
+            self.anchor, self.anchor_at, self.anchor_dirty = sample, now, False      # neuer Anker
             return None
-        delta = previous.weight_g - sample.weight_g
-        if previous.net is False and sample.net is True:
-            if abs(previous.weight_g) <= span_g:
-                return None
-            self.scale_tare_g = delta                      # Tara von Hand auf brutto zeigender Waage
-            return "manual_tare", delta
-        if previous.net is True and previous.weight_g > span_g:
-            if self.scale_tare_g is None:
-                return None
-            if sample.net is True:
-                self.scale_tare_g += delta                 # Tara von Hand auf tarierter Waage
-                return "manual_tare", delta
-            self.hidden_g += self.scale_tare_g + delta     # Null von Hand: Tara gelöscht, Last „versteckt“
-            self.scale_tare_g = 0
-            return "manual_zero", delta
-        return None
+        if anchor is None or not sample.ok:
+            return None                                    # Striche: Anker bleibt
+        if abs(sample.weight_g) > span_g:
+            if abs(sample.weight_g - anchor.weight_g) > span_g:
+                self.anchor_dirty = True                   # Zwischengewicht = Last bewegt, keine Taste
+            return None
+        # Wert bei ~0
+        hit = None
+        if not self.anchor_dirty and self.anchor_at is not None and now - self.anchor_at <= MANUAL_JUMP_S:
+            delta = anchor.weight_g - sample.weight_g
+            if anchor.net is False and sample.net is True:
+                self.scale_tare_g = delta                  # Tara von Hand auf brutto zeigender Waage
+                hit = ("manual_tare", delta)
+            elif anchor.net is True and anchor.weight_g > span_g and self.scale_tare_g is not None:
+                if sample.net is True:
+                    self.scale_tare_g += delta             # Tara von Hand auf tarierter Waage
+                    hit = ("manual_tare", delta)
+                else:
+                    self.hidden_g += self.scale_tare_g + delta   # Null von Hand: Tara gelöscht, Last versteckt
+                    self.scale_tare_g = 0
+                    hit = ("manual_zero", delta)
+        self.anchor, self.anchor_at, self.anchor_dirty = None, None, False
+        return hit
 
     def tare_total(self) -> int | None:
         """Tara gesamt für das Protokoll: Tara der Waage + Bezug der Software (sonst nur der Bezug)."""
@@ -199,7 +213,16 @@ class StationWeigh:
         events: list[str] = []
         previous = self.last
         changed = previous is None or sample != previous
-        if changed and watch_manual and not self.taring and self.late_tare_g is None:
+        watching = watch_manual and not self.taring and self.late_tare_g is None
+        if not watching:
+            self.anchor, self.anchor_at, self.anchor_dirty = None, None, False   # eigene Befehle nie als Taste deuten
+        if watching and sample.ok and sample.stable and abs(sample.weight_g) > span_g and (
+                self.anchor is None or sample == self.anchor):
+            # ruhiger Wert steht (auch unverändert): Anker setzen bzw. „zuletzt gesehen“ nachführen
+            if self.anchor is None:
+                self.anchor_dirty = False
+            self.anchor, self.anchor_at = sample, now
+        if changed and watching:
             jump = self._manual_jump(previous, sample, now, span_g)
             if jump:
                 kind, delta = jump

@@ -2,6 +2,7 @@
 
 ## Nächste Version (Nummer beim Übernehmen)
 
+- **Tara/Null von Hand an der Waage wird jetzt wirklich erkannt** (Befund Michael 24.11.2026, 12:37: im Probelauf nie erkannt). Die KERN zeigt beim Tastendruck kurz Striche – die alte Regel (zwei Werte direkt hintereinander, höchstens 0,7 s) griff deshalb nie. Neu: letzter ruhiger Wert als Anker; kommt innerhalb von 3 s ein Wert bei 0 ohne Zwischengewicht (Striche erlaubt), war es eine Taste. Weiterhin nur im Add-on-Protokoll („… von Hand an der Waage erkannt“), kein Fenster.
 - **„Weiter“ mit abweichendem Gewicht:** Die Tasten sagen jetzt, was mit der gewogenen Menge passiert, und nennen sie: „1.907 g sind im Kessel – sie zählen“ (bisher „Schon in den Kessel gegeben“) und „Neu anfangen – 1.907 g zählen nicht“ (bisher „Behälter neu aufgestellt, nichts zugegeben“). Grund: Wer ausgekippt und den leeren Behälter zurückgestellt hat, für den klang beides richtig (Michael 24.11.2026, 12:13).
 
 ## 0.10.33 – Buchführung: leerer Export erklärt, Prüfliste behält geprüfte Artikel, Rechnung gegen Lieferung, Zuordnung im Archiv
