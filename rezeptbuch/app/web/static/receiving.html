@@ -359,7 +359,7 @@
         r.appendChild(el("span", "Kam schon einmal als Ersatz für " + ps.name + ".", "sub"));
         r.appendChild(btn("Wieder Ersatz für " + ps.name, () => decide(line, c, state, decisions, "substitute",
           { raw_material_id: ps.raw_material_id, name: ps.name })));
-        r.appendChild(btn("Dauerhaft umstellen …", () => permanentSwitch(ps.name)));
+        r.appendChild(btn("Dauerhaft umstellen …", () => switchToNew(ps, line, c, state, decisions)));
         c.appendChild(r);
       }
       if (pre.billing) groupRow(line, c, decisions, pre.groups);
@@ -401,6 +401,7 @@
           doc = await send();
         }
         stopKeep();
+        if (await afterSwitch(doc, decisions)) return;
         if (pre.billing) { msg(doc.kind_text + " " + doc.doc_no + " gespeichert – erscheint im Export für die Buchführung.", "blue"); showAssignment(doc.id, archive); return; }
         msg("Gespeichert – Lieferung " + doc.doc_no + " wartet.", "blue");
         openDelivery(doc.id);
@@ -458,11 +459,39 @@
     return chosen;
   }
 
+  // M03-36: beim Hochladen dauerhaft umstellen = diese Position als neuen Rohstoff anlegen,
+  // nach dem Speichern „Rohstoff austauschen“ mit alt → neu öffnen (vorher sprang die Seite weg, ohne anzulegen)
+  async function switchToNew(ps, line, card, state, decisions) {
+    const ok = await RB.dialog({ nearTap: true, title: "Dauerhaft umstellen?",
+      text: "Diese Position wird als neuer Rohstoff angelegt (eigener Pass). Nach dem Speichern öffnet sich „Rohstoff austauschen“ "
+        + "bei den Rezepten: " + ps.name + " → neuer Rohstoff.",
+      buttons: [{ label: "Abbrechen", value: false }, { label: "Weiter – neuen Rohstoff anlegen", value: true, kind: "primary" }] });
+    if (ok) await choose("new", line, card, state, decisions, { switchFrom: ps });
+  }
+
+  // nach dem Speichern: neu angelegte Rohstoffe aus „Dauerhaft umstellen“ → Rohstoff austauschen
+  async function afterSwitch(doc, decisions) {
+    const k = Object.keys(decisions).find((x) => decisions[x] && decisions[x].switch_from);
+    if (!k) return false;
+    const from = decisions[k].switch_from;
+    const made = (doc.lines || []).find((l) => String(l.line_no) === k && l.raw_material_number);
+    if (!made) return false;
+    const ok = await RB.dialog({ nearTap: true, title: "Rohstoff austauschen",
+      text: "Neuer Rohstoff " + made.raw_material_number + " " + made.raw_material_name + " ist angelegt. Jetzt in den Rezepten "
+        + from.name + " durch ihn ersetzen?",
+      buttons: [{ label: "Später", value: false }, { label: "Zu „Rohstoff austauschen“", value: true, kind: "primary" }] });
+    if (!ok) return false;
+    location.href = RB.BASE + "admin/rezepte?view=replace&old=" + encodeURIComponent(from.number + " " + from.name)
+      + "&new=" + encodeURIComponent(made.raw_material_number + " " + made.raw_material_name);
+    return true;
+  }
+
   // M03-36: dauerhafter Herstellerwechsel nur über „Rohstoff austauschen“ (Rezepte, C3-E9, M04-7)
   async function permanentSwitch(name) {
     const ok = await RB.dialog({ nearTap: true, title: "Dauerhaft umstellen?",
       text: "Derselbe Ersatz kam schon einmal für " + name + ". Dauerhaft umstellen heißt: neuer Rohstoff mit eigenem Pass, "
-        + "Rezepte werden umgehängt („Rohstoff austauschen“ bei den Rezepten). Die Seite öffnet sich dort.",
+        + "Rezepte werden umgehängt („Rohstoff austauschen“ bei den Rezepten). Der neue Rohstoff muss dafür schon angelegt sein – "
+        + "in einem Zug geht es beim Hochladen der nächsten AB über „Dauerhaft umstellen …“.",
       buttons: [{ label: "Nein, nur Ersatz", value: false }, { label: "Zu „Rohstoff austauschen“", value: true, kind: "primary" }] });
     if (ok) location.href = RB.BASE + "admin/rezepte?view=replace&old=" + encodeURIComponent(name);
   }
@@ -501,7 +530,7 @@
     });
   }
 
-  async function choose(id, line, card, state, decisions) {
+  async function choose(id, line, card, state, decisions, opts) {
     if (id === "other") return decide(line, card, state, decisions, "other", {});
     if (id === "assign" || id === "substitute") {
       const m = await pickMaterial(id === "assign" ? "Rohstoff zuordnen" : "Ersatz für welchen Rohstoff?", line.description,
@@ -522,8 +551,9 @@
         { label: "Weiter", value: true, kind: "primary", check: () => name.value.trim() !== "" }] });
       if (!ok) return;
       const g = await needGpu(line); if (g === null) return;
-      return decide(line, card, state, decisions, "new", Object.assign({ name: name.value.trim(), tolerance: tol.value.replace(",", "."),
-                                                                          tolerance_unit: "g" }, g));
+      const ex = { name: name.value.trim(), tolerance: tol.value.replace(",", "."), tolerance_unit: "g" };
+      if (opts && opts.switchFrom) ex.switch_from = { number: opts.switchFrom.number, name: opts.switchFrom.name };
+      return decide(line, card, state, decisions, "new", Object.assign(ex, g));
     }
     if (id === "aid") {
       const how = await RB.dialog({ nearTap: true, title: "Hilfs- und Betriebsstoff", text: line.description, buttons: [

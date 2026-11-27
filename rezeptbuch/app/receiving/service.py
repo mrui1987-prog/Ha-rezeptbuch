@@ -154,11 +154,12 @@ def _preview(conn, res: dict, sha: str) -> dict:
             line.update(target="unknown", suggestions=_suggestions(conn, line["description"]),
                         needs_gpu=line["unit_code"] != "KG" and not billing)
             prior = conn.execute(   # M03-36: kam dieser Artikel schon einmal als Ersatz?
-                "SELECT l.raw_material_id, r.name FROM receiving_line l JOIN raw_material r ON r.id = l.raw_material_id "
+                "SELECT l.raw_material_id, r.name, r.number FROM receiving_line l JOIN raw_material r ON r.id = l.raw_material_id "
                 "WHERE l.target = 'substitute' AND l.substitute_ref = ? ORDER BY l.id DESC LIMIT 1", (art,)).fetchone() \
                 if art else None
             if prior:
-                line["prior_substitute"] = {"raw_material_id": prior["raw_material_id"], "name": prior["name"]}
+                line["prior_substitute"] = {"raw_material_id": prior["raw_material_id"], "name": prior["name"],
+                                            "number": prior["number"]}
         if billing:
             line["booking"] = booking.proposal(conn, dealer_id, line["commodity_group"],
                                                raw_material_id=line.get("raw_material_id"),
@@ -410,7 +411,8 @@ def _line_dict(conn, line, dealer_id: int) -> dict:
     if line["raw_material_id"]:
         rm = stock._row(conn, line["raw_material_id"])
         pack_g, pack_label = stock.pack_of(rm)
-        out.update(raw_material_name=rm["name"], raw_material_type=rm["type"], stock_g=rm["stock_g"],
+        out.update(raw_material_name=rm["name"], raw_material_number=rm["number"], raw_material_type=rm["type"],
+                   stock_g=rm["stock_g"],
                    tracked=rm["stock_g"] is not None, archived=bool(rm["archived"]), rm_pack_g=pack_g,
                    rm_pack_label=pack_label, unit_label=rm["unit_label"])
     return out

@@ -1,12 +1,15 @@
 # Änderungen
 
-## 0.10.35 – Inventur (Teil I1)
+## 0.10.35 – Inventur (Teil I1), Wareneingang „Dauerhaft umstellen“ legt den neuen Rohstoff an
 
 - **Inventur mit Stichtag, Zählliste, Abschluss und Inventurwert** (VC03-e, docs/strichcode.md 5, Abschnitt 17). Neues Panel „Inventur“ im Unterreiter Bestand (PIN): anlegen (Bezeichnung, Stichtag, Umfang), Zählliste drucken (nach Lagerort, blind), Vorschau mit gezählt/Buchbestand/seit Zählung/neu/Differenz/Wert, Ungezählte „unverändert“ oder einzeln „auf 0“, Abschluss in einer Transaktion (Vermerk „Inventur TT.MM.JJJJ“), Verwerfen, Archiv mit Excel-Export (Zwischensummen Rohstoffe / Hilfs- und Betriebsstoffe, Blatt „ohne Preis“). Preis und Wert werden beim Abschluss festgeschrieben (K03-58).
 - **Zählen ohne PIN** auf der Scan-Seite, neuer Modus „Inventur zählen“: Lagerort wählen oder Ort-Code scannen (jederzeit, O-3), Scan = +1 Gebinde, „Menge“ von Hand („3 Sack + 12,5 kg“, O-5) oder 0, „Ort fertig“ (O-4), Einträge löschen, Rückgängig, Filter „nur noch nicht gezählte“, Fußleiste „noch zu zählen: n“. Während der Inventur darf weiter verwogen und gebucht werden – der Abschluss rechnet Bewegungen seit der Zählung dazu.
 - **Hilfs- und Betriebsstoffe** zeigen Bestand und Meldewert in Rohstoffliste, Rohstoffseite, Schnellerfassung und Meldeliste jetzt in Verpackungseinheiten statt kg.
 - **Migration 0014:** `stocktake`, `stocktake_count`, `stocktake_line`. Neu: `GET /api/v1/stocktakes/open`, `POST/DELETE /api/v1/stocktakes/open/counts`, `POST /api/v1/stocktakes/open/location-done`, `GET/POST /api/v1/admin/stocktakes`, `GET …/{id}`, `POST …/{id}/close`, `POST …/{id}/cancel`, `GET …/{id}/countlist`, `GET …/{id}.xlsx`.
 - Abweichung: Zählliste als Druck aus der Seite statt PDF vom Server (keine PDF-Bibliothek im Add-on).
+- **Wareneingang – Befund Michael 27.11.2026 (Quark zum zweiten Mal als Ersatz):** „Dauerhaft umstellen …“ beim Hochladen der AB sprang sofort zu „Rohstoff austauschen“, ohne den neuen Rohstoff anzulegen – dort fehlte er, die Zuordnung der AB ging verloren. Jetzt: Rückfrage → Fenster „Neuer Rohstoff“ (Name vorbelegt) → beim Speichern wird er angelegt, danach „Rohstoff austauschen“ mit alt **und** neu vorbelegt (als Nummer + Name, eindeutig auch bei mehreren Quark-Rohstoffen); „Später“ bleibt möglich.
+- Rückfrage am Liefertag (zweiter gleicher Ersatz beim Buchen) sagt jetzt, dass der neue Rohstoff dafür schon angelegt sein muss.
+- `recipes.html` versteht `?view=replace&old=…&new=…`; Belegpositionen liefern die Rohstoffnummer mit.
 
 ## 0.10.34 – Waren- und Hauptgruppen im Planer, Hinweis bei Tasten an der Waage, klarere „Weiter“-Tasten
 
