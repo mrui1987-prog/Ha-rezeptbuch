@@ -42,6 +42,8 @@ EXPECTED_TABLES = {
     "receiving_document", "receiving_line", "other_article",
     # Modul 03, Buchführung B1 / Rechnung W2a (0013)
     "booking_group", "commodity_group_booking",
+    # Modul 03, Inventur Teil I1 (0014)
+    "stocktake", "stocktake_count", "stocktake_line",
 }
 
 

@@ -92,17 +92,17 @@ def _row(conn: sqlite3.Connection, raw_material_id: int) -> sqlite3.Row:
 
 def _book(conn, raw_material_id: int, kind: str, before: int | None, after: int | None, *, source: str,
           note: str | None = None, batch_id=None, batch_item_id=None, station=None, reason=None,
-          purchase_id=None, device_id=None, undo_of_id=None, receiving_line_id=None) -> int:
+          purchase_id=None, device_id=None, undo_of_id=None, receiving_line_id=None, stocktake_id=None) -> int:
     delta = None if before is None or after is None else after - before
     if kind in ("receipt", "consumption", "reversal", "correction") and before is None and after is not None:
         delta = after                               # erste Buchung schaltet die Führung ein
     conn.execute("UPDATE raw_material SET stock_g = ? WHERE id = ?", (after, raw_material_id))
     cur = conn.execute(
         "INSERT INTO stock_movement (raw_material_id, kind, delta_g, stock_after_g, batch_id, batch_item_id, "
-        "station_id, source, note, reason, purchase_id, device_id, undo_of_id, receiving_line_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "station_id, source, note, reason, purchase_id, device_id, undo_of_id, receiving_line_id, stocktake_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (raw_material_id, kind, delta, after, batch_id, batch_item_id, station, source, note, reason,
-         purchase_id, device_id, undo_of_id, receiving_line_id))
+         purchase_id, device_id, undo_of_id, receiving_line_id, stocktake_id))
     return cur.lastrowid
 
 

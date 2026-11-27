@@ -71,6 +71,16 @@ Reiter **„Import/Export“** (seit 0.10.15 gemeinsam für Rezepte und Rohstoff
 - Reicht der Bestand für einen Teig nicht, fragt der Start „Folgende Zutaten werden über den Bestand hinaus ins Minus gebucht“ (OK/Abbrechen). Beim Abbrechen eines Teigs: „Gewogenes vom Bestand abgezogen lassen?“ – Nein bucht zurück.
 - Filter **„am/unter Meldewert“** in der Rohstoffliste (gelb markiert), Meldeliste im Unterreiter „Bestand“. Beim Archivieren und bei „Rohstoff austauschen“ kommt die Frage „Bestand auf Null setzen?“.
 
+### Inventur (seit 0.10.35)
+
+- **Anlegen (PIN):** Rohstoffverwaltung → Unterreiter **Bestand** → Panel **Inventur**: Bezeichnung (z. B. „Jahresinventur 2026“), Stichtag, Umfang „alle bestandsgeführten“ oder „alle aktiven“. Hilfs- und Betriebsstoffe sind immer dabei. Es kann nur **eine** Inventur offen sein.
+- **Zählliste drucken (PIN):** nach Lagerort sortiert, ohne Preise und ohne Buchbestand, mit leerer Spalte „gezählt“. Druckt über den Druckdialog des Geräts (dort auch „Als PDF sichern“).
+- **Zählen (ohne PIN):** Scan-Seite → Modus **„Inventur zählen“** (oder Taste „Zählen (Scan-Seite)“). Erst den **Lagerort** wählen oder den Code am Regal scannen – ein Ort-Code wechselt jederzeit den Ort. Jeder Scan zählt **+1 Gebinde** (Hilfs- und Betriebsstoffe: +1 Verpackungseinheit). **„Menge“** trägt von Hand ein, z. B. „3 Sack + 12,5 kg“; liegt an einem Ort nichts, **0** eintragen. **„Ort fertig“** trägt für alle hier noch nicht gezählten eine 0 ein (einzeln abwählbar). Einträge eines Rohstoffs werden über alle Orte addiert und sind einzeln löschbar. Gezählt wird **blind** – die Zählseite zeigt keinen Buchbestand. Unten steht, wie viel noch zu zählen ist; Tipp darauf zeigt alle noch nicht gezählten.
+- **Weiterarbeiten erlaubt:** Während die Inventur offen ist, laufen Verwiegen, Zugang und Abgang normal. Der Abschluss rechnet alles dazu, was nach der Zählung eines Rohstoffs gebucht wurde (neuer Bestand = gezählt + Bewegungen seit der Zählung).
+- **Vorschau und Abschluss (PIN):** je Rohstoff gezählt, Buchbestand, seit Zählung, neuer Bestand, Differenz, Preis und Wert. Ungezählte bleiben **unverändert** oder einzeln **auf 0**. „Inventur abschließen“ bucht je Rohstoff „Bestand gesetzt“ mit Vermerk „Inventur TT.MM.JJJJ“ und schreibt Preis (aktive Bezugsquelle) und Wert fest. Danach ist die Inventur unveränderlich. „Verwerfen“ bucht nichts.
+- **Excel:** im Archiv je abgeschlossener Inventur – Blatt „Inventur“ mit Zwischensummen Rohstoffe und Hilfs- und Betriebsstoffe und Gesamtsumme, Blatt „ohne Preis“. Ungezählte „unverändert“ gehen mit dem Buchbestand in den Wert ein.
+- Hilfs- und Betriebsstoffe zeigen Bestand und Meldewert jetzt überall in Verpackungseinheiten („12 Karton“).
+
 ## Rezepte
 
 Reiter **„Rezepte“** im Admin-Bereich.

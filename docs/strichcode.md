@@ -1,6 +1,6 @@
 # Strichcode, Inventur und Wareneingang – gemeinsames Konzept (Schritt B)
 
-Status: **Konzept erstellt am 21.11.2026, 23:45** (Auftrag Michael 23:31: „Loslegen ohne weitere Tests“). **K03-51 bis K03-62 am 22.11.2026 im Sprachchat entschieden (eingetragen 07:55), dazu neu M03-25 Lagerorte und M03-26 Hilfs- und Betriebsstoffe.** **H-A bis H-F am 22.11. (Sprachchat, eingetragen 08:05) entschieden; Widerspruchsprüfung Abschnitt 14c; Abläufe und Vorschläge Abschnitt 14d.** **F-1, F-2, O-1 bis O-7 am 22.11. entschieden; Konzept freigegeben von Michael 22.11.2026, 08:09.** Teil S1 umgesetzt in 0.10.21 (Abschnitt 16).
+Status: **Konzept erstellt am 21.11.2026, 23:45** (Auftrag Michael 23:31: „Loslegen ohne weitere Tests“). **K03-51 bis K03-62 am 22.11.2026 im Sprachchat entschieden (eingetragen 07:55), dazu neu M03-25 Lagerorte und M03-26 Hilfs- und Betriebsstoffe.** **H-A bis H-F am 22.11. (Sprachchat, eingetragen 08:05) entschieden; Widerspruchsprüfung Abschnitt 14c; Abläufe und Vorschläge Abschnitt 14d.** **F-1, F-2, O-1 bis O-7 am 22.11. entschieden; Konzept freigegeben von Michael 22.11.2026, 08:09.** Teil S1 umgesetzt in 0.10.21 (Abschnitt 16), Teil I1 in 0.10.35 (Abschnitt 17).
 Betrifft: Modul 03 (Bestand, Rohstoffverwaltung), Modul 02 (Migrationen), Modul 10 (Startseite, Touch-Grundsätze), Modul 12 (PIN-Regeln zur Kenntnis).
 Grundlage, entschieden: M03-24 (Strichcode per Kamera, Schnellwahl; Scan-Modi 21:08 „Alle 5“, 1 = 1 Gebinde; 23:31 Gebinde beim ersten Scan abfragen und speichern), VC03-e (Wunsch Inventur mit Inventurwert, 13:20), `docs/wareneingang.md` (freigegeben 13:30, Teile W1/W2), VC03-b/VC03-d (Bestand, Schnellerfassung), M03-13 (Zugang ohne PIN, Inventur mit PIN), M11-2/M11-3 (keine Namen, keine Rohstoff-Lose), Kameratest 0.10.17–0.10.20.
 
@@ -250,6 +250,7 @@ Reihenfolge (entschieden, K03-61): **S1 → I1 → W1 → W2**. I1 vor W1, damit
 | 21.11.2026, 23:45 | Konzept erstellt (Auftrag Michael 23:31). K03-51 bis K03-62 offen. Liegt im Projektwissen; ins Repo mit der Umsetzung. |
 | 22.11.2026, 07:55 | K03-51 bis K03-62 entschieden (Sprachchat), M03-25 Lagerorte und M03-26 Hilfs- und Betriebsstoffe neu; Abschnitte 2–14 angepasst, neue offene Punkte H-A bis H-F. Freigabe offen. |
 | 22.11.2026, 08:28 | F-1 ja, F-2 nein, O-1 geändert (kein +1 ohne Beleg), O-2 bis O-7 ja + Fußleiste; **Freigabe 08:09**; Teil S1 umgesetzt (0.10.21, Abschnitt 16); Konzept ins Repo. |
+| 27.11.2026 | Teil I1 umgesetzt (0.10.35, Migration 0014); Hinweise Claude in Abschnitt 17. |
 | 22.11.2026, 08:05 | H-A bis H-F entschieden (Sprachchat), H-D mit Gebinde-Rückfrage; Widerspruchsprüfung 14c (W-1 bis W-3 in docs/wareneingang.md nachgezogen, F-1/F-2 offen); Abläufe und Vorschläge O-1 bis O-7 (Wunsch Michael 07:58). Freigabe offen. |
 
 ## 16. Umsetzung Teil S1 (0.10.21, 22.11.2026)
@@ -265,3 +266,28 @@ Reihenfolge (entschieden, K03-61): **S1 → I1 → W1 → W2**. I1 vor W1, damit
 - Inventur zählen und Wareneingang abhaken kommen mit I1 bzw. W1.
 
 **Praxisprüfung (Michael):** 3 echte Rohstoffe zuordnen, 5 Säcke +1 Einkauf, einer −1 Bruch, Rückgängig, Bestand setzen „3 Sack + 12,5 kg“; iPhone (https) und Tablet.
+
+## 17. Umsetzung Teil I1 Inventur (0.10.35, 27.11.2026)
+
+**Umgesetzt:** Migration **0014** (`stocktake`, `stocktake_count`, `stocktake_line`; höchstens eine offene Inventur per Index; Index auf `stock_movement.stocktake_id`). Neues Fachmodul `app/stocktake/`.
+- **Anlegen** (PIN) im Unterreiter Bestand, Panel „Inventur“: Bezeichnung, Stichtag, Umfang (alle bestandsgeführten / alle aktiven; Hilfs- und Betriebsstoffe immer dabei).
+- **Zählen** (ohne PIN, blind) auf der Scan-Seite, Modus **„Inventur zählen“** (auch direkt über „Zählen (Scan-Seite)“ im Panel, `scannen?modus=inventur`): erst Lagerort wählen oder Ort-Code scannen; Ort-Code jederzeit scannbar (O-3), Anzeige „Zählen: Mehllager“; Scan = +1 Gebinde (Liefergebinde, F-1; bei Hilfs- und Betriebsstoffen +1 Verpackungseinheit); Tippen auf „Menge“ = „3 Sack + 12,5 kg“ (O-5) oder „0“; „Einträge“ zeigt und löscht einzelne Einträge; Rückgängig löscht den letzten eigenen Eintrag; **„Ort fertig“** (O-4) mit vorgewählter „0“ je ungezähltem Eintrag; Filter „nur noch nicht gezählte“; **Fußleiste** mit Ort und „noch zu zählen: n“, Tipp zeigt alle noch nicht gezählten über alle Orte.
+- **Zählliste drucken** (PIN): nach Lagerort, Nr., Name, Gebinde, leere Spalte „gezählt“, ohne Preise und Buchbestand; Rohstoff mit zwei Orten steht an beiden, „ohne Lagerort“ am Ende.
+- **Vorschau und Abschluss** (PIN): je Rohstoff gezählt, Buchbestand, Bewegungen seit der Zählung, neuer Bestand, Differenz, Preis, Wert; ungezählte „unverändert“ (vorgewählt) oder einzeln „auf 0“ (Tasten für alle); Abschluss bucht in einer Transaktion je Rohstoff `inventory` mit Vermerk „Inventur TT.MM.JJJJ“, Quelle `stocktake`, `stocktake_id`; Preis und Wert werden in `stocktake_line` festgeschrieben (mit Nr., Name, Art, Gebinde zum Abschluss).
+- **Verwerfen** (PIN): bucht nichts.
+- **Archiv** mit „Ansehen“ und **Excel** (.xlsx): Blatt „Inventur“ (Kopf mit Bezeichnung, Stichtag, Abschlusszeit; Nr., Name, Menge, Einheit, Gebinde, Preis, je, Wert, Hinweis; Zwischensummen Rohstoffe und Hilfs- und Betriebsstoffe, Gesamtsumme mit Hinweis auf fehlende Preise), Blatt „ohne Preis“.
+- **Anzeige Hilfs- und Betriebsstoffe** (nachgezogen aus Abschnitt 16): Rohstoffliste, Rohstoffseite (Bestand, Verlauf), Schnellerfassung, Meldeliste und Sammelaktion „Bestand auf 0“ zeigen Verpackungseinheiten („12 Karton“) statt kg.
+- Schnittstellen: `GET /api/v1/stocktakes/open`, `POST /api/v1/stocktakes/open/counts`, `DELETE /api/v1/stocktakes/open/counts/{id}`, `POST /api/v1/stocktakes/open/location-done` (ohne PIN); `GET/POST /api/v1/admin/stocktakes`, `GET …/{id}` (Vorschau, `?zero_ids=`), `POST …/{id}/close` (`confirm`, `zero_ids`), `POST …/{id}/cancel`, `GET …/{id}/countlist`, `GET …/{id}.xlsx` (PIN).
+- Tests: `test_stocktake.py`, `test_stocktake_api.py`.
+
+**Hinweise Claude – im Rahmen des Konzepts, bei Einwand ändern:**
+- **Migration 0014** statt 0012: W1 (0012) und B1/W2a (0013) kamen vor I1 (K03-61 „nächste freie“).
+- **Zählliste als Druck aus der Seite** statt `countlist.pdf`: im Add-on gibt es keine PDF-Bibliothek; „Zählliste drucken“ öffnet den Druckdialog des Geräts (dort auch „Als PDF sichern“). Der Server liefert die Liste als JSON (`…/countlist`).
+- **Zählzeitpunkt bei mehreren Einträgen:** Bezug für „Bewegungen seit der Zählung“ ist der **letzte** Zähleintrag des Rohstoffs (Buchbestand in diesem Moment). Bewegungen lassen sich keinem Lagerort zuordnen; wer einen Rohstoff an zwei Orten zählt, sollte das zügig hintereinander tun. Begann die Bestandsführung erst nach der Zählung, zählt der ganze Buchbestand als Bewegung; wurde sie nach der Zählung beendet, keine.
+- **Inventurwert ungezählter Rohstoffe „unverändert“:** bewertet mit dem **Buchbestand** (Hinweis im Export „nicht gezählt – Buchbestand“), damit der Wert vollständig ist; „auf 0“ = 0 €. Negative Bestände zählen 0 €.
+- **Gezählt außerhalb des Umfangs:** Wird bei „alle bestandsgeführten“ ein Rohstoff ohne Bestandsführung gezählt, kommt er mit in die Inventur, und der Abschluss schaltet seine Bestandsführung ein. Der Umfang wird nicht beim Anlegen eingefroren, sondern beim Zählen/Abschluss gelesen.
+- **Gezählt ist gezählt:** Ein Rohstoff mit Einträgen wird beim Abschluss immer gesetzt, auch wenn noch nicht alle seine Orte gezählt sind (Vorschau zeigt „nicht an allen Orten“, Zähler „nicht an allen Orten n“).
+- **Blind zählen:** Die Zählansicht (`/stocktakes/open`) liefert weder Buchbestand noch Preis; beides nur in der Vorschau mit PIN.
+- Archivierte Rohstoffe sind nicht zählbar (S6).
+
+**Praxisprüfung (Michael):** Probeinventur mit 10 Rohstoffen an 2–3 Lagerorten (einer mit Lagerort 2), Zählliste drucken, zählen per Kamera und von Hand („3 Sack + 12,5 kg“, „Ort fertig“), zwischendurch einen Teig verwiegen, Vorschau prüfen (Bewegungen seit Zählung), einen ungezählten „auf 0“, abschließen, Excel öffnen.

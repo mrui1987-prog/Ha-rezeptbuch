@@ -53,6 +53,29 @@
                       white-space: normal; padding: 1.4vh 1.2rem; display: block; width: 100%; box-sizing: border-box; }
   .dlg .list button small { display: block; margin-top: .4vh; color: var(--muted); font-size: 2vh; }
   .dlg .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw; }
+  /* Inventur zählen (docs/strichcode.md 5, Teil I1) */
+  #modes button.count { border-color: var(--accent); }
+  #count { display: flex; flex-direction: column; gap: 1vh; padding-bottom: 10vh; }
+  #count .where { display: flex; align-items: center; gap: 2vw; flex-wrap: wrap; }
+  #count .where .loc { font-size: 3.6vh; font-weight: 700; flex: 1; }
+  #count .where button { min-height: 6vh; font-size: 2.2vh; }
+  #count .filter { font-size: 2.2vh; display: flex; align-items: center; gap: .6rem; }
+  #count .filter input { width: 3vh; height: 3vh; }
+  .crow { display: flex; align-items: center; gap: 1.5vw; border: 2px solid var(--line); border-radius: var(--radius);
+          padding: 1vh 1.5vw; }
+  .crow.done { border-color: var(--ok); background: #f1faf3; }
+  .crow .what { flex: 1; font-size: 2.6vh; }
+  .crow .what small { display: block; color: var(--muted); font-size: 1.9vh; }
+  .crow .got { font-size: 2.4vh; font-weight: 700; min-width: 9rem; text-align: right; }
+  .crow button { min-height: 7vh; font-size: 2.4vh; }
+  #count-foot { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 2px solid var(--line);
+                padding: 1.2vh 3vw; font-size: 2.6vh; font-weight: 700; display: flex; gap: 2vw; align-items: center; z-index: 5; }
+  #count-foot span { flex: 1; }
+  #count-foot button { min-height: 6vh; font-size: 2.2vh; }
+  .dlg .checks label { display: flex; align-items: center; gap: .8rem; font-size: 2.4vh; padding: .6vh 0; }
+  .dlg .checks input { width: 3vh; height: 3vh; margin: 0; }
+  .dlg .entries div { display: flex; align-items: center; gap: 1rem; font-size: 2.2vh; padding: .4vh 0; }
+  .dlg .entries div span { flex: 1; }
 </style>
 </head>
 <body>
@@ -87,7 +110,16 @@
   </div>
   <div class="last-scan" id="last"><div class="line">Noch kein Scan.</div></div>
   <button type="button" id="undo" class="hidden">↶ Rückgängig</button>
+  <div id="count" class="hidden">
+    <div class="where"><span class="loc" id="count-loc"></span>
+      <button type="button" id="b-loc">Ort wechseln</button><button type="button" id="b-loc-done">Ort fertig</button></div>
+    <label class="filter"><input type="checkbox" id="count-open"> nur noch nicht gezählte</label>
+    <p class="hint">Tippen = Menge eintragen (z. B. „3 Sack + 12,5 kg“), liegt hier nichts: „0“. Scannen zählt +1 Gebinde.
+      Ein Ort-Code wechselt den Ort.</p>
+    <div id="count-list" class="list"></div>
+  </div>
 </section>
+<div id="count-foot" class="hidden"><span id="count-foot-text"></span><button type="button" id="b-foot">noch nicht gezählt</button></div>
 
 <script src="ui/common.js"></script>
 <script>
@@ -108,6 +140,7 @@
     { id: "loss_other", label: "−1 Sonstiges", cls: "minus", reason: "other" },
     { id: "stock", label: "Bestand setzen", sub: "🔒 PIN", pin: true },
     { id: "assign", label: "Code zuordnen", sub: "umhängen 🔒" },
+    { id: "count", label: "Inventur zählen", sub: "offene Inventur", cls: "count" },
   ];
 
   // Gerätekennung für „Rückgängig nur eigenes Gerät“
@@ -127,7 +160,8 @@
   const gate = makeGate(GAP_MS);
 
   // ------------------------------------------------------------ Zustand
-  const S = { mode: null, purchase: null, busy: false, undo: [], series: {} };
+  const S = { mode: null, purchase: null, busy: false, undo: [], series: {},
+              st: null, loc: undefined, allOpen: false };   // Inventur: Zählstand, Lagerort (null = ohne), Filter gesamt
   let stream = null, timer = null, detector = null, audio = null;
 
   if (!window.isSecureContext) {
@@ -292,17 +326,28 @@
       S.purchase = await choosePurchase();
       if (!S.purchase) return;
     }
+    if (m.id === "count") {
+      if (!(await loadCount())) {
+        await RB.dialog({ title: "Inventur zählen", text: "Es ist keine Inventur offen. Anlegen in der Rohstoffverwaltung → Bestand → Inventur (PIN)." });
+        return;
+      }
+      S.loc = undefined; S.allOpen = false;
+    }
     S.mode = m; S.series = {};
     RB.store.set("rezeptbuch_scan_mode", m.id);
     $("mode-label").textContent = m.label + (S.purchase ? " · " + S.purchase.label : "");
     $("choose").classList.add("hidden");
     $("run").classList.remove("hidden");
     showLast("", null, ["Bereit – Code in den Rahmen halten."]);
+    $("count").classList.toggle("hidden", m.id !== "count");
+    $("count-foot").classList.toggle("hidden", m.id !== "count");
+    if (m.id === "count") { $("mode-label").textContent = "Inventur: " + S.st.stocktake.name; await chooseLocation(); }
     start();
   }
   $("b-modes").addEventListener("click", () => {
     stop(); S.mode = null; gate.reset();
     $("run").classList.add("hidden"); $("choose").classList.remove("hidden");
+    $("count-foot").classList.add("hidden");
     paintModes();
   });
 
@@ -317,7 +362,11 @@
 
   async function process(raw, format) {
     let r = await RB.api("barcodes/lookup?code=" + encodeURIComponent(raw) + "&format=" + encodeURIComponent(format));
-    if (r.status === "location") { signal(true); showLast("", "Lagerort " + r.location.name, ["Ort-Codes nutzt die Inventur."]); return; }
+    if (r.status === "location") {
+      signal(true);
+      if (S.mode.id === "count") { setLocation(r.location.id); showLast("ok", "Zählen: " + r.location.name, ["Ort gewechselt."]); return; }
+      showLast("", "Lagerort " + r.location.name, ["Ort-Codes nutzt die Inventur."]); return;
+    }
     if (r.status === "unknown") {
       const m = await pickMaterial("Code " + r.code_text + " unbekannt", "Welcher Rohstoff ist das? Der Code wird gespeichert.");
       if (!m) { showLast("warn", "Code " + r.code_text, ["nicht zugeordnet"]); return; }
@@ -341,6 +390,7 @@
       m = await RB.api("raw-materials/" + m.id + "/pack", { method: "POST", body: pack });
     }
     if (S.mode.id === "stock") return setStock(m);
+    if (S.mode.id === "count") return countScan(m);
     return book(m, false);
   }
 
@@ -425,6 +475,13 @@
     if (!u || S.busy) return;
     S.busy = true;
     try {
+      if (u.count) {
+        const res = await RB.api("stocktakes/open/counts/" + u.count, { method: "DELETE" });
+        S.undo.pop();
+        updateItem(res.item, res.open);
+        showLast("", u.m.name, ["Rückgängig: " + u.text, "gezählt gesamt " + (res.item && res.item.counted !== null ? cntText(res.item, res.item.counted) : "–")]);
+        return;
+      }
       const res = await RB.api("stock/movements/" + u.id + "/undo", { method: "POST", body: { device_id: DEVICE } });
       S.undo.pop();
       if (u.rm && S.series[u.rm]) S.series[u.rm] -= u.sign;
@@ -433,6 +490,199 @@
       S.undo.pop();
       showLast("warn", "Rückgängig", [err.message]);
     } finally { S.busy = false; paintUndo(); }
+  });
+
+  // ------------------------------------------------------------ Inventur zählen (docs/strichcode.md 5, I1)
+  // Blind: die Zählansicht kennt weder Buchbestand noch Preise. Einträge je Rohstoff werden über alle Orte addiert.
+  async function loadCount() {
+    try { S.st = await RB.api("stocktakes/open"); } catch (e) { S.st = null; }
+    return Boolean(S.st && S.st.stocktake);
+  }
+  function locName(id) {
+    if (id === null) return "ohne Lagerort";
+    const l = (S.st.locations || []).find((x) => x.id === id);
+    return l ? l.name : "Lagerort " + id;
+  }
+  function cntText(it, g) {
+    if (g === null || g === undefined) return "–";
+    if (isAid(it)) return (g / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + (it.unit_label || it.pack_label || "VE");
+    if (it.pack_g) {
+      const n = Math.floor(g / it.pack_g), rest = g - n * it.pack_g;
+      if (n && rest) return n + " " + it.pack_label + " + " + RB.kg(rest);
+      if (n) return n + " " + it.pack_label + " = " + RB.kg(g);
+    }
+    return RB.kg(g);
+  }
+  function atLoc(it, loc) {
+    if (loc === null) return !it.locations.length || it.counts.some((c) => c.location_id === null);
+    return it.locations.some((l) => l.id === loc) || it.counts.some((c) => c.location_id === loc);
+  }
+  function countedHere(it, loc) { return it.counts.filter((c) => c.location_id === loc); }
+  function openHere(it, loc) { return !countedHere(it, loc).length; }
+  function setLocation(loc) {
+    S.loc = loc; S.allOpen = false;
+    paintCount();
+  }
+  async function chooseLocation() {
+    const buttons = [{ label: "Abbrechen", value: "x" }];
+    (S.st.locations || []).forEach((l) => buttons.push({ label: l.name + (l.open ? " (noch " + l.open + ")" : " ✓"), value: l.id }));
+    buttons.push({ label: "ohne Lagerort" + (S.st.without_location_open ? " (noch " + S.st.without_location_open + ")" : ""), value: null });
+    const r = await RB.dialog({ title: "Wo wird gezählt?", text: "Lagerort wählen – oder den Code am Regal scannen.", buttons: buttons });
+    if (r !== "x") setLocation(r);
+    else paintCount();
+  }
+  $("b-loc").addEventListener("click", chooseLocation);
+  $("count-open").addEventListener("change", () => { S.allOpen = false; paintCount(); });
+  $("b-foot").addEventListener("click", () => { S.allOpen = !S.allOpen; $("count-open").checked = S.allOpen || $("count-open").checked; paintCount(); });
+
+  function paintCount() {
+    if (!S.st || !S.st.stocktake) return;
+    const loc = S.loc;
+    const chosen = loc !== undefined;
+    $("count-loc").textContent = S.allOpen ? "Noch nicht gezählt (alle Orte)" : chosen ? "Zählen: " + locName(loc) : "Lagerort wählen oder scannen";
+    $("b-loc-done").classList.toggle("hidden", !chosen || S.allOpen);
+    const onlyOpen = $("count-open").checked;
+    const list = $("count-list");
+    list.textContent = "";
+    let rows = S.st.items.filter((it) => !it.archived);
+    if (S.allOpen) rows = rows.filter((it) => !it.done);
+    else if (chosen) rows = rows.filter((it) => atLoc(it, loc) && (!onlyOpen || openHere(it, loc)));
+    else rows = [];
+    rows.forEach((it) => list.appendChild(countRow(it)));
+    if (chosen && !rows.length) list.appendChild(RB.el("p", onlyOpen ? "Hier ist alles gezählt." : "Hier ist nichts eingetragen.", "hint"));
+    const here = chosen && !S.allOpen ? S.st.items.filter((it) => !it.archived && atLoc(it, loc) && openHere(it, loc)).length : null;
+    $("count-foot-text").textContent = (chosen ? "Ort: " + locName(loc) + (here !== null ? " (hier noch " + here + ")" : "") + " · " : "")
+      + "noch zu zählen: " + S.st.open + " von " + S.st.total;
+    $("b-foot").textContent = S.allOpen ? "zurück zum Ort" : "noch nicht gezählt";
+  }
+  function countRow(it) {
+    const loc = S.allOpen ? undefined : S.loc;
+    const row = RB.el("div", null, "crow" + (it.done ? " done" : ""));
+    const what = RB.el("div", it.number + " " + it.name, "what");
+    const sub = [isAid(it) ? "je " + (it.unit_label || "VE") : (it.pack_g ? it.pack_label + " = " + RB.kg(it.pack_g) : "in kg")];
+    if (it.locations.length) sub.push(it.locations.map((l) => l.name + (l.label ? " (" + l.label + ")" : "")).join(", "));
+    what.appendChild(RB.el("small", sub.join(" · ")));
+    row.appendChild(what);
+    const here = loc === undefined ? it.counts : countedHere(it, loc);
+    const sum = here.length ? here.reduce((a, c) => a + c.qty, 0) : null;
+    row.appendChild(RB.el("div", (loc === undefined ? "gesamt " : "hier ") + cntText(it, sum), "got"));
+    const plus = RB.el("button", "Menge", "keep");
+    plus.type = "button";
+    plus.addEventListener("click", () => handCount(it));
+    row.appendChild(plus);
+    if (it.counts.length) {
+      const list = RB.el("button", "Einträge (" + it.counts.length + ")", "keep");
+      list.type = "button";
+      list.addEventListener("click", () => showEntries(it));
+      row.appendChild(list);
+    }
+    return row;
+  }
+  function updateItem(item, open) {
+    if (!S.st || !item) return;
+    const i = S.st.items.findIndex((x) => x.id === item.id);
+    if (i >= 0) S.st.items[i] = item; else S.st.items.push(item);
+    if (open !== undefined && open !== null) S.st.open = open;
+    (S.st.locations || []).forEach((l) => { l.open = S.st.items.filter((it) => it.locations.some((x) => x.id === l.id) && openHere(it, l.id)).length; });
+    S.st.without_location_open = S.st.items.filter((it) => !it.locations.length && !it.counts.length).length;
+    S.st.total = S.st.items.length;
+    paintCount();
+  }
+  async function needLocation() {
+    if (S.loc !== undefined && !S.allOpen) return true;
+    await chooseLocation();
+    return S.loc !== undefined;
+  }
+  async function postCount(it, body) {
+    const res = await RB.api("stocktakes/open/counts", { method: "POST", body: Object.assign({
+      raw_material_id: it.id, location_id: S.loc, device_id: DEVICE }, body) });
+    updateItem(res.item, res.open);
+    return res;
+  }
+  async function countScan(m) {
+    if (!(await needLocation())) { showLast("warn", m.name, ["Erst den Lagerort wählen."]); return; }
+    let res;
+    try { res = await postCount(m, { packs: 1, source: "scan" }); }
+    catch (err) {
+      if (err.code === "no_open_stocktake") { signal(false); showLast("warn", "Inventur", [err.message]); return; }
+      throw err;
+    }
+    signal(true);
+    const it = res.item;
+    const here = countedHere(it, S.loc).reduce((a, c) => a + c.qty, 0);
+    const one = "+1 " + (isAid(it) ? (it.unit_label || "VE") : it.pack_label);
+    showLast("ok", it.name, [one + " · hier " + cntText(it, here), "gesamt " + cntText(it, it.counted) + (it.done ? " · fertig gezählt" : "")]);
+    S.undo.push({ count: res.count_id, at: Date.now(), text: one + " " + it.name, m: it });
+    paintUndo();
+  }
+  async function handCount(it) {
+    if (!(await needLocation())) return;
+    const aid = isAid(it);
+    const packs = input(aid ? "Anzahl " + (it.unit_label || "VE") + ":" : "Volle " + (it.pack_label || "Gebinde") + ":", "", { inputMode: "numeric", placeholder: "0" });
+    const rest = input(it.pack_g && !aid ? "+ Rest in kg:" : "Menge in kg:", "", { inputMode: "decimal", placeholder: "0" });
+    const box = RB.el("div");
+    box.appendChild(RB.el("p", "Ort: " + locName(S.loc) + ". Liegt hier nichts: 0 eintragen."));
+    const grid = RB.el("div", null, aid || !it.pack_g ? "" : "row2");
+    if (aid || it.pack_g) grid.appendChild(packs.wrap);
+    if (!aid) grid.appendChild(rest.wrap);
+    box.appendChild(grid);
+    const valid = () => /^\d{0,3}$/.test(packs.el.value.trim()) && (rest.el.value.trim() === "" || kgToG(rest.el.value) !== null)
+      && (packs.el.value.trim() !== "" || rest.el.value.trim() !== "");
+    const ok = await RB.dialog({ title: it.name, content: box, buttons: [{ label: "Abbrechen", value: false },
+      { label: "Eintragen", value: true, kind: "primary", check: valid }] });
+    if (!ok) return;
+    const body = aid || it.pack_g ? { packs: parseInt(packs.el.value || "0", 10), rest_kg: aid ? "" : rest.el.value.trim() }
+      : { amount_kg: rest.el.value.trim() };
+    try {
+      const res = await postCount(it, Object.assign(body, { source: "hand" }));
+      const added = res.item.counts[res.item.counts.length - 1];
+      showLast("ok", it.name, ["eingetragen " + cntText(it, added ? added.qty : 0) + " (" + locName(S.loc) + ")", "gesamt " + cntText(res.item, res.item.counted)]);
+      S.undo.push({ count: res.count_id, at: Date.now(), text: "Eintrag " + it.name, m: it });
+      paintUndo();
+    } catch (err) { await RB.dialog({ title: it.name, text: err.message }); }
+  }
+  async function showEntries(it) {
+    const box = RB.el("div", null, "entries");
+    let removed = false;
+    it.counts.forEach((c) => {
+      const line = RB.el("div");
+      line.appendChild(RB.el("span", (c.location_name || "ohne Lagerort") + ": " + cntText(it, c.qty) + (c.source === "scan" ? " (Scan)" : "")
+        + " · " + c.created_at.slice(11, 16)));
+      const del = RB.el("button", "löschen", "keep");
+      del.type = "button";
+      del.addEventListener("click", async () => {
+        try { const res = await RB.api("stocktakes/open/counts/" + c.id, { method: "DELETE" }); updateItem(res.item, res.open); line.remove(); removed = true; }
+        catch (err) { line.appendChild(RB.el("small", err.message)); }
+      });
+      line.appendChild(del);
+      box.appendChild(line);
+    });
+    await RB.dialog({ title: "Einträge " + it.name, content: box, buttons: [{ label: "Schließen", value: true, kind: "primary" }] });
+    if (removed) paintCount();
+  }
+  // „Ort fertig“ (O-4): hier noch nicht gezählte Einträge, vorgewählt „0“, einzeln abwählbar
+  $("b-loc-done").addEventListener("click", async () => {
+    if (S.loc === undefined) return;
+    const rest = S.st.items.filter((it) => !it.archived && atLoc(it, S.loc) && openHere(it, S.loc));
+    if (!rest.length) { await RB.dialog({ title: "Ort fertig", text: "Hier ist schon alles gezählt." }); return; }
+    const box = RB.el("div", null, "checks");
+    const boxes = rest.map((it) => {
+      const l = document.createElement("label");
+      const c = document.createElement("input"); c.type = "checkbox"; c.checked = true;
+      l.appendChild(c); l.appendChild(document.createTextNode(it.number + " " + it.name + " → 0"));
+      box.appendChild(l);
+      return { it: it, c: c };
+    });
+    const ok = await RB.dialog({ title: "Ort fertig: " + locName(S.loc), text: "Diese sind hier noch nicht gezählt. Angehakte werden mit 0 eingetragen.",
+      content: box, buttons: [{ label: "Abbrechen", value: false }, { label: "0 eintragen", value: true, kind: "primary" }] });
+    if (!ok) return;
+    const ids = boxes.filter((b) => b.c.checked).map((b) => b.it.id);
+    try {
+      const res = await RB.api("stocktakes/open/location-done", { method: "POST", body: { location_id: S.loc, raw_material_ids: ids, device_id: DEVICE } });
+      await loadCount();
+      paintCount();
+      showLast("ok", "Ort fertig: " + locName(S.loc), [res.zeroed + " mit 0 eingetragen", "noch zu zählen: " + res.open]);
+    } catch (err) { await RB.dialog({ title: "Ort fertig", text: err.message }); }
   });
 
   function detected(text, format) {
@@ -605,6 +855,11 @@
   window.addEventListener("orientationchange", turned);
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else if (S.mode) start(); });
   paintModes();
+  // Direkt aus „Inventur → Zählen“ (Rohstoffverwaltung): Modus ist damit gewählt (K03-55)
+  if (new URLSearchParams(location.search).get("modus") === "inventur") {
+    const m = MODES.find((x) => x.id === "count");
+    if (m) chooseMode(m);
+  }
 })();
 </script>
 </body>

@@ -102,6 +102,10 @@ Alle aktiven Rohstoffe am/unter Meldewert und im Minus, sortiert nach Abstand zu
 
 Alle Buchungen aus `stock_movement`, Filter Zeitraum, Rohstoff, Art (Zugang, Inventur, Abzug, Rückbuchung), mit Chargennummer.
 
+### 6.4 Inventur (seit 0.10.35, docs/strichcode.md 5 und 17)
+
+Panel „Inventur“ oben im Unterreiter: anlegen, Zählliste drucken, zur Zählseite, Vorschau und Abschluss, verwerfen; Archiv mit Ansicht und Excel-Export.
+
 ## 7. Gemeinsamer Reiter „Import/Export“ (M03-20)
 
 Ein Reiter für alles (auf der Rezeptseite), in Abschnitten:

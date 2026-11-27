@@ -37,6 +37,7 @@ from .imports.router import router as imports_router
 from .raw_materials.router import router as raw_materials_router
 from .recipes.router import router as recipes_router
 from .scales.router import router as scales_router
+from .stocktake.router import router as stocktake_router
 from .scales.service import ScaleService
 from .settings import admin_timeout_minutes, load_options
 from .web.router import router as web_router, start_page
@@ -103,6 +104,7 @@ app.include_router(raw_materials_router)
 app.include_router(dealers_router)
 app.include_router(receiving_router)
 app.include_router(booking_router)
+app.include_router(stocktake_router)
 app.include_router(articles_router)
 app.include_router(planner_router)
 app.include_router(imports_router)

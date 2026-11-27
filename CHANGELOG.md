@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.10.35 – Inventur (Teil I1)
+
+- **Inventur mit Stichtag, Zählliste, Abschluss und Inventurwert** (VC03-e, docs/strichcode.md 5, Abschnitt 17). Neues Panel „Inventur“ im Unterreiter Bestand (PIN): anlegen (Bezeichnung, Stichtag, Umfang), Zählliste drucken (nach Lagerort, blind), Vorschau mit gezählt/Buchbestand/seit Zählung/neu/Differenz/Wert, Ungezählte „unverändert“ oder einzeln „auf 0“, Abschluss in einer Transaktion (Vermerk „Inventur TT.MM.JJJJ“), Verwerfen, Archiv mit Excel-Export (Zwischensummen Rohstoffe / Hilfs- und Betriebsstoffe, Blatt „ohne Preis“). Preis und Wert werden beim Abschluss festgeschrieben (K03-58).
+- **Zählen ohne PIN** auf der Scan-Seite, neuer Modus „Inventur zählen“: Lagerort wählen oder Ort-Code scannen (jederzeit, O-3), Scan = +1 Gebinde, „Menge“ von Hand („3 Sack + 12,5 kg“, O-5) oder 0, „Ort fertig“ (O-4), Einträge löschen, Rückgängig, Filter „nur noch nicht gezählte“, Fußleiste „noch zu zählen: n“. Während der Inventur darf weiter verwogen und gebucht werden – der Abschluss rechnet Bewegungen seit der Zählung dazu.
+- **Hilfs- und Betriebsstoffe** zeigen Bestand und Meldewert in Rohstoffliste, Rohstoffseite, Schnellerfassung und Meldeliste jetzt in Verpackungseinheiten statt kg.
+- **Migration 0014:** `stocktake`, `stocktake_count`, `stocktake_line`. Neu: `GET /api/v1/stocktakes/open`, `POST/DELETE /api/v1/stocktakes/open/counts`, `POST /api/v1/stocktakes/open/location-done`, `GET/POST /api/v1/admin/stocktakes`, `GET …/{id}`, `POST …/{id}/close`, `POST …/{id}/cancel`, `GET …/{id}/countlist`, `GET …/{id}.xlsx`.
+- Abweichung: Zählliste als Druck aus der Seite statt PDF vom Server (keine PDF-Bibliothek im Add-on).
+
 ## 0.10.34 – Waren- und Hauptgruppen im Planer, Hinweis bei Tasten an der Waage, klarere „Weiter“-Tasten
 
 - **Waren- und Hauptgruppen mit Namen (Planer, Modul 10):** Neuer Import „Waren- und Hauptgruppen aus der Vectron (.xlsx)“ unter Rezepte → Import/Export (Probelauf → Übernehmen, PIN); erkennt Warengruppen-Export (Nummer, Name, A-Hauptgruppe) und Hauptgruppen-Export (Nummer, Name). Planer an der Station sortiert und filtert nach Hauptgruppe („7 Kuchen“, darunter Warengruppen, wenn mehrere), Artikelliste gliedert den Filter nach Hauptgruppen, Artikel zeigen Waren- und Hauptgruppe; ohne Namen bleibt die Nummer. Gespeichert als Einstellungen, keine Migration. Neu: `GET /api/v1/articles/group-names`, `POST /api/v1/admin/articles/group-names/import` (Michael 24.11.2026, 12:56/13:03/13:21).
