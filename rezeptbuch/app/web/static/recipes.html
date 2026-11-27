@@ -1801,8 +1801,13 @@ $("va-check").addEventListener("click", async () => {
 $("va-run").addEventListener("click", async () => {
   if (!vaFile || !vaReport) return;
   const c = vaReport.counts;
+  // Deutliche Warnung, wenn Artikel auf „nicht mehr in der Kasse“ gehen (Michael 24.11.2026, 14:2x)
+  const warn = c.missing ? "\n\nACHTUNG: " + c.missing + " Artikel werden auf „nicht mehr in der Kasse“ gesetzt:\n"
+    + vaReport.missing.slice(0, 15).map((x) => x.number + " " + x.name).join("\n") + (c.missing > 15 ? "\n…" : "")
+    + "\nFalsche Datei? Dann „Abbrechen“." : "";
   if (!(await ask(c.new + " neu, " + c.changed + " geändert, " + c.returned + " wieder in der Kasse, "
-    + c.missing + " nicht mehr in der Kasse.\nImportieren?", [{ label: "Importieren", value: true }]))) return;
+    + c.missing + " nicht mehr in der Kasse." + warn + "\nImportieren?",
+    [{ label: c.missing ? "Trotzdem importieren" : "Importieren", value: true }]))) return;
   $("va-run").disabled = true;
   try {
     renderVaReport(await api("admin/articles/import?mode=run" + vaGroupsParam(), { method: "POST", file: vaFile }));

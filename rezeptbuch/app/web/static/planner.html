@@ -43,6 +43,7 @@
   .lines td input.item { width: 100%; min-width: 14rem; }
   .sum { font-weight: bold; margin: .6rem 0; }
   .note { background: #fff7e0; border: 1px solid #e6c56b; padding: .4rem .6rem; border-radius: 4px; margin: .4rem 0; }
+  tr.grp td { background: #eef1f6; font-weight: bold; padding-top: .6em; }
 </style>
 </head>
 <body>
@@ -50,6 +51,8 @@
 <nav>
   <a id="nav-raw" href="#" data-next="rohstoffe">Rohstoffe</a>
   <a id="nav-recipes" href="#" data-next="rezepte">Rezepte</a>
+  <a id="nav-groups" href="#" data-next="rezepte">Gruppen</a>
+  <a id="nav-io" href="#" data-next="rezepte">Import/Export</a>
   <a id="nav-calc" href="#" data-next="berechnung">Berechnung</a>
   <a class="active" href="#" aria-current="page">Planer</a>
   <a id="nav-scales" href="#" data-next="waagen">Waagen</a>
@@ -68,9 +71,11 @@
     <div class="row" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
       <h1 style="margin:0">Planen</h1>
       <label><input id="set-presel" type="checkbox"> Planer in der Vorwahl der Stationen anzeigen</label>
-      <a id="plan-open" href="#" target="_blank" rel="noopener">eigenes Fenster (ohne PIN, für Tablet)</a>
     </div>
-    <iframe id="plan-frame" title="Planen" style="width:100%;height:80vh;border:1px solid #ccc;border-radius:5px;background:#fff;margin-top:.5rem"></iframe>
+    <!-- Planer als ganze Seite statt eingebettet (Michael 24.11.2026, 14:38/14:39: in Browser und HA-App stand
+         „Plan speichern“ mitten über den Artikeln, weil Admin-Seite und eingebetteter Planer getrennt scrollten) -->
+    <p><a id="plan-open" class="button primary" href="#" style="display:inline-block;padding:.8rem 1.6rem;font-size:1.2rem">Planer öffnen</a></p>
+    <p class="small">Der Planer öffnet sich als ganze Seite (ohne PIN, wie am Tablet); oben links „← Admin“ führt hierher zurück.</p>
   </section>
 
   <section id="view-list">
@@ -114,7 +119,7 @@
     <table>
       <thead><tr>
         <th><input id="sel-all" type="checkbox" aria-label="alle auswählen"></th>
-        <th class="num">Nr.</th><th>Name</th><th class="num">WG</th><th class="num">Stück/Ganzes</th>
+        <th class="num">Nr.</th><th>Name</th><th>Warengruppe</th><th class="num">Stück/Ganzes</th>
         <th class="num">Zeilen</th><th>Planen</th>
       </tr></thead>
       <tbody id="list"></tbody>
@@ -181,6 +186,10 @@ let searchTimer = null;
 
 $("nav-raw").href = BASE + "admin/rohstoffe";
 $("nav-recipes").href = BASE + "admin/rezepte";
+// Reiter Gruppen und Import/Export auf allen Admin-Seiten gleich (Michael 24.11.2026, 14:41)
+$("nav-groups").href = BASE + "admin/rezepte?view=groups";
+$("nav-io").href = BASE + "admin/rezepte?view=io";
+["nav-groups", "nav-io"].forEach((id) => $(id).addEventListener("click", (ev) => goTab(ev)));
 $("nav-calc").href = BASE + "admin/berechnung";
 $("nav-scales").href = BASE + "admin/waagen";
 $("nav-production").href = BASE + "admin/ablauf";
@@ -306,7 +315,18 @@ async function loadList() {
 
 function renderList() {
   const body = $("list"); body.textContent = "";
-  articles.forEach((a) => {
+  // Nach Hauptgruppe der Kasse gegliedert, sobald die Zuordnung übernommen ist (Michael 24.11.2026, 14:32)
+  const byMain = articles.some((a) => a.main_group != null);
+  const list = byMain ? [...articles].sort((x, y) => (x.main_group ?? 1e9) - (y.main_group ?? 1e9)
+    || x.register_group - y.register_group || x.register_no - y.register_no) : articles;
+  let lastMain;
+  list.forEach((a) => {
+    if (byMain && a.main_group !== lastMain) {
+      lastMain = a.main_group;
+      const hr = el("tr", null, "grp");
+      const td = el("td", a.main_group == null ? "ohne Hauptgruppe" : "Hauptgruppe " + a.main_group + (a.main_group_name ? " · " + a.main_group_name : ""));
+      td.colSpan = 7; hr.appendChild(td); body.appendChild(hr);
+    }
     const tr = el("tr", null, "click" + (a.in_register ? "" : " out"));
     const td0 = el("td"); const cb = el("input"); cb.type = "checkbox"; cb.checked = selected.has(a.id);
     cb.addEventListener("click", (ev) => { ev.stopPropagation(); cb.checked ? selected.add(a.id) : selected.delete(a.id); updateBulk(); });
@@ -316,7 +336,7 @@ function renderList() {
     if (!a.in_register) name.appendChild(el("span", " (nicht mehr in der Kasse)", "small"));
     if (a.has_warning) name.appendChild(el("span", " ⚠", "warn"));
     tr.appendChild(name);
-    tr.appendChild(el("td", a.register_group_name ? a.register_group + " " + a.register_group_name : a.register_group));
+    tr.appendChild(el("td", a.register_group_name ? a.register_group + " " + a.register_group_name : "WG " + a.register_group, "small"));
     tr.appendChild(el("td", a.pieces_per_whole || "–", "num"));
     tr.appendChild(el("td", a.line_count || "–", "num" + (a.line_count ? "" : " warn")));
     tr.appendChild(el("td", a.plan_enabled ? "ja" : "nicht planen"));
@@ -412,12 +432,10 @@ $("r-run").addEventListener("click", async () => {
 
 // ---- Planen (Teil P-B): eingebettete Seite /planer und Einstellung --------------------
 
-let planLoaded = false;
 async function showPlan() {
-  if (!planLoaded) { $("plan-frame").src = BASE + "planer?embedded=1"; planLoaded = true; }
   try { const s = await api("settings/planner"); $("set-presel").checked = s.in_preselection; } catch (err) { handleError(err); }
 }
-$("plan-open").href = BASE + "planer";
+$("plan-open").href = BASE + "planer?from=admin";
 $("set-presel").addEventListener("change", async () => {
   try {
     const s = await api("admin/settings/planner", { method: "PUT", body: { in_preselection: $("set-presel").checked } });

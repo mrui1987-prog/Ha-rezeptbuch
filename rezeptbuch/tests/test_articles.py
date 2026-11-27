@@ -389,3 +389,12 @@ def test_old_file_without_planning_columns_keeps_values(conn):
     assert import_recipe_template(conn, out.getvalue(), mode="run")["ok"]
     r = recipe_service.get_recipe(conn, a)
     assert (r["preproduce"], r["weigh_surcharge_tenths"]) == (True, 12)
+
+
+def test_file_without_usable_articles_changes_nothing(imported):
+    """Falsche Datei (Michael 24.11.2026): 0 Artikel → Abbruch, niemand wird „nicht mehr in der Kasse“."""
+    before = imported.execute("SELECT count(*) FROM sales_article WHERE in_register = 1").fetchone()[0]
+    with pytest.raises(ValidationError) as exc:
+        vectron.import_articles(imported, xlsx([(1, "Taste A", "Funktion", "x")], header=("Nummer", "Name", "Funktion", "Code")), mode="run")
+    assert exc.value.code == "no_articles"
+    assert imported.execute("SELECT count(*) FROM sales_article WHERE in_register = 1").fetchone()[0] == before

@@ -1,6 +1,6 @@
 # Änderungen
 
-## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig, Artikel mit Code ausblenden
+## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig; Planer-Artikelliste, Import-Schutz; Wiegeablauf M09-20/21
 
 Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
 
@@ -10,6 +10,15 @@ Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
 - **Tausenderpunkt im Gebindetext:** „1 PG à 1.000 ST“ wurde als 1 Stück gelesen (Faltenbeutel, AB AT1003549), jetzt 1 000 Stück je Scan bzw. ± Taste.
 - **Gebinde aus der Klammerzeile:** Steht auf der AB kein „… à …“, aber „(1 BIB)“ (H-Milch „10,000 L“, AT1003549), wird das Gebinde abgeleitet: 1 BIB = 10 L. Gilt beim Hochladen und für schon eingelesene Belege (aus dem gespeicherten Leserergebnis).
 - Belegzeilen liefern `rm_delivery_pack_g`, `rm_delivery_pack_label` und `rm_has_code` mit. Keine Migration.
+
+
+Planer und Admin (Modul 10, Zweig `m10-artikelliste`):
+
+- **Planer → Artikel nach Hauptgruppen gegliedert:** Zwischenzeilen „Hauptgruppe 1 · Brot“, darin nach Warengruppe und Nummer sortiert; Spalte „Warengruppe“ sitzt jetzt richtig (Michael 24.11.2026, 14:32, Screenshot).
+- **Planer im Admin als ganze Seite:** Der Reiter „Planer → Planen“ bettet den Planer nicht mehr ein, sondern öffnet ihn mit „Planer öffnen“ als ganze Seite (oben „← Admin“ zurück). In Browser und HA-App stand „Plan speichern“ sonst mitten über den Artikeln (Michael 24.11.2026, 14:38/14:39).
+- **„Startseite“ im Planer und beim Scannen** zeigt die Startseite, statt sofort zur gemerkten Station zu springen (Michael 24.11.2026, 14:40).
+- **Reiter „Gruppen“ und „Import/Export“ auf allen Admin-Seiten** (fehlten bei Berechnung, Planer, Waagen, Ablauf; Michael 24.11.2026, 14:41).
+- **Schutz beim Vectron-Artikelimport:** Findet der Import keinen Artikel der gewählten Warengruppen (falsche Datei), bricht er ab und ändert nichts – vorher wurden dabei alle Artikel auf „nicht mehr in der Kasse“ gesetzt. Gehen Artikel auf „nicht mehr in der Kasse“, nennt die Rückfrage Anzahl und Namen, Taste „Trotzdem importieren“ (Michael 24.11.2026, Sprachchat).
 
 ## 0.10.36 – Handelsware und Pfand (Teil H1)
 

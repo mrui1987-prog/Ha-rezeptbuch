@@ -85,7 +85,7 @@
     <button type="button" id="t-run" class="keep">Jetzt planen</button>
     <button type="button" id="t-stock" class="keep">Rohstoffe</button>
   </div>
-  <a href="./" id="home">Startseite</a>
+  <a href="./?wahl=1" id="home">Startseite</a>
 </header>
 
 <section id="v-input">
@@ -141,6 +141,8 @@
   const el = RB.el;
   const embedded = /[?&]embedded=1/.test(location.search);
   if (embedded) document.body.classList.add("embedded");
+  // Aus dem Admin geöffnet: Rücksprung dorthin (Michael 24.11.2026, 14:39)
+  if (/[?&]from=admin/.test(location.search)) { const h = $("home"); h.textContent = "← Admin"; h.href = "admin/planer"; }
   RB.notice.attach($("notice"));
   RB.onApiResult((err) => {
     if (err && err.status === 0) RB.notice.set("net", "grey", err.message); else RB.notice.clear("net");

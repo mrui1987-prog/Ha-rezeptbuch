@@ -142,6 +142,11 @@ def import_articles(conn: sqlite3.Connection, data: bytes, *, mode: str = "check
     for a in articles.values():
         found_groups[a["group"]] = found_groups.get(a["group"], 0) + 1
 
+    # Schutz (Michael 24.11.2026, 14:2x): falsche Datei mit „Nummer“/„Text“ ergab 0 Artikel und setzte alle
+    # vorhandenen auf „nicht mehr in der Kasse“ → ohne brauchbare Zeile wird nichts geändert.
+    if not any(a["group"] in selected for a in articles.values()):
+        raise ValidationError("In der Datei wurde kein Artikel der gewählten Warengruppen gefunden – es wurde nichts "
+                              "übernommen. Ist das die Artikelliste der Vectron?", code="no_articles")
     existing = {r["register_no"]: r for r in conn.execute("SELECT * FROM sales_article")}
     new, renamed, unchanged, returned = [], [], [], []
     for number in sorted(articles):
