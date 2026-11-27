@@ -298,3 +298,23 @@ def test_replace_recipe_raw_piece_weight(conn, world):
         art.replace_in_lines(conn, {"kind": "recipe", "from_id": 1, "to_id": 1})
     with pytest.raises(ValidationError):
         art.parse_factor("0,001")
+
+
+def test_pieces_and_wholes_in_orders(conn, world):
+    """Wunsch Michael 27.11.2026, 21:19: Aufträge zeigen Stück je Artikel und die Umrechnung in Ganze."""
+    from app.production.orders import list_orders, pieces_info
+    assert pieces_info("20 Stück + 2 ganze", 12)["whole_text"] == "44 Stück = 4 Ganze à 12 (4 Stück übrig)"
+    assert pieces_info("36 Stück", 12) == {"pieces": 36, "per_whole": 12, "wholes": 3,
+                                           "whole_text": "36 Stück = 3 Ganze à 12"}
+    assert pieces_info("1 halbe", 12)["whole_text"] == "6 Stück = 1 Ganzes à 12 (6 Stück übrig)"
+    assert pieces_info("60 Stück", None) == {"pieces": 60, "per_whole": None, "wholes": None, "whole_text": None}
+    example_plan(conn, world)
+    run = plan.create_run(conn, {"dates": [FR]})
+    res = plan.commit_run(conn, run["id"], {})
+    orders = list_orders(conn, FR)["orders"]
+    arts = [a for o in orders if o["id"] in res["created"] for a in o["articles"]]
+    streusel = next(a for a in arts if a["name"] == "Kirschstreusel")
+    assert streusel["quantity_text"] == "20 Stück + 2 ganze" and streusel["wholes"] == 4
+    assert any(a["name"] == "Kirsch-Nusstasche" and a["pieces"] == 60 and a["wholes"] is None for a in arts)
+    oid = next(o["id"] for o in orders if any(a["name"] == "Kirschstreusel" for a in o["articles"]))
+    assert plan.order_articles(conn, oid)["articles"][0]["whole_text"].endswith("Ganze à 12 (4 Stück übrig)")

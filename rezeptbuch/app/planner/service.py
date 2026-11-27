@@ -17,7 +17,7 @@ from ..calculation.loader import active_limit
 from ..db import transaction
 from ..errors import ConflictError, NotFoundError, ServiceError, ValidationError
 from ..production.common import check_date, local_today
-from ..production.orders import insert_order_in_tx, prepare_order
+from ..production.orders import insert_order_in_tx, pieces_info, prepare_order
 from ..raw_materials import stock as stock_service
 
 MODES = ("exact", "up", "down", "drop", "hand")
@@ -765,8 +765,9 @@ def order_articles(conn: sqlite3.Connection, order_id: int) -> dict:
                          "parent_order_id FROM production_order WHERE id = ?", (order_id,)).fetchone()
     if order is None:
         raise NotFoundError("Auftrag nicht gefunden.", code="not_found")
-    rows = conn.execute("SELECT * FROM order_article_source WHERE order_id = ? ORDER BY carryover, plan_date, "
-                        "order_no, register_no", (order_id,)).fetchall()
+    rows = conn.execute("SELECT s.*, a.pieces_per_whole FROM order_article_source s "
+                        "LEFT JOIN sales_article a ON a.id = s.article_id WHERE s.order_id = ? ORDER BY s.carryover, "
+                        "s.plan_date, s.order_no, s.register_no", (order_id,)).fetchall()
     return {
         "order_id": order_id, "dough_count": order["dough_count"], "from_planner": bool(rows),
         "carryover_of_order_id": order["carryover_of_order_id"],
@@ -774,7 +775,8 @@ def order_articles(conn: sqlite3.Connection, order_id: int) -> dict:
                                     else {"unit": "g", "value": order["surcharge_g"]} if order["surcharge_g"] else None),
         "articles": [{"register_no": r["register_no"], "name": r["article_name"], "plan_date": r["plan_date"],
                       "order_no": r["order_no"], "quantity_text": r["quantity_text"], "amount_g": r["amount_g"],
-                      "carryover": bool(r["carryover"])} for r in rows],
+                      "carryover": bool(r["carryover"]),
+                      **pieces_info(r["quantity_text"], r["pieces_per_whole"])} for r in rows],
     }
 
 

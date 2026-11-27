@@ -9,6 +9,7 @@ Spalten von ``production_order`` und die Nebentabellen; vor dem Speichern prüft
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 
 from ..calculation.models import validate_request
@@ -195,7 +196,45 @@ _ORDER_SELECT = (
     "LEFT JOIN recipe_version fv ON fv.id = o.recipe_version_id ")
 
 
-def _order_dict(conn: sqlite3.Connection, row: sqlite3.Row, batches: dict[int, dict]) -> dict:
+_QTY = re.compile(r"(\d+) (Stück|halbe|ganze)")
+
+
+def pieces_info(quantity_text: str | None, per_whole: int | None) -> dict:
+    """Stück und Ganze einer Planzeile (Wunsch Michael 27.11.2026, 21:19): aus „36 Stück + 1 ganze“ und
+    „Stück je Ganzes“ des Artikels. Gerechnet wie der Planer (R10-P1): halbe = n/2 aufgerundet, Ganze aufgerundet."""
+    counts = {"Stück": 0, "halbe": 0, "ganze": 0}
+    for number, kind in _QTY.findall(quantity_text or ""):
+        counts[kind] += int(number)
+    if not per_whole or per_whole <= 0:
+        return {"pieces": counts["Stück"] or None, "per_whole": None, "wholes": None, "whole_text": None}
+    total = counts["Stück"] + counts["halbe"] * -(-per_whole // 2) + counts["ganze"] * per_whole
+    wholes = -(-total // per_whole)
+    word = "Ganzes" if wholes == 1 else "Ganze"
+    text = f"{total} Stück = {wholes} {word} à {per_whole}"
+    if wholes * per_whole != total:
+        text += f" ({wholes * per_whole - total} Stück übrig)"
+    return {"pieces": total, "per_whole": per_whole, "wholes": wholes, "whole_text": text}
+
+
+def articles_by_order(conn: sqlite3.Connection, order_ids: list[int]) -> dict[int, list[dict]]:
+    """Artikel je Auftrag aus dem Planer (order_article_source) mit Stück und Ganzen, für Listen und Übersicht."""
+    if not order_ids:
+        return {}
+    marks = ",".join("?" * len(order_ids))
+    out: dict[int, list[dict]] = {}
+    for r in conn.execute(
+            "SELECT s.order_id, s.register_no, s.article_name, s.quantity_text, s.carryover, a.pieces_per_whole "
+            f"FROM order_article_source s LEFT JOIN sales_article a ON a.id = s.article_id WHERE s.order_id IN ({marks}) "
+            "ORDER BY s.carryover, s.plan_date, s.order_no, s.register_no", order_ids):
+        info = pieces_info(r["quantity_text"], r["pieces_per_whole"])
+        out.setdefault(r["order_id"], []).append({
+            "register_no": r["register_no"], "name": r["article_name"], "quantity_text": r["quantity_text"],
+            "carryover": bool(r["carryover"]), **info})
+    return out
+
+
+def _order_dict(conn: sqlite3.Connection, row: sqlite3.Row, batches: dict[int, dict],
+                articles: list[dict] | None = None) -> dict:
     targets = {r["dough_index"]: r["target_g"] for r in conn.execute(
         "SELECT dough_index, target_g FROM order_dough WHERE order_id = ?", (row["id"],))}
     doughs = [{"dough_index": i, "target_g": targets.get(i), "batch": batches.get(i)}
@@ -220,6 +259,7 @@ def _order_dict(conn: sqlite3.Connection, row: sqlite3.Row, batches: dict[int, d
         "doughs": doughs,
         "created_at": row["created_at"],
         "finished_at": row["finished_at"],
+        "articles": articles or [],
     }
 
 
@@ -228,7 +268,7 @@ def get_order(conn: sqlite3.Connection, order_id: int) -> dict:
     if row is None:
         raise NotFoundError("Auftrag nicht gefunden.", code="not_found")
     batches = _batches_by_order(conn, [order_id])
-    data = _order_dict(conn, row, batches.get(order_id, {}))
+    data = _order_dict(conn, row, batches.get(order_id, {}), articles_by_order(conn, [order_id]).get(order_id))
     children = conn.execute(_ORDER_SELECT + "WHERE o.parent_order_id = ? ORDER BY o.parent_item_position, "
                             "o.parent_dough_index", (order_id,)).fetchall()
     child_batches = _batches_by_order(conn, [c["id"] for c in children])
@@ -242,7 +282,8 @@ def list_orders(conn: sqlite3.Connection, planned_date: str | None = None) -> di
     rows = conn.execute(_ORDER_SELECT + "WHERE o.planned_date = ? "
                         "ORDER BY o.list_position, o.parent_order_id IS NOT NULL, o.id", (day,)).fetchall()
     batches = _batches_by_order(conn, [r["id"] for r in rows])
-    return {"date": day, "orders": [_order_dict(conn, r, batches.get(r["id"], {})) for r in rows]}
+    arts = articles_by_order(conn, [r["id"] for r in rows])
+    return {"date": day, "orders": [_order_dict(conn, r, batches.get(r["id"], {}), arts.get(r["id"])) for r in rows]}
 
 
 def delete_order(conn: sqlite3.Connection, order_id: int, payload) -> None:

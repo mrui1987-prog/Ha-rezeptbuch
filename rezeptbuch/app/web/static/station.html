@@ -78,6 +78,8 @@
   .item-title { font-size: 8vh; font-weight: 800; line-height: 1.2; margin-bottom: 0; padding-bottom: .2vh;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item-sub { font-size: 2.2vh; color: var(--muted); margin-bottom: .6vh; }
+  .articles { margin: 0 0 1.2vh; padding: .8vh 1vw; border-radius: 8px; background: rgba(127,127,127,.12); }
+  .art-line { font-size: 2.8vh; font-weight: 600; line-height: 1.35; }
   .weigh-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }          /* Wiegebereich sitzt unten, über den Tasten */
   .sollist { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vw; flex: 1; min-height: 0; }
   .sollist .box { height: 100%; display: flex; flex-direction: column; }
@@ -717,6 +719,9 @@
   function viewOverview(main) {
     const b = S.mine;
     main.appendChild(el("h2", "Übersicht – offene Zutat antippen: jetzt wiegen oder weglassen", "view"));
+    // Stück und Ganze je Artikel aus dem Planer (Wunsch Michael 27.11.2026, 21:19)
+    const ord = S.orders.find((o) => o.id === b.order_id);
+    if (ord && ord.articles && ord.articles.length) main.appendChild(articleBlock(ord));
     const t = el("table", null, "list");
     const hr = el("tr");
     [["Pos."], ["Zutat"], ["Soll", "r"], ["Ist", "r"], ["Quittung"]].forEach((h) => hr.appendChild(el("th", h[0], h[1] || "")));
@@ -928,6 +933,16 @@
     return t;
   }
 
+  function articleLine(x) {
+    return x.register_no + " " + x.name + ": " + (x.whole_text || x.quantity_text) + (x.carryover ? " (Übertrag)" : "");
+  }
+  function articleBlock(o) {
+    const box = el("div", null, "articles");
+    box.appendChild(el("div", "Artikel in diesem Auftrag" + (o.dough_count > 1 ? " (für alle " + o.dough_count + " Teige zusammen)" : ""), "item-sub"));
+    o.articles.forEach((x) => box.appendChild(el("div", articleLine(x), "art-line")));
+    return box;
+  }
+
   async function articlesTable(orderId) {
     const a = await RB.api("orders/" + orderId + "/articles");
     const box = el("div");
@@ -942,7 +957,7 @@
       const tr = el("tr");
       tr.appendChild(el("td", x.register_no + " " + x.name));
       tr.appendChild(el("td", x.plan_date.slice(8, 10) + "." + x.plan_date.slice(5, 7) + ". · Auftrag " + x.order_no));
-      tr.appendChild(el("td", x.quantity_text));
+      tr.appendChild(el("td", x.whole_text || x.quantity_text));
       tr.appendChild(el("td", x.carryover ? "Übertrag" : RB.grams(x.amount_g), "r"));
       t.appendChild(tr);
     });

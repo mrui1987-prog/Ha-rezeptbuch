@@ -427,7 +427,11 @@ function renderOrders(data) {
     if (o.parent) name = "↳ " + name + " (Unterrezept für Auftrag " + o.parent.order_id +
       (o.parent.dough_index ? ", Teig " + o.parent.dough_index : ", alle Teige") + ")";
     if (o.fixed_station) name += " – fest an Waage " + o.fixed_station;
-    tr.appendChild(el("td", name));
+    const nameCell = el("td", name);
+    // Stück und Ganze je Artikel aus dem Planer (Wunsch Michael 27.11.2026, 21:19)
+    (o.articles || []).forEach((x) => nameCell.appendChild(el("div", x.register_no + " " + x.name + ": "
+      + (x.whole_text || x.quantity_text) + (x.carryover ? " (Übertrag)" : ""), "small")));
+    tr.appendChild(nameCell);
     tr.appendChild(el("td", g(o.target_g), "num"));
     tr.appendChild(el("td", STATUS_TEXT[o.status] || o.status));
     const doughs = el("td");
