@@ -9,7 +9,8 @@ Probelauf und Speichern selbst (docs/kennzeichnungspass-import.md, Abschnitt 15)
 | Leser | Pfad | Stand |
 |---|---|---|
 | Kennzeichnungspass (datenlink) | `POST /v1/lesen/kennzeichnungspass` | ab 0.1.0, Schema 2 |
-| BÄKO-Belege (Auftragsbestätigung, Rechnung, Gutschrift) | `POST /v1/lesen/baeko-beleg` | ab 0.1.0, Schema 1; Summen, Überträge, MwSt. und Warengruppen werden geprüft |
+| BÄKO-Belege (Auftragsbestätigung, Rechnung, Gutschrift) | `POST /v1/lesen/baeko-beleg` | ab 0.1.0, Schema 1; Summen, Überträge, MwSt. und Warengruppen werden geprüft; ab 0.2.0 mit `bereich` je Position |
+| Seitenbild (Vorschau der Zuordnung) | `POST /v1/seitenbild?seite=N` | ab 0.2.0, PNG |
 
 `GET /v1/gesundheit` nennt Version und Leser.
 

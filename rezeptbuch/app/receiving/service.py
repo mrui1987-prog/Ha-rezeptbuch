@@ -120,6 +120,61 @@ def _derived_packs(row) -> dict:
     return out
 
 
+def _area(p: dict) -> dict | None:
+    """Bereich der Position auf der Belegseite (Leser ab 0.2.0) für das Vorschaubild."""
+    b = p.get("bereich")
+    if not isinstance(b, dict) or not all(isinstance(b.get(k), (int, float)) for k in ("seite", "oben", "unten")):
+        return None
+    return {"page": int(b["seite"]), "top": b["oben"], "bottom": b["unten"]}
+
+
+def _read_text(p: dict) -> dict:
+    """Was der Leser gelesen hat, im Klartext (Wunsch Michael 27.11.2026, Stufe 2): Menge wie gedruckt,
+    Gebinde (gedruckt oder aus der Klammerzeile abgeleitet) und was ein Scan beim Abhaken zählt."""
+    unit = (p.get("mengeneinheit") or "KG").upper()
+    text = pack_text_of(p)
+    step = pack_step(text, unit)
+    return {"qty_text": f"{p.get('menge_text') or ''} {unit}".strip(), "pack_text": p.get("gebinde_text"),
+            "pack_derived": text if not p.get("gebinde_text") else None, "bracket": p.get("gebinde_klammer"),
+            "pack": step, "order_item": bool(p.get("bestellartikel"))}
+
+
+def preview_pages(res: dict) -> list[dict]:
+    d = (res or {}).get("daten") or {}
+    pages = d.get("seitenmasse")
+    if not isinstance(pages, list):
+        return []
+    return [{"page": i, "width": m.get("breite"), "height": m.get("hoehe")}
+            for i, m in enumerate(pages, start=1) if isinstance(m, dict)]
+
+
+_PNG_KEY = re.compile(r"^[0-9a-f]{64}$")
+
+
+def page_png(conn: sqlite3.Connection, key: str, page: int) -> bytes:
+    """Seitenbild für das Vorschaubild: Probelauf-PDF (Token) oder gespeicherter Beleg (SHA-256 der Datei).
+    Einmal vom Leser geholt, danach aus `belege/vorschau/`."""
+    if not _PNG_KEY.match(key or "") or not 1 <= page <= 20:
+        raise NotFoundError("Seite nicht vorhanden.", code="page_missing")
+    cache = documents_dir() / "vorschau"
+    png = cache / f"{key}-{page}.png"
+    if png.is_file():
+        return png.read_bytes()
+    pdf = _tmp_dir() / f"{key}.pdf"
+    if not pdf.is_file():
+        row = conn.execute("SELECT file_path FROM receiving_document WHERE file_sha256 = ? AND file_path IS NOT NULL "
+                           "ORDER BY id DESC LIMIT 1", (key,)).fetchone()
+        pdf = Path(row["file_path"]) if row else None
+    if pdf is None or not pdf.is_file():
+        raise NotFoundError("PDF nicht vorhanden.", code="pdf_missing")
+    data = client.page_image(pdf.read_bytes(), page)
+    if data is None:
+        raise NotFoundError("Seitenbild nicht verfügbar (Seite fehlt oder Leser älter als 0.2.0).", code="page_missing")
+    cache.mkdir(parents=True, exist_ok=True)
+    png.write_bytes(data)
+    return data
+
+
 def _dealer(conn, printed: str | None) -> int:
     """BÄKO über den gedruckten Namen finden bzw. beim ersten Beleg anlegen (K03-50)."""
     rows = conn.execute("SELECT id, name FROM dealer WHERE archived = 0 ORDER BY id").fetchall()
@@ -197,7 +252,8 @@ def _preview(conn, res: dict, sha: str) -> dict:
                 "qty_milli": abs(p.get("menge_tausendstel") or 0), "unit_code": (p.get("mengeneinheit") or "KG").upper(),
                 "pack_text": pack_text_of(p), "order_item": bool(p.get("bestellartikel")),
                 "commodity_group": p.get("warengruppe"), "net_cents": p.get("netto_cent"),
-                "net_book_cents": book_cents(p), "vat_percent": p.get("mwst_prozent")}
+                "net_book_cents": book_cents(p), "vat_percent": p.get("mwst_prozent"),
+                "area": _area(p), "read": _read_text(p)}
         hit = _source_hit(conn, dealer_id, art)
         other = conn.execute("SELECT id, description FROM other_article WHERE dealer_id = ? AND article_no = ?",
                              (dealer_id, art)).fetchone() if art else None
@@ -231,7 +287,8 @@ def _preview(conn, res: dict, sha: str) -> dict:
                                                raw_material_id=line.get("raw_material_id"),
                                                other_article_id=line.get("other_article_id"))
         lines.append(line)
-    return {"kind": kind, "billing": billing, "groups": booking.list_groups(conn) if billing else None, "kind_text": KIND_TEXT[kind], "doc_no": d.get("belegnummer"), "doc_date": d.get("belegdatum"),
+    return {"pages": preview_pages(res),
+            "kind": kind, "billing": billing, "groups": booking.list_groups(conn) if billing else None, "kind_text": KIND_TEXT[kind], "doc_no": d.get("belegnummer"), "doc_date": d.get("belegdatum"),
             "expected_date": d.get("lieferdatum_voraussichtlich"), "chefslist_ref": d.get("ihre_referenz"),
             "dealer_id": dealer_id, "net_cents": (d.get("summen") or {}).get("netto_cent"),
             "duplicate": dup["created_at"] if dup else None, "plausibility": res.get("plausibilitaet") or [],
@@ -906,6 +963,11 @@ def rebook(conn: sqlite3.Connection, doc_id: int, line_id: int, payload: dict | 
 def assignment(conn: sqlite3.Connection, doc_id: int) -> dict:
     """Zuordnung eines gespeicherten Belegs ansehen (Archiv, Taste „Zuordnung“)."""
     doc = _doc(conn, doc_id)
+    try:
+        res = json.loads(doc["reader_json"] or "{}")
+    except (TypeError, ValueError):
+        res = {}
+    read = {p.get("nr"): p for p in ((res.get("daten") or {}).get("positionen") or []) if isinstance(p, dict)}
     lines = []
     for l in conn.execute("SELECT l.*, r.name AS rm_name, r.number AS rm_number, r.type AS rm_type, "
                           "o.description AS other_name, g.name AS group_name FROM receiving_line l "
@@ -921,8 +983,11 @@ def assignment(conn: sqlite3.Connection, doc_id: int) -> dict:
                       "other_article_id": l["other_article_id"], "other_name": l["other_name"],
                       "booking_group_id": l["booking_group_id"], "group_name": l["group_name"],
                       "state": l["state"], "delivered_milli": l["delivered_qty_milli"], "note": l["note"],
-                      "locked": booked})
-    return {"id": doc["id"], "kind": doc["kind"], "kind_text": KIND_TEXT[doc["kind"]], "doc_no": doc["doc_no"],
+                      "locked": booked,
+                      "area": _area(read[l["line_no"]]) if not l["unexpected"] and l["line_no"] in read else None,
+                      "read": _read_text(read[l["line_no"]]) if not l["unexpected"] and l["line_no"] in read else None})
+    return {"pages": preview_pages(res), "file_key": doc["file_sha256"] if doc["file_path"] else None,
+            "id": doc["id"], "kind": doc["kind"], "kind_text": KIND_TEXT[doc["kind"]], "doc_no": doc["doc_no"],
             "doc_date": doc["doc_date"], "dealer_name": doc["dealer_name"], "billing": doc["kind"] != "order_confirmation",
             "groups": booking.list_groups(conn) if doc["kind"] != "order_confirmation" else None,
             "lines": lines, "reconcile": reconcile(conn, doc_id)}

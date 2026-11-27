@@ -289,3 +289,33 @@ def test_bib_line_gets_pack_on_upload_and_for_old_documents(conn, env):
     conn.commit()
     line = rec.get_delivery(conn, doc["id"])["lines"][0]
     assert line["pack_text"] == "1 BIB à 10 L" and line["pack"]["name"] == "BIB"
+
+
+def test_preview_with_areas_and_page_images(conn, env, monkeypatch):
+    """Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026): Bereiche, Klartext, Seitenbild mit Ablage."""
+    rm = mehl(conn, "H-Schlagsahne 30 %")
+    pos = position(1, "505062", "H-Schlagsahne 30% frischli", 5000, gebinde="1 KT à 5 KG")
+    pos["bereich"] = {"seite": 1, "oben": 477.7, "unten": 512.2}
+    answer = ab([pos])
+    answer["daten"]["seitenmasse"] = [{"breite": 595.3, "hoehe": 841.9}]
+    answer["daten"]["positionen"][0]["menge_text"] = "5,000"
+    env.append(answer)
+    pre = rec.upload(conn, PDF + b"vorschau", "ab.pdf")
+    assert pre["pages"] == [{"page": 1, "width": 595.3, "height": 841.9}]
+    line = pre["lines"][0]
+    assert line["area"] == {"page": 1, "top": 477.7, "bottom": 512.2}
+    assert line["read"]["qty_text"] == "5,000 KG" and line["read"]["pack"]["step_milli"] == 5000
+    calls = []
+    monkeypatch.setattr(client, "page_image", lambda pdf, page: calls.append(page) or b"\x89PNG-seite")
+    assert rec.page_png(conn, pre["token"], 1) == b"\x89PNG-seite"
+    assert rec.page_png(conn, pre["token"], 1) == b"\x89PNG-seite" and calls == [1]        # zweites Mal aus der Ablage
+    with pytest.raises(Exception):
+        rec.page_png(conn, "../../etc", 1)
+    doc = rec.commit(conn, {"token": pre["token"], "decisions": {"1": {"action": "assign", "raw_material_id": rm}}})
+    a = rec.assignment(conn, doc["id"])
+    assert a["file_key"] == pre["token"] and a["pages"][0]["page"] == 1
+    assert a["lines"][0]["area"]["top"] == 477.7 and a["lines"][0]["read"]["pack"]["name"] == "Karton"
+    # nach dem Speichern liegt das PDF nicht mehr im Probelauf: Bild kommt über den gespeicherten Beleg
+    for f in (rec.documents_dir() / "vorschau").glob("*.png"):
+        f.unlink()
+    assert rec.page_png(conn, pre["token"], 1) == b"\x89PNG-seite" and calls == [1, 1]

@@ -127,7 +127,8 @@ def _zeilen(seite):
     for g in gruppen:
         woerter, straenge = _woerter(g["zeichen"])
         if woerter:
-            zeilen.append({"top": g["top"], "woerter": woerter, "straenge": straenge,
+            zeilen.append({"top": g["top"], "unten": max(c["bottom"] for c in g["zeichen"]),
+                           "woerter": woerter, "straenge": straenge,
                            "text": " ".join(w["text"] for w in woerter)})
     return zeilen
 
@@ -238,6 +239,19 @@ class _Leser:
     def _summe_neu(self):
         return sum(self._wert(p) for p in self.positionen)
 
+    def _dehnen(self, pos):
+        """Bereich der Position auf der Seite um die aktuelle Zeile erweitern (Vorschaubild, Leser 0.2.0)."""
+        nr, z = getattr(self, "_akt", (None, None))
+        if pos is None or z is None:
+            return
+        b = pos.get("bereich")
+        if b is None or b["seite"] != nr:
+            if b is None:
+                pos["bereich"] = {"seite": nr, "oben": round(z["top"], 1), "unten": round(z.get("unten", z["top"] + 8), 1)}
+            return                         # Fortsetzung auf der nächsten Seite: Bereich bleibt auf der ersten
+        b["oben"] = round(min(b["oben"], z["top"]), 1)
+        b["unten"] = round(max(b["unten"], z.get("unten", z["top"] + 8)), 1)
+
     # -- eine Seite
     def seite(self, nr, zeilen):
         kopfzeile = next((i for i, z in enumerate(zeilen)
@@ -289,6 +303,7 @@ class _Leser:
         if len(ws) != len(z["woerter"]):
             z = dict(z, woerter=ws, text=_text(ws))
         vorher = len(self.positionen)
+        self._akt = (nr, z)
         self._zeile_einordnen(nr, z, besch_x, layout)
         if ueberdruck:
             pos = self._pos()
@@ -367,10 +382,12 @@ class _Leser:
                 self.warnungen.append(f"Seite {nr}: zweite Skontozeile bei Artikel {pos['artikelnummer']}")
             pos["skonto"] = {"text": t[:t.rfind(m.group(2))].strip(), "prozent_text": m.group(1),
                              "cent": _ganz(m.group(2), 2)}
+            self._dehnen(pos)
             return
         m = RE_KONDITIONEN.search(t)
         if m and pos:
             pos["netto_nach_konditionen_cent"] = _ganz(m.group(1), 2)
+            self._dehnen(pos)
             if pos["skonto"] is None or pos["netto_cent"] + pos["skonto"]["cent"] != pos["netto_nach_konditionen_cent"]:
                 self.warnungen.append(
                     f"Seite {nr}: Summe nach Konditionen bei Artikel {pos['artikelnummer']} passt nicht zu Netto − Skonto")
@@ -379,6 +396,7 @@ class _Leser:
             m = RE_KLAMMER.match(_text(rechts))
             if m and pos and pos["gebinde_klammer"] is None:
                 pos["gebinde_klammer"] = f"({m.group(1)} {m.group(2)})"
+                self._dehnen(pos)
                 rechts = []
         if rechts:
             self.warnungen.append(f"Seite {nr}: Zeile nicht zugeordnet: {t!r}")
@@ -391,6 +409,7 @@ class _Leser:
     def _text_zur_position(self, pos, text):
         if not text:
             return
+        self._dehnen(pos)
         if set(text) == {"-"} or text in BESTELL_TEXTE:
             pos["bestell_hinweis"].append(text)
             return
@@ -454,6 +473,7 @@ class _Leser:
         if mitte:
             pos["bezeichnung_zeilen"].append(_text(mitte))
         self.positionen.append(pos)
+        self._dehnen(pos)
         if pe in PREISFAKTOR:
             self._preis_pruefen(nr, pos)
 
@@ -569,6 +589,7 @@ def lese_beleg(pfad):
     pfad = Path(pfad)
     with pdfplumber.open(pfad) as pdf:
         seiten = [_zeilen(s) for s in pdf.pages]
+        masse = [{"breite": round(float(s.width), 1), "hoehe": round(float(s.height), 1)} for s in pdf.pages]
     leser = _Leser()
     kopf = _lies_kopf(seiten[0] if seiten else [], leser.warnungen)
     for nr, zeilen in enumerate(seiten, start=1):
@@ -588,6 +609,7 @@ def lese_beleg(pfad):
         "schema": SCHEMA_VERSION,
         "datei": pfad.name,
         "seiten": len(seiten),
+        "seitenmasse": masse,               # Punkte (1/72 Zoll), für das Vorschaubild (Leser 0.2.0)
         **kopf,
         "positionen": leser.positionen,
         "summen": summen,

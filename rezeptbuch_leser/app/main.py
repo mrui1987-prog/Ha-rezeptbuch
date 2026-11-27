@@ -21,11 +21,12 @@ from pathlib import Path
 
 from . import __version__
 from .localtime import setup_timezone
-from .vertrag import FEHLER, LESER, MAX_BYTES, ZEITLIMIT_S, antwort, gesundheit
+from .vertrag import FEHLER, LESER, MAX_BYTES, MAX_SEITEN, ZEITLIMIT_S, antwort, gesundheit
 
 PORT = 8100
 OPTIONS_FILE = Path("/data/options.json")
 PFAD_LESEN = re.compile(r"^/v1/lesen/([a-z-]+)$")
+PFAD_BILD = re.compile(r"^/v1/seitenbild\?seite=(\d{1,2})$")
 
 log = logging.getLogger("rezeptbuch_leser")
 
@@ -61,6 +62,23 @@ def lese_im_prozess(leser: str, inhalt: bytes, dateiname: str | None,
         return {"status": FEHLER, "meldung": "Leser lieferte keine gültige Antwort"}
 
 
+def bild_im_prozess(inhalt: bytes, seite: int, zeitlimit: float = ZEITLIMIT_S) -> bytes | None:
+    """Seitenbild in eigenem Prozess (wie das Lesen); None, wenn die Seite fehlt oder das PDF kaputt ist."""
+    with tempfile.TemporaryDirectory(prefix="bild-") as tmp:
+        pfad = Path(tmp) / "eingang.pdf"
+        pfad.write_bytes(inhalt)
+        try:
+            lauf = subprocess.run([sys.executable, "-m", "app.worker", "--bild", str(pfad), str(seite)],
+                                  capture_output=True, timeout=zeitlimit,
+                                  cwd=str(Path(__file__).resolve().parent.parent))
+        except subprocess.TimeoutExpired:
+            return None
+    if lauf.returncode != 0 or not lauf.stdout.startswith(b"\x89PNG"):
+        log.info("Seitenbild %s: %s", seite, lauf.stderr.decode("utf-8", "replace")[-300:])
+        return None
+    return lauf.stdout
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = f"rezeptbuch-leser/{__version__}"
 
@@ -83,7 +101,41 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, gesundheit())
         self._fehler(404, "Unbekannter Pfad")
 
+    def _pdf_lesen(self) -> bytes | None:
+        try:
+            laenge = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            laenge = 0
+        if laenge <= 0:
+            self._fehler(400, "Leerer Anfragekörper – PDF erwartet")
+            return None
+        if laenge > MAX_BYTES:
+            self.close_connection = True
+            self._fehler(413, f"PDF größer als {MAX_BYTES // (1024 * 1024)} MB")
+            return None
+        inhalt = self.rfile.read(laenge)
+        if not inhalt.startswith(b"%PDF-"):
+            self._fehler(400, "Kein PDF")
+            return None
+        return inhalt
+
+    def _seitenbild(self, seite: int) -> None:
+        inhalt = self._pdf_lesen()
+        if inhalt is None:
+            return
+        png = bild_im_prozess(inhalt, seite) if 1 <= seite <= MAX_SEITEN else None
+        if png is None:
+            return self._fehler(404, f"Seite {seite} nicht vorhanden oder nicht darstellbar")
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(png)))
+        self.end_headers()
+        self.wfile.write(png)
+
     def do_POST(self):
+        bild = PFAD_BILD.match(self.path)
+        if bild:
+            return self._seitenbild(int(bild.group(1)))
         treffer = PFAD_LESEN.match(self.path)
         if not treffer:
             return self._fehler(404, "Unbekannter Pfad")

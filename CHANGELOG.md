@@ -1,6 +1,6 @@
 # Änderungen
 
-## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig, Artikel mit Code ausblenden
+## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig, Artikel mit Code ausblenden, Vorschaubild der Zuordnung
 
 Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
 
@@ -9,6 +9,7 @@ Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
 - **Fenster „Code unbekannt“:** Artikel der Lieferung, die schon einen Code haben, sind ausgeblendet; Taste „Auch Artikel mit Code zeigen (n)“. „Ersatz für …“ zeigt weiter alle.
 - **Tausenderpunkt im Gebindetext:** „1 PG à 1.000 ST“ wurde als 1 Stück gelesen (Faltenbeutel, AB AT1003549), jetzt 1 000 Stück je Scan bzw. ± Taste.
 - **Gebinde aus der Klammerzeile:** Steht auf der AB kein „… à …“, aber „(1 BIB)“ (H-Milch „10,000 L“, AT1003549), wird das Gebinde abgeleitet: 1 BIB = 10 L. Gilt beim Hochladen und für schon eingelesene Belege (aus dem gespeicherten Leserergebnis).
+- **Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026, Stufen 1–3; braucht Leser 0.2.0):** Beim Hochladen und unter Archiv → „Zuordnung“ steht die Belegseite als Bild über den Positionen, jede Position ist umrandet (grün zugeordnet, orange Angabe fehlt, rot unbekannt; Farbe folgt den Entscheidungen sofort). Rahmen antippen → zur Karte, „📍 Im Beleg zeigen“ an der Karte → zum Rahmen; „🔍 Größer / kleiner“ fürs iPhone. Jede Karte zeigt im Klartext, was gelesen wurde („Gelesen: 5,000 KG · Gebinde „1 KT à 5 KG“ → 1 Scan = 1 Karton = 5 kg“). Taste „🖼 Vorschau aus/an“ blendet Bild und Klartext aus und ein, je Gerät gemerkt. Seitenbilder holt Add-on 1 einmal vom Leser und legt sie unter `belege/vorschau/` ab; neu `GET /api/v1/admin/receiving/pages/{sha}/{seite}.png` (PIN). Belege, die mit Leser 0.1.x eingelesen wurden, haben kein Vorschaubild, nur den Klartext.
 - Belegzeilen liefern `rm_delivery_pack_g`, `rm_delivery_pack_label` und `rm_has_code` mit. Keine Migration.
 
 ## 0.10.36 – Handelsware und Pfand (Teil H1)

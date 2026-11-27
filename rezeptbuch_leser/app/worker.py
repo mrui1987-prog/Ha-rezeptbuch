@@ -2,6 +2,7 @@
 
 Aufruf:  python3 -m app.worker LESER PFAD [DATEINAME]   → Leser-Ergebnis als JSON auf stdout
          python3 -m app.worker --selbsttest             → prüft pdfplumber und den Pass-Leser
+         python3 -m app.worker --bild PFAD SEITE         → Seite als PNG (Graustufen) auf stdout (Vorschaubild)
 """
 
 from __future__ import annotations
@@ -46,9 +47,32 @@ def selbsttest() -> int:
     return 0
 
 
+BILD_DPI = 130
+
+
+def seitenbild(pfad: str, seite: int) -> bytes:
+    """Seite (ab 1) als PNG in Graustufen für das Vorschaubild der Zuordnung (Leser 0.2.0)."""
+    import io
+    import pdfplumber
+    with pdfplumber.open(pfad) as pdf:
+        if not 1 <= seite <= len(pdf.pages):
+            raise ValueError(f"Seite {seite} gibt es nicht (Beleg hat {len(pdf.pages)})")
+        bild = pdf.pages[seite - 1].to_image(resolution=BILD_DPI).original.convert("L")
+    puffer = io.BytesIO()
+    bild.save(puffer, "PNG", optimize=True)
+    return puffer.getvalue()
+
+
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--selbsttest"]:
         return selbsttest()
+    if argv[:1] == ["--bild"] and len(argv) == 3:
+        try:
+            sys.stdout.buffer.write(seitenbild(argv[1], int(argv[2])))
+        except Exception as exc:  # noqa: BLE001 – Meldung auf stderr, Code 3 = Seite nicht da/kaputt
+            print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+            return 3
+        return 0
     if len(argv) not in (2, 3):
         print(__doc__, file=sys.stderr)
         return 2

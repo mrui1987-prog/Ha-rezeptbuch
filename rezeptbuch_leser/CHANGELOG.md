@@ -1,5 +1,10 @@
 # Änderungen – HA-Rezeptbuch Leser
 
+## 0.2.0 – Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026)
+
+- BÄKO-Belegleser: jede Position hat `bereich` (`seite`, `oben`, `unten` in Punkten, alle Zeilen der Position), der Beleg `seitenmasse` (Breite/Höhe je Seite). Neue Felder, Schema 1 bleibt.
+- Neu: `POST /v1/seitenbild?seite=N` (Körper: PDF) → Seite als PNG in Graustufen (130 dpi, meist 20–40 KB), eigener Prozess wie das Lesen; fehlende Seite → 404. Speichert nichts.
+
 ## 0.1.1 – BÄKO-Belegleser: Packungs-Preiseinheit (z. B. KT)
 
 - Fehler behoben: Positionen mit Preiseinheit wie `KT` statt EIN/HDT/TSD (Beispiel AB AT1003549, Pos. „Pru Pasteten m Deckel“: 120 ST, 27,95 je KT, Klammer „(2 KT)“) wurden verworfen, Beleg war „unlesbar“

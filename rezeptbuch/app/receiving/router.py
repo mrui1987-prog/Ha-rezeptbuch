@@ -46,6 +46,13 @@ def documents(db: sqlite3.Connection = Depends(get_db)):
     return service.list_documents(db)
 
 
+@router.get("/admin/receiving/pages/{key}/{page}.png", dependencies=admin)
+def page_png(key: str, page: int, db: sqlite3.Connection = Depends(get_db)):
+    """Seitenbild für das Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026)."""
+    return Response(service.page_png(db, key, page), media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+
 @router.get("/admin/receiving/documents/{doc_id}.pdf", dependencies=admin)
 def document_pdf(doc_id: int, db: sqlite3.Connection = Depends(get_db)):
     path = service.document_pdf(db, doc_id)

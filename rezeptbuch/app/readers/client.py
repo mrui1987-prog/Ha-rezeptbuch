@@ -43,3 +43,19 @@ def read(reader: str, pdf: bytes, file_name: str | None) -> dict:
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise ConflictError("Leser nicht erreichbar – Add-on „HA-Rezeptbuch Leser“ starten.",
                             code="reader_unreachable", reason=str(exc)[:200]) from None
+
+
+def page_image(pdf: bytes, page: int) -> bytes | None:
+    """Seite als PNG vom Leser (ab Leser 0.2.0, Vorschaubild der Zuordnung); None, wenn der Leser die Seite
+    nicht liefert (Seite fehlt, älterer Leser ohne Seitenbild)."""
+    req = urllib.request.Request(f"{reader_url()}/v1/seitenbild?seite={int(page)}", data=pdf, method="POST",
+                                 headers={"Content-Type": "application/pdf"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as res:  # noqa: S310 – internes Add-on-Netz
+            body = res.read()
+    except urllib.error.HTTPError:
+        return None
+    except (urllib.error.URLError, OSError) as exc:
+        raise ConflictError("Leser nicht erreichbar – Add-on „HA-Rezeptbuch Leser“ starten.",
+                            code="reader_unreachable", reason=str(exc)[:200]) from None
+    return body if body.startswith(b"\x89PNG") else None
