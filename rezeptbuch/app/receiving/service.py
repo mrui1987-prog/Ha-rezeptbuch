@@ -87,6 +87,39 @@ def pack_step(pack_text: str | None, unit_code: str) -> dict:
     return {"step_milli": 1000, "name": unit_code, "count": None}
 
 
+_BRACKET = re.compile(r"^\(\s?(\d+)\s?([A-ZÄÖÜ]{1,4})\s?\)$")
+
+
+def pack_text_of(p: dict) -> str | None:
+    """Gebindetext der Position; fehlt er, aus der Klammerzeile ableiten (Befund Michael 27.11.2026, H-Milch):
+    „10,000 L“ + „(1 BIB)“ → „1 BIB à 10 L“. Nur bei gedruckter Menge und Anzahl > 0."""
+    if p.get("gebinde_text"):
+        return p["gebinde_text"]
+    m = _BRACKET.match((p.get("gebinde_klammer") or "").strip())
+    qty, unit = abs(p.get("menge_tausendstel") or 0), (p.get("mengeneinheit") or "").upper()
+    if not m or not qty or not unit or int(m.group(1)) <= 0 or m.group(2).upper() == unit:
+        return None
+    size = qty / int(m.group(1)) / 1000
+    size_text = f"{size:.3f}".rstrip("0").rstrip(".").replace(".", ",")
+    return f"{int(m.group(1))} {m.group(2).upper()} à {size_text} {unit}"
+
+
+def _derived_packs(row) -> dict:
+    """Für schon eingelesene Belege: abgeleitete Gebindetexte je Positionsnummer aus dem Leserergebnis."""
+    try:
+        d = json.loads(row["reader_json"] or "{}")
+    except (TypeError, ValueError, KeyError, IndexError):
+        return {}
+    d = d.get("daten", d) if isinstance(d, dict) else {}
+    out = {}
+    for p in d.get("positionen") or []:
+        if isinstance(p, dict) and not p.get("gebinde_text"):
+            text = pack_text_of(p)
+            if text:
+                out[p.get("nr")] = text
+    return out
+
+
 def _dealer(conn, printed: str | None) -> int:
     """BÄKO über den gedruckten Namen finden bzw. beim ersten Beleg anlegen (K03-50)."""
     rows = conn.execute("SELECT id, name FROM dealer WHERE archived = 0 ORDER BY id").fetchall()
@@ -162,7 +195,7 @@ def _preview(conn, res: dict, sha: str) -> dict:
         art = p.get("artikelnummer")
         line = {"line_no": p.get("nr"), "article_no": art, "description": p.get("bezeichnung"),
                 "qty_milli": abs(p.get("menge_tausendstel") or 0), "unit_code": (p.get("mengeneinheit") or "KG").upper(),
-                "pack_text": p.get("gebinde_text"), "order_item": bool(p.get("bestellartikel")),
+                "pack_text": pack_text_of(p), "order_item": bool(p.get("bestellartikel")),
                 "commodity_group": p.get("warengruppe"), "net_cents": p.get("netto_cent"),
                 "net_book_cents": book_cents(p), "vat_percent": p.get("mwst_prozent")}
         hit = _source_hit(conn, dealer_id, art)
@@ -175,7 +208,7 @@ def _preview(conn, res: dict, sha: str) -> dict:
                         needs_gpu=line["unit_code"] not in (("KG", "ST") if goods else ("KG",)) and hit["type"] != "aid"
                         and not hit["grams_per_unit"] and not billing)
             if goods:
-                line.update(gpu_kind="pieces", pieces_hint=pieces_hint(line["pack_text"], line["unit_code"]))
+                line.update(gpu_kind="pieces", pieces_hint=pieces_hint(p.get("gebinde_text"), line["unit_code"]))
         elif other:
             line.update(target="other", other_article_id=other["id"])
         else:
@@ -185,7 +218,7 @@ def _preview(conn, res: dict, sha: str) -> dict:
                         needs_gpu=line["unit_code"] != "KG" and not billing,
                         # Vorschlag „Handelsware“ (M03-39), Pfand-Haken nur bei Pfand/Leergut laut Beleg (K03-92)
                         suggest_goods=deposit or learned == booking.HANDELSWARE, deposit_hint=deposit,
-                        pieces_hint=pieces_hint(line["pack_text"], line["unit_code"]))
+                        pieces_hint=pieces_hint(p.get("gebinde_text"), line["unit_code"]))
             prior = conn.execute(   # M03-36: kam dieser Artikel schon einmal als Ersatz?
                 "SELECT l.raw_material_id, r.name, r.number FROM receiving_line l JOIN raw_material r ON r.id = l.raw_material_id "
                 "WHERE l.target = 'substitute' AND l.substitute_ref = ? ORDER BY l.id DESC LIMIT 1", (art,)).fetchone() \
@@ -497,11 +530,13 @@ def _gpu_for(conn, line, dealer_id: int) -> int | None:
     return row["grams_per_unit"]
 
 
-def _line_dict(conn, line, dealer_id: int) -> dict:
+def _line_dict(conn, line, dealer_id: int, derived: dict | None = None) -> dict:
     out = {k: line[k] for k in line.keys()}
+    if out.get("pack_text") is None and derived and not out.get("unexpected"):
+        out["pack_text"] = derived.get(out["line_no"])
     out["remaining_milli"] = max(0, line["qty_milli"] - line["delivered_qty_milli"])
     out["grams_per_unit"] = _gpu_for(conn, line, dealer_id)
-    out["pack"] = pack_step(line["pack_text"], line["unit_code"])
+    out["pack"] = pack_step(out["pack_text"], line["unit_code"])
     if line["raw_material_id"]:
         rm = stock._row(conn, line["raw_material_id"])
         pack_g, pack_label = stock.pack_of(rm)
@@ -528,12 +563,13 @@ def _doc_dict(conn, row, *, open_only: bool) -> dict:
     if open_only:
         sql += " AND state IN ('open', 'backorder')"
     lines = conn.execute(sql + " ORDER BY unexpected, line_no", (row["id"],)).fetchall()
+    derived = _derived_packs(row) if any(l["pack_text"] is None for l in lines) and "reader_json" in row.keys() else {}
     return {"id": row["id"], "kind": row["kind"], "kind_text": KIND_TEXT[row["kind"]], "doc_no": row["doc_no"],
             "doc_date": row["doc_date"], "expected_date": row["expected_date"], "status": row["status"],
             "dealer_name": row["dealer_name"], "chefslist_ref": row["chefslist_ref"], "created_at": row["created_at"],
             "booked_at": row["booked_at"], "net_cents": row["net_cents"],
             "has_backorder": any(l["state"] == "backorder" for l in lines),
-            "lines": [_line_dict(conn, l, row["dealer_id"]) for l in lines]}
+            "lines": [_line_dict(conn, l, row["dealer_id"], derived) for l in lines]}
 
 
 def list_deliveries(conn: sqlite3.Connection) -> list[dict]:

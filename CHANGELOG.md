@@ -8,6 +8,7 @@ Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
 - **Rückgängig beim Abhaken:** breite Taste „↶ Rückgängig – letzter Scan“ (mehrfach). War der Code bei diesem Scan neu zugeordnet, wird die Zuordnung wieder gelöst; ein begonnener Ersatz wird entfernt. Neu: `POST /api/v1/barcodes/release` (ohne PIN, nur frisch zugeordnete Codes der letzten 10 Minuten, nie umgehängt; ältere nur an der Rohstoffseite mit PIN).
 - **Fenster „Code unbekannt“:** Artikel der Lieferung, die schon einen Code haben, sind ausgeblendet; Taste „Auch Artikel mit Code zeigen (n)“. „Ersatz für …“ zeigt weiter alle.
 - **Tausenderpunkt im Gebindetext:** „1 PG à 1.000 ST“ wurde als 1 Stück gelesen (Faltenbeutel, AB AT1003549), jetzt 1 000 Stück je Scan bzw. ± Taste.
+- **Gebinde aus der Klammerzeile:** Steht auf der AB kein „… à …“, aber „(1 BIB)“ (H-Milch „10,000 L“, AT1003549), wird das Gebinde abgeleitet: 1 BIB = 10 L. Gilt beim Hochladen und für schon eingelesene Belege (aus dem gespeicherten Leserergebnis).
 - Belegzeilen liefern `rm_delivery_pack_g`, `rm_delivery_pack_label` und `rm_has_code` mit. Keine Migration.
 
 ## 0.10.36 – Handelsware und Pfand (Teil H1)

@@ -263,3 +263,29 @@ def test_line_knows_delivery_pack_and_code(conn, env):
     assert line["rm_pack_g"] == 1000 and line["rm_delivery_pack_g"] is None and line["rm_has_code"] is False
     scanner.assign(conn, {"code": "4006381333931", "raw_material_id": rm})
     assert rec.get_delivery(conn, doc["id"])["lines"][0]["rm_has_code"] is True
+
+
+def test_pack_from_bracket_line():
+    """Befund Michael 27.11.2026 (AT1003549): H-Milch „10,000 L“, nur „(1 BIB)“ → 1 BIB à 10 L."""
+    p = {"gebinde_text": None, "gebinde_klammer": "(1 BIB)", "menge_tausendstel": 10000, "mengeneinheit": "L"}
+    assert rec.pack_text_of(p) == "1 BIB à 10 L"
+    assert rec.pack_step(rec.pack_text_of(p), "L") == {"step_milli": 10000, "name": "BIB", "count": 1}
+    assert rec.pack_text_of({**p, "gebinde_klammer": "(4 SCK)", "menge_tausendstel": 100000, "mengeneinheit": "KG"}) \
+        == "4 SCK à 25 KG"
+    assert rec.pack_text_of({**p, "gebinde_klammer": "(3 KT)", "menge_tausendstel": 2500}) == "3 KT à 0,833 L"
+    assert rec.pack_text_of({**p, "gebinde_klammer": None}) is None
+    assert rec.pack_text_of({**p, "gebinde_klammer": "(10 L)"}) is None          # gleiche Einheit: kein Gebinde
+    assert rec.pack_text_of({**p, "gebinde_text": "1 VE à 5 L"}) == "1 VE à 5 L"
+
+
+def test_bib_line_gets_pack_on_upload_and_for_old_documents(conn, env):
+    rm = mehl(conn, "H-Milch 3,5 %")
+    pos = position(1, "506020", "H-Milch 3,5% Milch-Wolke - 10l BIB", 10000, me="L")
+    pos["gebinde_klammer"] = "(1 BIB)"
+    _, doc = load(conn, env, [pos], {"1": {"action": "assign", "raw_material_id": rm, "grams_per_unit": 1030}})
+    assert doc["lines"][0]["pack"]["step_milli"] == 10000
+    # schon früher eingelesener Beleg ohne gespeicherten Gebindetext: aus dem Leserergebnis abgeleitet
+    conn.execute("UPDATE receiving_line SET pack_text = NULL")
+    conn.commit()
+    line = rec.get_delivery(conn, doc["id"])["lines"][0]
+    assert line["pack_text"] == "1 BIB à 10 L" and line["pack"]["name"] == "BIB"
