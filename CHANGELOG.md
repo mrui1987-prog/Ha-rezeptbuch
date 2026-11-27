@@ -14,6 +14,7 @@ Wiegeablauf (Modul 09, Entscheidungen Michael 24.11.2026, 14:18):
 
 - **M09-20 „Behälter wechseln“ mit zu viel im Behälter:** Liegt das Ist über Soll + Toleranz, fragt die Station „… g gewogen, Soll … g – … g zu viel“: **„Trotzdem in den Teig – … g zählen“** oder **„Verwerfen – Zutat neu wiegen“**. Verworfenes steht im Protokoll („verworfen“) und wird bei bestandsgeführten Rohstoffen als Abgang („beim Wiegen verworfen“, mit Charge) gebucht. Auch auf der Prüfseite Ablauf.
 - **M09-21 Befehle erst bei ruhigem Gewicht:** Tara/Null in „Behälter wiegen/wechseln“ und beim Abschluss durch Abnehmen erst nach 1 s Ruhe (±2 g bzw. durchgehend Striche), nach 5 s Warten genügt ½ s, nach 10 s trotzdem. Die KERN verwirft Befehle bei unruhigem Gewicht und piept.
+- **Null an der Waage bei Strichen (Befund 24.11., Vorschlag angenommen 27.11.2026, 14:39):** Zeigt die Waage erst mindestens 1 s Striche (Behälter abgenommen) und dann nach Null von Hand brutto 0, gilt das als Null auf der **leeren** Waage: nichts versteckt, Gesamtlast = Anzeige, das Ist bleibt. Beim „Weiter“ mit wieder aufgestelltem Behälter passt die Lastprüfung (vorher meldete sie das ganze Behältergewicht als Abweichung). Kurze Striche wie beim Tastendruck mit Last bleiben „Null mit Last“.
 - **Migration 0016:** Wiegeprotokoll kennt das Ereignis `discarded` (Neuaufbau von `weighing_event`, Daten und Regeln bleiben).
 
 ## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig, Artikel mit Code ausblenden, Vorschaubild der Zuordnung

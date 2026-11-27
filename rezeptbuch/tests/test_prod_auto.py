@@ -819,3 +819,39 @@ def test_command_waits_for_calm_then_relaxes(runner, hub, clock):
         assert runner.ready_for_command(1, "y") is False
     clock.advance(0.6)
     assert runner.ready_for_command(1, "y") is True
+
+
+# -- Null von Hand bei Strichen = Null auf der leeren Waage (Befund 24.11., angenommen 27.11.2026, 14:39) -----
+
+def test_null_after_strokes_is_empty_scale(conn, brot, runner, hub, clock):
+    hub.put(1, 1100)                                              # 300 g Mehl im Behälter (800 g tariert)
+    run(conn, runner, clock, 3.2)
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    run(conn, runner, clock, 0.4)
+    hub.put(1, 0)                                                 # Behälter abgenommen: Striche
+    run(conn, runner, clock, 1.4)
+    hub.offset[1] = 0                                             # an der Waage Null (leer) → brutto 0
+    run(conn, runner, clock, 0.4)
+    assert runner.live_offset(1) == 0                             # nichts versteckt
+    hub.put(1, 1100)                                              # Behälter mit 300 g wieder drauf (brutto)
+    run(conn, runner, clock, 0.4)
+    batch = batches.resume(conn, brot["id"], st(), runner)
+    assert batch["resume_mode"] == "keep" and actual_now(conn, runner, brot["id"]) == 300
+
+
+def test_null_with_load_short_strokes_still_hidden():
+    from app.production.weigh import Sample, StationWeigh
+    sw = StationWeigh(scale_tare_g=800)
+    sw.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
+    sw.observe(0.2, Sample("invalid", None, False), 3, 5, watch_manual=True)
+    assert sw.observe(0.6, Sample("ok", 0, True, net=False), 3, 5, watch_manual=True) == ["manual_zero"]
+    assert sw.gross() == 1100
+    # lange Striche (Behälter abgenommen), dann brutto 0: leer genullt, Ist bleibt
+    sw = StationWeigh(scale_tare_g=800, reference_g=0)
+    sw.observe(0, Sample("ok", 300, True, net=True), 3, 5, watch_manual=True)
+    sw.observe(0.2, Sample("invalid", None, False), 3, 5, watch_manual=True)
+    sw.observe(1.0, Sample("invalid", None, False), 3, 5, watch_manual=True)
+    assert sw.observe(1.6, Sample("ok", 0, True, net=False), 3, 5, watch_manual=True) == ["manual_zero_empty"]
+    assert sw.gross() == 0 and sw.offset() == 0
+    sw.observe(3.0, Sample("ok", 1100, True, net=False), 3, 5, watch_manual=True)
+    assert sw.actual() == 300                                     # Behälter wieder drauf: Ist stimmt

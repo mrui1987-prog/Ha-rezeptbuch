@@ -166,6 +166,10 @@ class ProductionRunner:
             events = sw.observe(now, sample, self.settings["tare_confirm_seconds"],
                                 self.settings["auto_ack_span_g"], watch_manual=quiet and station not in self._flows)
             for event in events:
+                if event == "manual_zero_empty":
+                    self._notice[station] = now + MANUAL_NOTICE_S
+                    log.info("Waage %d: Null von Hand auf der leeren Waage erkannt (vorher Striche) – Gesamtlast = "
+                             "Anzeige, Ist bleibt", station)
                 if event in ("manual_tare", "manual_zero"):
                     self._notice[station] = now + MANUAL_NOTICE_S
                     log.info("Waage %d: %s von Hand an der Waage erkannt (Sprung %s g) – Ist und Gesamtlast "

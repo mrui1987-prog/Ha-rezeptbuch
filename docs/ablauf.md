@@ -125,6 +125,8 @@ Ist das Behältergewicht schon bekannt und weicht der neue Wert um mehr als `res
 
 **Befehle erst bei Ruhe (M09-21, Michael 24.11.2026, 14:18):** In allen Behälter-Schritten und beim Abschluss durch Abnehmen gehen `tare`/`zero` erst an die Waage, wenn die Software das Gewicht selbst **1 s ruhig** sieht (±2 g bzw. durchgehend `-----`); wer schon 5 s wartet, dem genügt ½ s; nach 10 s geht der Befehl trotzdem (Protokoll-Warnung). Grund: die KERN verwirft Befehle bei unruhigem Gewicht und piept (Handbuch). *Hinweis Claude:* Die Tara nach einer Quittung ist davon nicht erfasst (dort steht das Gewicht ohnehin 2 s in der Toleranz).
 
+**Null an der Waage bei Strichen (Befund 24.11.2026, angenommen 27.11.2026, 14:39):** Zeigt die Waage mindestens 1 s Striche (Behälter abgenommen, Anzeige unter 0) und danach brutto ~0, war es ein Null von Hand auf der **leeren** Waage: Ausgleich der Software = 0, Gesamtlast = Anzeige, die Tara-Summe bleibt (Ist stimmt mit wieder aufgestelltem Behälter). Kürzere Striche gelten wie bisher als Null mit Last (Last „versteckt“, M09-19). Annahme: genullt wird nur auf leerer Waage (Einweisung).
+
 *Grund für Tara + Null:* Ab der zweiten Zutat enthält die letzte Tara auch die schon gewogenen Zutaten. Der leere Behälter läge dann unter der Tara, die Waage zeigte `-----` statt 0. Nach Tara + Null steht die leere Waage sicher bei 0 brutto. **Praxisprüfung C2:** Wirkung von `tare` bei `-----` an der KERN (Modul 07: nach Abnehmen teils schon brutto, Tara auf leerer Waage bleibt brutto) – `zero` danach stellt in jedem Fall auf 0.
 
 ### 6.3 Auto-Quittung (M09-4)

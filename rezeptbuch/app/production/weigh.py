@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 LATE_TARE_WINDOW_S = 30.0       # so lange wird ein verspäteter Tara-Sprung noch erkannt
+STROKES_EMPTY_S = 1.0           # so lange Striche vor einem Null von Hand = Last war abgenommen (Vorschlag 27.11.)
 MANUAL_JUMP_S = 3.0             # Tara/Null von Hand: ruhiger Wert → ~0 ohne Zwischengewicht in höchstens 3 s
                                 # (die KERN zeigt beim Tarieren/Nullen kurz Striche; Befund Michael 24.11.2026, 12:37)
 EMPTY_LIMIT_G = 50              # „leer“ bzw. „Last weg“ (wie die Null-Grenze der Waage, Z07-1)
@@ -61,6 +62,9 @@ class StationWeigh:
     anchor_dirty: bool = False           # seit dem Anker ein Zwischengewicht gesehen (= Abheben, keine Taste)
     hidden_g: int = 0                    # Last, die ein Nullstellen von Hand an der Waage „versteckt“ hat
     manual_delta_g: int | None = None    # letzter erkannter Sprung durch eine Taste an der Waage
+    strokes_since: float | None = None   # Waage zeigt seit … Striche (ungültig)
+    strokes_s: float = 0.0               # Dauer der letzten Strich-Phase vor dem aktuellen gültigen Wert
+    before_strokes: Sample | None = None # letzter gültiger Wert vor der Strich-Phase
     # Auto-Quittung
     ack_since: float | None = None
     ack_min: int | None = None
@@ -117,15 +121,29 @@ class StationWeigh:
         if sample.ok and sample.stable and abs(sample.weight_g) > span_g:
             self.anchor, self.anchor_at, self.anchor_dirty = sample, now, False      # neuer Anker
             return None
-        if anchor is None or not sample.ok:
+        if not sample.ok:
             return None                                    # Striche: Anker bleibt
         if abs(sample.weight_g) > span_g:
-            if abs(sample.weight_g - anchor.weight_g) > span_g:
+            if anchor is not None and abs(sample.weight_g - anchor.weight_g) > span_g:
                 self.anchor_dirty = True                   # Zwischengewicht = Last bewegt, keine Taste
             return None
         # Wert bei ~0
         hit = None
-        if not self.anchor_dirty and self.anchor_at is not None and now - self.anchor_at <= MANUAL_JUMP_S:
+        before = self.before_strokes
+        if (self.strokes_s >= STROKES_EMPTY_S and sample.net is False and before is not None
+                and before.net is True and self.scale_tare_g is not None):
+            # Befund 24.11.2026 / Vorschlag angenommen 27.11.2026, 14:39 (Michael): erst längere Zeit Striche
+            # (Behälter abgenommen, Waage unter 0), dann brutto ~0 = Null von Hand auf der LEEREN Waage. Nichts ist
+            # versteckt: Gesamtlast = Anzeige, Ausgleich 0. Die Tara-Summe der Software bleibt, damit das Ist mit
+            # dem wieder aufgestellten Behälter weiterstimmt.
+            if self.reference_g is not None:
+                self.reference_g += self.scale_tare_g + self.hidden_g
+            self.scale_tare_g, self.hidden_g = 0, 0
+            self.anchor, self.anchor_at, self.anchor_dirty = None, None, False
+            self.before_strokes = None
+            return ("manual_zero_empty", 0)
+        if anchor is not None and not self.anchor_dirty and self.anchor_at is not None \
+                and now - self.anchor_at <= MANUAL_JUMP_S:
             delta = anchor.weight_g - sample.weight_g
             if anchor.net is False and sample.net is True:
                 self.scale_tare_g = delta                  # Tara von Hand auf brutto zeigender Waage
@@ -222,15 +240,24 @@ class StationWeigh:
             if self.anchor is None:
                 self.anchor_dirty = False
             self.anchor, self.anchor_at = sample, now
+        if sample.status == "invalid":
+            if self.strokes_since is None:
+                self.strokes_since = now
+                self.before_strokes = self.last if self.last is not None and self.last.ok else None
+        elif sample.ok:
+            self.strokes_s = 0.0 if self.strokes_since is None else now - self.strokes_since
+            self.strokes_since = None
         if changed and watching:
             jump = self._manual_jump(previous, sample, now, span_g)
             if jump:
                 kind, delta = jump
                 events.append(kind)
                 self.manual_delta_g = delta
-                if self.reference_g is not None:
+                if self.reference_g is not None and kind != "manual_zero_empty":
                     # auch beim laufenden Wiegen: das Ist bleibt (M09-19)
                     self.reference_g -= delta
+                    self.reset_ack()
+                elif kind == "manual_zero_empty":
                     self.reset_ack()
         self.last = sample
         self.last_at = now                                 # letzte Beobachtung (Hintergrund alle 0,2 s)
