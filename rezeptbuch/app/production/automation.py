@@ -89,7 +89,8 @@ def _station_tick(conn: sqlite3.Connection, runner: ProductionRunner, station: i
                 sw.reset_ack()
     elif row is not None and row["status"] == "done":
         gross = sw.gross(sample)
-        if sample.status == "invalid" or (sample.ok and gross is not None and gross < EMPTY_LIMIT_G):
+        removed = sample.status == "invalid" or (sample.ok and gross is not None and gross < EMPTY_LIMIT_G)
+        if runner.ready_for_command(station, "finish", removed):        # M09-21: Null erst bei Ruhe
             runner.zero(station)
             data = batches.finish_auto(conn, row["id"], station, runner)
             log.info("Waage %d: Behälter abgenommen – Teig %s abgeschlossen", station, row["batch_no"])
@@ -122,7 +123,7 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             ready = sample.status == "invalid" or (
                 sample.ok and sample.stable and abs(sample.weight_g) <= EMPTY_LIMIT_G
                 and (gross is None or gross <= EMPTY_LIMIT_G))
-        if ready:
+        if runner.ready_for_command(station, "empty", ready):          # M09-21: erst bei ruhiger Anzeige
             runner.send(station, "tare")
             sw.clear()
             flow.step, flow.sent_at = "zeroing", now
@@ -132,12 +133,12 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
         # Michael 23:02: die KERN verwirft tare/zero bei unruhiger Anzeige (piept trotzdem) – deshalb
         # ½ s nach der Tara zero, auf stabile Anzeige warten, zero erneut; danach Bestätigung/Wiederholung
         if flow.zero_sent == 0:
-            if now - flow.sent_at >= TARE_PAUSE_S:
+            if runner.ready_for_command(station, "zero1", now - flow.sent_at >= TARE_PAUSE_S):
                 runner.zero(station)
                 flow.zero_sent, flow.zero_at = 1, now
             return
         if flow.zero_sent == 1:
-            if _settled(sample, now - flow.zero_at):
+            if runner.ready_for_command(station, "zero2", now - flow.zero_at >= SETTLE_MIN_S):
                 runner.zero(station)
                 flow.zero_sent, flow.zero_at = 2, now
             return
@@ -148,6 +149,8 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             return
         if now - flow.zero_at >= ZERO_WAIT_S:
             if flow.zero_sent < 2 + ZERO_REPEATS:
+                if not runner.ready_for_command(station, "zero_repeat"):
+                    return
                 runner.zero(station)
                 flow.zero_sent, flow.zero_at = flow.zero_sent + 1, now
                 log.info("Waage %d: Null nicht bestätigt, %d. Wiederholung", station, flow.zero_sent - 2)
@@ -168,14 +171,18 @@ def _advance_flow(conn, runner: ProductionRunner, station: int, flow, sw, sample
             log.warning("Waage %d: Tara nach dem Behälter nicht bestätigt – die Software rechnet weiter", station)
             runner.end_flow(station)
             return
-        if _settled(sample, now - flow.sent_at):
+        if runner.ready_for_command(station, "final_tare", now - flow.sent_at >= SETTLE_MIN_S):
             flow.zero_sent += 1
             flow.sent_at = now
             log.info("Waage %d: Tara nicht bestätigt, %d. Wiederholung", station, flow.zero_sent)
             runner.set_reference(station)
         return
     if flow.step == "place":
-        if sample.ok and sample.stable and sample.net is not True and sample.weight_g > EMPTY_LIMIT_G:
+        placed = sample.ok and sample.stable and sample.net is not True and sample.weight_g > EMPTY_LIMIT_G
+        if runner.ready_for_command(station, "place", placed):         # M09-21: Tara erst bei ruhigem Behälter
+            sample = runner.sample(station)
+            if not (sample.ok and sample.net is not True and sample.weight_g > EMPTY_LIMIT_G):
+                return
             weight = sample.weight_g
             row = conn.execute("SELECT container_g FROM batch WHERE id = ?", (flow.batch_id,)).fetchone()
             old = row["container_g"] if row else None

@@ -201,7 +201,8 @@ async function act(path, body, okText) {
     return data;
   } catch (err) {
     const EXTRA = { confirm_required: { confirm: true }, resume_deviation: { resume_choice: "new_container" },
-                    stock_short: { confirm_stock: true }, stock_question: { stock_keep: true } };
+                    stock_short: { confirm_stock: true }, stock_question: { stock_keep: true },
+                    change_overweight: { overweight: "count" } };
     if (err.status === 409 && EXTRA[err.data.code]) {
       pending = { path: path, body: Object.assign({}, body, EXTRA[err.data.code]), okText: okText };
       // Bestand (VC03-b): beim Abbruch „abgezogen lassen?“ – Ja = bleibt, „Nein, zurückbuchen“ = Rückbuchung
@@ -210,12 +211,16 @@ async function act(path, body, okText) {
       if (err.data.code === "resume_deviation" && (err.data.choices || []).indexOf("poured") >= 0) {
         pending.alt = Object.assign({}, body, { resume_choice: "poured" });
       }
+      // M09-20: über Soll beim Behälterwechsel – zählen (Ja) oder verwerfen (zweite Taste)
+      if (err.data.code === "change_overweight") pending.alt = Object.assign({}, body, { overweight: "discard" });
       $("confirm-alt").classList.toggle("hidden", !pending.alt);
       if (err.data.code === "resume_deviation") $("confirm-alt").textContent = (err.data.actual_g || 0) + " g sind im Kessel – zählen";
       else if (err.data.code === "stock_question") $("confirm-alt").textContent = "Nein, zurückbuchen";
+      else if (err.data.code === "change_overweight") $("confirm-alt").textContent = "Verwerfen – neu wiegen";
       $("confirm-yes").textContent = err.data.code === "stock_question" ? "Ja, abgezogen lassen"
         : err.data.code === "stock_short" ? "OK, trotzdem starten"
-        : err.data.code === "resume_deviation" ? "Neu anfangen – zählt nicht" : "Ja, bestätigen";
+        : err.data.code === "resume_deviation" ? "Neu anfangen – zählt nicht"
+        : err.data.code === "change_overweight" ? "Trotzdem in den Teig" : "Ja, bestätigen";
       $("confirm-no").textContent = err.data.code === "stock_question" || err.data.code === "stock_short" ? "Abbrechen" : "Nein";
       $("confirm-text").textContent = err.message;
       $("confirm").classList.remove("hidden");

@@ -31,6 +31,14 @@ WEIGH_EMIT_MIN_S = 0.1
 MANUAL_NOTICE_S = 30.0     # so lange steht der Hinweis nach einem erkannten Tastendruck (ohne Bestätigung)
 MANUAL_NOTICE_TEXT = "Hey! Die Waage bitte nicht über ihre Tasten bedienen – das geht hier am Tablet."
 OWN_COMMAND_QUIET_S = 3.0   # so lange nach einem eigenen tare/zero keine „Tara/Null von Hand“ erkennen
+# M09-21 (Michael 24.11.2026, 14:18): tare/zero erst, wenn die Software das Gewicht selbst als ruhig sieht –
+# die KERN verwirft Befehle bei unruhigem Gewicht und piept (Handbuch). 1 s ruhig (±2 g, bzw. durchgehend
+# Striche); wer schon 5 s wartet, dem genügt ½ s. Nach 10 s geht der Befehl trotzdem (Waage kommt nie zur Ruhe).
+CALM_SPAN_G = 2
+CALM_S = 1.0
+CALM_SHORT_S = 0.5
+CALM_RELAX_AFTER_S = 5.0
+CALM_GIVE_UP_S = 10.0
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,8 @@ class ProductionRunner:
         self._offline_seen: dict[int, float] = {}
         self._snap_written: dict[int, tuple] = {}
         self._last_command: dict[int, float] = {}
+        self._calm: dict[int, tuple] = {}         # Station → (Art, min, max, seit) für M09-21
+        self._waits: dict[tuple[int, str], float] = {}   # (Station, Anlass) → wartet seit
         self._notice: dict[int, float] = {}       # Station → Zeit, bis zu der der Tasten-Hinweis steht
         self._last_emit: dict[int, tuple[float, dict]] = {}
         self._lock = threading.RLock()
@@ -152,6 +162,7 @@ class ProductionRunner:
             sample = self.sample(station)
             now = self.clock()
             quiet = now - self._last_command.get(station, -1e9) >= OWN_COMMAND_QUIET_S
+            self._track_calm(station, sample, now)
             events = sw.observe(now, sample, self.settings["tare_confirm_seconds"],
                                 self.settings["auto_ack_span_g"], watch_manual=quiet and station not in self._flows)
             for event in events:
@@ -165,6 +176,55 @@ class ProductionRunner:
                 elif event == "late_tare":
                     log.info("Waage %d: Tara verspätet ausgeführt, Bezug nachgeführt", station)
             return sw, sample, events
+
+    # ------------------------------------------------------------------ Ruhe vor Befehlen (M09-21)
+
+    def _track_calm(self, station: int, sample: Sample, now: float) -> None:
+        prev = self._calm.get(station)
+        if sample.ok:
+            w = sample.weight_g
+            if prev and prev[0] == "ok" and max(prev[2], w) - min(prev[1], w) <= CALM_SPAN_G:
+                self._calm[station] = ("ok", min(prev[1], w), max(prev[2], w), prev[3])
+            else:
+                self._calm[station] = ("ok", w, w, now)
+        elif sample.status == "invalid":
+            if not (prev and prev[0] == "invalid"):
+                self._calm[station] = ("invalid", 0, 0, now)
+        else:
+            self._calm[station] = ("none", 0, 0, None)
+
+    def calm_for(self, station: int) -> float:
+        """Wie lange die Anzeige schon ruhig ist (±2 g bzw. durchgehend Striche); 0 ohne Wert."""
+        with self._lock:
+            self.observe(station)
+            calm = self._calm.get(station)
+            if not calm or calm[3] is None:
+                return 0.0
+            return self.clock() - calm[3]
+
+    def ready_for_command(self, station: int, key: str, condition: bool = True) -> bool:
+        """M09-21: darf jetzt ``tare``/``zero`` gesendet werden? Wartet ab ``condition`` auf 1 s Ruhe, nach 5 s
+        Warten genügt ½ s, nach 10 s geht es trotzdem. ``key`` unterscheidet die Anlässe je Station."""
+        with self._lock:
+            now = self.clock()
+            if not condition:
+                self._waits.pop((station, key), None)
+                return False
+            since = self._waits.setdefault((station, key), now)
+            waited = now - since
+            need = CALM_S if waited < CALM_RELAX_AFTER_S else CALM_SHORT_S
+            if self.calm_for(station) >= need:
+                self._waits.pop((station, key), None)
+                return True
+            if waited >= CALM_GIVE_UP_S:
+                log.warning("Waage %d: Gewicht seit %.0f s nicht ruhig – Befehl trotzdem (%s)", station, waited, key)
+                self._waits.pop((station, key), None)
+                return True
+            return False
+
+    def _clear_waits(self, station: int) -> None:
+        for k in [k for k in self._waits if k[0] == station]:
+            self._waits.pop(k, None)
 
     def reading(self, station: int) -> Reading:
         with self._lock:
@@ -238,6 +298,7 @@ class ProductionRunner:
             self.weigh_state(station).clear()
             self._flows.pop(station, None)
             self._offline_seen.pop(station, None)
+            self._clear_waits(station)
 
     # ------------------------------------------------------------------ Gespeicherter Stand (M09-17)
 
@@ -314,6 +375,7 @@ class ProductionRunner:
             sw = self.weigh_state(station)
             sw.reset_ack()
             sw.taring_since = None
+            self._clear_waits(station)
             flow = ContainerFlow(kind, batch_id, "empty" if kind == "weigh" else "remove")
             self._flows[station] = flow
             return flow
@@ -330,6 +392,7 @@ class ProductionRunner:
     def end_flow(self, station: int) -> None:
         with self._lock:
             self._flows.pop(station, None)
+            self._clear_waits(station)
 
     # ------------------------------------------------------------------ Waagenausfall (M09-8)
 

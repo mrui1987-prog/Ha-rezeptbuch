@@ -868,26 +868,56 @@ def _current_item_id(conn, row) -> int | None:
     return item["id"] if item else None
 
 
-def _store_partial(conn, row, station: int, runner: ProductionRunner, now: str) -> int:
-    """Bisher gewogene Menge der aktuellen Zutat als Teilmenge speichern (nur stabil)."""
+OVER_CHOICES = ("count", "discard")      # M09-20: „Trotzdem in den Teig“ / „Verwerfen – Zutat neu wiegen“
+
+
+def _grams(value: int) -> str:
+    return f"{value:,}".replace(",", ".") + " g"
+
+
+def _store_partial(conn, row, station: int, runner: ProductionRunner, now: str,
+                   over: str | None = None) -> tuple[int, int]:
+    """Bisher gewogene Menge der aktuellen Zutat als Teilmenge speichern (nur stabil).
+
+    Gibt ``(Teilmenge, verworfen)`` zurück. M09-20 (Michael 24.11.2026, 14:18): Liegt das Ist (mit früheren
+    Teilmengen) über Soll + Toleranz, kommt erst die Rückfrage ``change_overweight``; ``over="count"`` zählt
+    die Menge wie bisher, ``over="discard"`` verwirft die Menge im Behälter (Protokoll „verworfen“, Abgang aus
+    dem Bestand mit Grund „Sonstiges“ und Vermerk „beim Wiegen verworfen“), die Zutat beginnt neu."""
     if row["current_position"] is None:
-        return 0
+        return 0, 0
     items = {i["position"]: i for i in _item_rows(conn, row["id"])}
     item = items.get(row["current_position"])
     if item is None or item["ack_type"] is not None or item_kind(item) != "weigh":
-        return 0
+        return 0, 0
     reading = runner.reading(station)
     if reading.taring:
         raise ConflictError("Tara läuft – bitte kurz warten.", code="taring")
     actual = reading.actual_g
     if actual is None or abs(actual) <= runner.settings["auto_ack_span_g"]:
-        return 0
+        return 0, 0
     if not reading.stable:
         raise ConflictError("Waage ist unruhig – bitte kurz warten.", code="scale_unstable")
+    target = item["rest_target_g"]
+    total = item["partial_g"] + actual
+    if total > target + item["tolerance_g"]:
+        if over not in OVER_CHOICES:
+            raise ConflictError(
+                f"{_grams(total)} gewogen, Soll {_grams(target)} – {_grams(total - target)} zu viel. "
+                f"Sollen die {_grams(actual)} im Behälter wirklich in den Teig?",
+                code="change_overweight", actual_g=actual, total_g=total, target_g=target,
+                excess_g=total - target, choices=list(OVER_CHOICES))
+        if over == "discard":
+            with transaction(conn):
+                _event(conn, item["id"], "discarded", station, now, weight_g=actual,
+                       tare_g=runner.tare_total(station), stable=True, note="beim Behälterwechsel verworfen")
+                stock.discard_in_tx(conn, item["raw_material_id"], actual, batch_id=row["id"],
+                                    batch_item_id=item["id"], station=station, batch_no=row["batch_no"])
+            return 0, actual
     with transaction(conn):
         _event(conn, item["id"], "partial", station, now, weight_g=actual, tare_g=runner.tare_total(station),
-               stable=True, note="Behälterwechsel")
-    return actual
+               stable=True, note="Behälterwechsel" if total <= target + item["tolerance_g"]
+               else "Behälterwechsel, über Soll bestätigt")
+    return actual, 0
 
 
 def save_container(conn, batch_id: int, station: int, runner: ProductionRunner, weight_g: int, note: str, *,
@@ -917,12 +947,14 @@ def container(conn, batch_id: int, payload, runner: ProductionRunner, *, now: st
             raise ConflictError("Der Behälter-Schritt läuft bereits.", code="container_busy")
         # Nur beim Wechseln zählt das bisher Gewogene als Teilmenge (K09-14). Beim „Behälter wiegen“
         # beginnt die Zutat im neuen Behälter wieder bei 0 (Michael 19.11.2026, 16:18).
-        partial = _store_partial(conn, row, station, runner, now) if action == "change" else 0
+        partial, discarded = (_store_partial(conn, row, station, runner, now, payload.get("overweight"))
+                              if action == "change" else (0, 0))
         with transaction(conn):
             _clear_snap(conn, batch_id)              # neuer Tara-Bezug folgt (M09-17)
         runner.start_flow(station, action, batch_id)
         data = get_batch(conn, batch_id, runner)
         data["partial_saved_g"] = partial
+        data["discarded_g"] = discarded
         return data
     if action == "set":
         weight = whole(payload.get("container_g"), "container_g", "das Behältergewicht", minimum=0)

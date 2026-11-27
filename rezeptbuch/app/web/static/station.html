@@ -287,6 +287,18 @@
         if (choices.indexOf("poured") >= 0) buttons.push({ label: amount + " sind im Kessel – sie zählen", value: "poured", kind: "primary" });
         const choice = await RB.dialog({ title: "Gewicht weicht ab", text: err.message, buttons: buttons });
         if (choice) return act(button, path, Object.assign({}, body || { station: ST }, { resume_choice: choice }));
+      } else if (err.status === 409 && err.code === "change_overweight") {
+        // M09-20 (Michael 24.11.2026, 14:18): „Behälter wechseln“ über Soll + Toleranz – zählen oder verwerfen
+        const amount = Number(err.data.actual_g || 0).toLocaleString("de-DE") + " g";
+        const choice = await RB.dialog({ title: "Zu viel gewogen", text: err.message, buttons: [
+          { label: "Abbrechen", value: null },
+          { label: "Verwerfen – Zutat neu wiegen", value: "discard" },
+          { label: "Trotzdem in den Teig – " + amount + " zählen", value: "count", kind: "primary" }] });
+        if (choice) {
+          const data = await act(button, path, Object.assign({}, body || { station: ST }, { overweight: choice }));
+          if (data && data.discarded_g) info(Number(data.discarded_g).toLocaleString("de-DE") + " g verworfen – Behälter ausleeren, dann neu wiegen.");
+          return data;
+        }
       } else if (err.status === 409 && err.code === "confirm_required") {
         const ok = await RB.dialog({ title: "Bitte bestätigen", text: err.message, buttons: [{ label: "Nein", value: false },
           { label: "Ja", value: true, kind: "primary" }] });

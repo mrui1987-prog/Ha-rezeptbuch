@@ -20,6 +20,12 @@ Planer und Admin (Modul 10, Zweig `m10-artikelliste`):
 - **Reiter „Gruppen“ und „Import/Export“ auf allen Admin-Seiten** (fehlten bei Berechnung, Planer, Waagen, Ablauf; Michael 24.11.2026, 14:41).
 - **Schutz beim Vectron-Artikelimport:** Findet der Import keinen Artikel der gewählten Warengruppen (falsche Datei), bricht er ab und ändert nichts – vorher wurden dabei alle Artikel auf „nicht mehr in der Kasse“ gesetzt. Gehen Artikel auf „nicht mehr in der Kasse“, nennt die Rückfrage Anzahl und Namen, Taste „Trotzdem importieren“ (Michael 24.11.2026, Sprachchat).
 
+Wiegeablauf (Modul 09, Entscheidungen Michael 24.11.2026, 14:18):
+
+- **M09-20 „Behälter wechseln“ mit zu viel im Behälter:** Liegt das Ist über Soll + Toleranz, fragt die Station „… g gewogen, Soll … g – … g zu viel“: **„Trotzdem in den Teig – … g zählen“** oder **„Verwerfen – Zutat neu wiegen“**. Verworfenes steht im Protokoll („verworfen“) und wird bei bestandsgeführten Rohstoffen als Abgang („beim Wiegen verworfen“, mit Charge) gebucht. Auch auf der Prüfseite Ablauf.
+- **M09-21 Befehle erst bei ruhigem Gewicht:** Tara/Null in „Behälter wiegen/wechseln“ und beim Abschluss durch Abnehmen erst nach 1 s Ruhe (±2 g bzw. durchgehend Striche), nach 5 s Warten genügt ½ s, nach 10 s trotzdem. Die KERN verwirft Befehle bei unruhigem Gewicht und piept.
+- **Migration 0016:** Wiegeprotokoll kennt das Ereignis `discarded` (Neuaufbau von `weighing_event`, Daten und Regeln bleiben).
+
 ## 0.10.36 – Handelsware und Pfand (Teil H1)
 
 - **Neue Art „Handelsware“** (docs/handelsware.md, K03-85 bis K03-93, Freigabe Michael 27.11.2026, 09:39): gebaut wie die Hilfs- und Betriebsstoffe, Bestand in Stück (intern 1 Stück = 1000), Haken **Pfand**, **Kassennummer** (Vectron, aktiv eindeutig; ohne: „ohne Kassenartikel, nur Inventur“). Nie in Rezepten, Stücklisten oder im Planer. Handelsware und übrige Arten haben getrennte Namensräume (H-Milch als Rohstoff und als Handelsware).

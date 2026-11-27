@@ -158,6 +158,20 @@ def consume_in_tx(conn, raw_material_id: int | None, grams: int | None, *, batch
           batch_id=batch_id, batch_item_id=batch_item_id, station=station)
 
 
+def discard_in_tx(conn, raw_material_id: int | None, grams: int, *, batch_id: int, batch_item_id: int,
+                  station: int | None, batch_no: str | None = None) -> None:
+    """Beim Wiegen verworfen (M09-20): Abgang mit Grund „Sonstiges“, nur bei bestandsgeführten Rohstoffen.
+    Bewusst kein Verbrauch – die Chargenbilanz zählt nur, was im Teig ist."""
+    if raw_material_id is None or not grams:
+        return
+    row = _row(conn, raw_material_id)
+    if row["stock_g"] is None:
+        return
+    note = "beim Wiegen verworfen" + (f" (Charge {batch_no})" if batch_no else "")
+    _book(conn, raw_material_id, "loss", row["stock_g"], row["stock_g"] - grams, source="production",
+          batch_id=batch_id, batch_item_id=batch_item_id, station=station, reason="other", note=note)
+
+
 def consumed(conn, batch_id: int) -> list[dict]:
     """Noch nicht zurückgebuchte Abzüge einer Charge je Zutat."""
     rows = conn.execute(

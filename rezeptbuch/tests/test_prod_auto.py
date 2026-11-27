@@ -26,7 +26,7 @@ def st(station=1, **kw):
     return {"station": station, **kw}
 
 
-ZEROED = 2.4    # Tara, ½ s, Null, stabil, Null erneut, Bestätigung (Michael 23:02)
+ZEROED = 4.0    # Tara, ½ s, Null, stabil, Null erneut, Bestätigung (Michael 23:02); je Befehl 1 s Ruhe (M09-21)
 
 
 def run(conn, runner, clock, seconds, step=0.2):
@@ -258,6 +258,8 @@ def test_whole_dough_auto_and_finish_by_removing(conn, brot, runner, hub, clock)
     assert batches.get_batch(conn, brot["id"])["finish_ack_at"] is None      # Behälter steht noch
     hub.put(1, 0)                                                 # abgenommen: Anzeige -----
     run(conn, runner, clock, 0.4)
+    assert batches.get_batch(conn, brot["id"])["finish_ack_at"] is None      # M09-21: erst 1 s Ruhe
+    run(conn, runner, clock, 1.0)
     batch = batches.get_batch(conn, brot["id"])
     assert batch["finish_ack_at"] is not None
     assert hub.commands[-1] == (1, "zero") and hub.display(1) == 0
@@ -472,19 +474,23 @@ def test_container_weigh_flow(conn, recipes, runner, hub, clock):
     with pytest.raises(ConflictError) as exc:
         batches.ack_weighed(conn, batch["id"], st(), runner)
     assert exc.value.code == "container_busy"
-    run(conn, runner, clock, 0.2)                                 # Waage ist leer: Tara
+    run(conn, runner, clock, 0.6)                                 # M09-21: Waage leer, aber erst 1 s Ruhe
+    assert runner.flow(1).step == "empty" and hub.commands.count((1, "tare")) == 1   # nur die Tara beim Start
+    run(conn, runner, clock, 0.6)                                 # Waage ist leer und ruhig: Tara
     assert hub.commands[-1] == (1, "tare") and runner.flow(1).step == "zeroing"
     assert runner.reading(1).hint == "Waage wird genullt – bitte warten"
-    run(conn, runner, clock, 0.4)
-    assert hub.commands[-1] == (1, "tare")                        # ½ s zwischen Tara und Null
     run(conn, runner, clock, 0.2)
+    assert hub.commands[-1] == (1, "tare")                        # ½ s zwischen Tara und Null
+    run(conn, runner, clock, 0.4)
     assert hub.commands[-1] == (1, "zero")
-    run(conn, runner, clock, 0.6)                                 # Anzeige stabil: Null erneut (Michael 23:02)
+    run(conn, runner, clock, 0.6)                                 # Anzeige ruhig: Null erneut (Michael 23:02)
     assert hub.commands[-2:] == [(1, "zero"), (1, "zero")] and runner.flow(1).step == "zeroing"
     run(conn, runner, clock, 0.6)                                 # Null bestätigt
     assert runner.flow(1).step == "place"
     hub.put(1, 1250)                                              # Behälter aufstellen
     run(conn, runner, clock, 0.4)
+    assert runner.flow(1).step == "place" and hub.commands[-1] == (1, "zero")   # M09-21: noch nicht ruhig genug
+    run(conn, runner, clock, 1.0)
     # M09-19: nach dem Behälter nur Tara, kein Null mit Last (die KERN würde die Tara löschen)
     assert hub.commands[-1] == (1, "tare") and runner.flow(1) is None
     run(conn, runner, clock, 2.0)
@@ -588,13 +594,13 @@ def test_container_zero_repeated(conn, brot, runner, hub, clock):
     hub.put(1, 0)
     hub.zero_misses = 2
     batches.container(conn, brot["id"], st(action="weigh"), runner)
-    run(conn, runner, clock, ZEROED)
+    run(conn, runner, clock, 1.8)                                 # M09-21: Tara nach 1 s Ruhe, ½ s, Null
     assert runner.flow(1).step == "zeroing" and hub.commands.count((1, "zero")) == 1
-    run(conn, runner, clock, 1.6)                                 # „-----“ ist nie stabil: nach 3 s Null erneut
+    run(conn, runner, clock, 0.6)                                 # Null erneut
     assert hub.commands.count((1, "zero")) == 2 and runner.flow(1).step == "zeroing"
     run(conn, runner, clock, 2.0)                                 # Wiederholung
     assert hub.commands.count((1, "zero")) == 3 and runner.flow(1).step == "zeroing"
-    run(conn, runner, clock, 0.6)
+    run(conn, runner, clock, 0.8)
     assert runner.flow(1).step == "place"
 
 
@@ -693,7 +699,7 @@ def test_container_tare_repeated_when_not_confirmed(conn, brot, runner, hub, clo
     assert runner.flow(1).step == "place"
     hub.ignore_commands = True                                    # die Waage verwirft die Tara
     hub.put(1, 1250)
-    run(conn, runner, clock, 0.4)
+    run(conn, runner, clock, 1.4)                                 # M09-21: 1 s Ruhe, dann Tara
     assert runner.flow(1).step == "final_tare"
     run(conn, runner, clock, 14)
     tares = [c for c in hub.commands if c == (1, "tare")]
@@ -751,3 +757,65 @@ def test_tare_on_dashes_points_to_zero(conn, brot, runner, hub, clock):
     with pytest.raises(ConflictError) as exc:
         batches.tare(conn, brot["id"], st(), runner)
     assert exc.value.code == "scale_invalid_use_zero" and "„Null“" in exc.value.message
+
+
+# -- M09-20: „Behälter wechseln“ über Soll + Toleranz (Michael 24.11.2026, 14:18) ----------------------
+
+def _mehl_id(conn, batch_id):
+    return conn.execute("SELECT raw_material_id FROM batch_item WHERE batch_id = ? ORDER BY position LIMIT 1",
+                        (batch_id,)).fetchone()[0]
+
+
+def test_change_over_target_asks_then_counts(conn, brot, runner, hub, clock):
+    hub.put(1, 800 + 1300)                                        # Mehl Soll 1 010 g, 1 300 g gewogen
+    run(conn, runner, clock, 0.4)
+    hub.put(1, 800 + 1300)
+    with pytest.raises(ConflictError) as exc:
+        batches.container(conn, brot["id"], st(action="change"), runner)
+    assert exc.value.code == "change_overweight" and exc.value.extra["actual_g"] == 1300
+    assert exc.value.extra["excess_g"] == 1300 - exc.value.extra["target_g"] and "zu viel" in exc.value.message
+    assert runner.flow(1) is None and events(conn, "partial") == []
+    batch = batches.container(conn, brot["id"], st(action="change", overweight="count"), runner)
+    assert batch["partial_saved_g"] == 1300 and batch["discarded_g"] == 0
+    assert events(conn, "partial")[0][4] == "Behälterwechsel, über Soll bestätigt"
+
+
+def test_change_over_target_discard_books_loss(conn, brot, runner, hub, clock):
+    mehl = _mehl_id(conn, brot["id"])
+    conn.execute("UPDATE raw_material SET stock_g = 5000 WHERE id = ?", (mehl,))
+    conn.commit()
+    hub.put(1, 800 + 1300)
+    run(conn, runner, clock, 0.4)
+    batch = batches.container(conn, brot["id"], st(action="change", overweight="discard"), runner)
+    assert batch["partial_saved_g"] == 0 and batch["discarded_g"] == 1300
+    assert batch["items"][0]["partial_g"] == 0 and batch["items"][0]["done"] is False   # Zutat beginnt neu
+    assert events(conn, "discarded")[0][1] == 1300
+    m = conn.execute("SELECT kind, delta_g, reason, note, batch_id FROM stock_movement WHERE raw_material_id = ?",
+                     (mehl,)).fetchone()
+    assert (m["kind"], m["delta_g"], m["reason"], m["batch_id"]) == ("loss", -1300, "other", brot["id"])
+    assert m["note"].startswith("beim Wiegen verworfen")
+    assert conn.execute("SELECT stock_g FROM raw_material WHERE id = ?", (mehl,)).fetchone()[0] == 3700
+
+
+def test_change_within_tolerance_no_question(conn, brot, runner, hub, clock):
+    hub.put(1, 800 + 700)
+    run(conn, runner, clock, 0.4)
+    batch = batches.container(conn, brot["id"], st(action="change"), runner)
+    assert batch["partial_saved_g"] == 700
+
+
+# -- M09-21: Befehle erst bei ruhigem Gewicht (Michael 24.11.2026, 14:18) -----------------------------
+
+def test_command_waits_for_calm_then_relaxes(runner, hub, clock):
+    hub.put(1, 1000)
+    runner.observe(1)
+    assert runner.ready_for_command(1, "x") is False              # gerade erst gesehen
+    clock.advance(1.0)
+    assert runner.ready_for_command(1, "x") is True               # 1 s ruhig
+    # unruhig: wechselnde Werte, nach 5 s Warten genügt ½ s Ruhe
+    for i in range(26):
+        hub.put(1, 1000 + ((i + 1) % 2) * 10)
+        clock.advance(0.2)
+        assert runner.ready_for_command(1, "y") is False
+    clock.advance(0.6)
+    assert runner.ready_for_command(1, "y") is True

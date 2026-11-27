@@ -121,6 +121,10 @@ Für Mengen, die nicht auf einmal in den Behälter passen. Taste **„Behälter 
 
 Ist das Behältergewicht schon bekannt und weicht der neue Wert um mehr als `resume_check_g` (5 g) ab: Meldung „Anderer Behälter?“, weiter mit Bestätigung. Protokoll: je Teilmenge Ereignis `partial` (Gewicht, Station, `stable`), dazu `container`; `batch_item.actual_g` = Gesamtmenge.
 
+**Zu viel gewogen (M09-20, Michael 24.11.2026, 14:18, Migration 0016):** Liegt das Ist (mit früheren Teilmengen) beim Drücken über **Soll + Toleranz**, fragt die Station zuerst (`409 change_overweight` mit `actual_g`, `total_g`, `target_g`, `excess_g`): „… g gewogen, Soll … g – … g zu viel“. **„Trotzdem in den Teig – … g zählen“** (`overweight: "count"`) speichert die Teilmenge wie oben (Vermerk „über Soll bestätigt“). **„Verwerfen – Zutat neu wiegen“** (`overweight: "discard"`) speichert keine Teilmenge, sondern das Ereignis `discarded` mit der Menge; bei bestandsgeführten Rohstoffen wird sie als **Abgang** gebucht (Grund „Sonstiges“, Vermerk „beim Wiegen verworfen (Charge …)“, nicht als Verbrauch). Frühere Teilmengen bleiben.
+
+**Befehle erst bei Ruhe (M09-21, Michael 24.11.2026, 14:18):** In allen Behälter-Schritten und beim Abschluss durch Abnehmen gehen `tare`/`zero` erst an die Waage, wenn die Software das Gewicht selbst **1 s ruhig** sieht (±2 g bzw. durchgehend `-----`); wer schon 5 s wartet, dem genügt ½ s; nach 10 s geht der Befehl trotzdem (Protokoll-Warnung). Grund: die KERN verwirft Befehle bei unruhigem Gewicht und piept (Handbuch). *Hinweis Claude:* Die Tara nach einer Quittung ist davon nicht erfasst (dort steht das Gewicht ohnehin 2 s in der Toleranz).
+
 *Grund für Tara + Null:* Ab der zweiten Zutat enthält die letzte Tara auch die schon gewogenen Zutaten. Der leere Behälter läge dann unter der Tara, die Waage zeigte `-----` statt 0. Nach Tara + Null steht die leere Waage sicher bei 0 brutto. **Praxisprüfung C2:** Wirkung von `tare` bei `-----` an der KERN (Modul 07: nach Abnehmen teils schon brutto, Tara auf leerer Waage bleibt brutto) – `zero` danach stellt in jedem Fall auf 0.
 
 ### 6.3 Auto-Quittung (M09-4)
