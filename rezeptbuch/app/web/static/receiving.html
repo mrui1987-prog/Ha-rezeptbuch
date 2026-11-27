@@ -26,6 +26,22 @@
   table.simple tr.miss td { background: #fde8e8; }
   table.simple tr.miss td .sub { color: #b71c1c; }
   .card.warn { border-color: var(--high); }
+  /* Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026, Stufen 1–3) */
+  .pv-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .pv-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #ccc; border-radius: 8px; background: #fff; }
+  .pv-wrap.big .pv-page { width: 200%; }
+  .pv-page { position: relative; width: 100%; margin: 0 0 6px; }
+  .pv-page img { display: block; width: 100%; height: auto; }
+  .pv-page .pv-wait { padding: 2em; text-align: center; color: #666; }
+  .pv-box { position: absolute; left: 1.5%; right: 1.5%; border: 3px solid #2e7d32; background: rgba(46,125,50,.10);
+            border-radius: 4px; cursor: pointer; }
+  .pv-box span { position: absolute; left: -2px; top: -2px; background: #2e7d32; color: #fff; font: bold 13px sans-serif;
+                 padding: 1px 5px; border-radius: 3px 0 3px 0; }
+  .pv-box.warn { border-color: #ef6c00; background: rgba(239,108,0,.14); } .pv-box.warn span { background: #ef6c00; }
+  .pv-box.open { border-color: #d32f2f; background: rgba(211,47,47,.14); } .pv-box.open span { background: #d32f2f; }
+  .pv-box.flash, .flash { outline: 4px solid #1565c0; outline-offset: 2px; }
+  body.pv-off .pv-wrap, body.pv-off .read, body.pv-off .pv-show, body.pv-off .pv-extra, body.pv-off .pv-none { display: none; }
+  .read { font-size: .9em; color: #444; background: #f4f6f8; border-radius: 6px; padding: 4px 8px; margin-top: 4px; }
   .card .title { font-size: 2.8vh; font-weight: 700; }
   .card .sub { font-size: 2vh; color: var(--muted); }
   .row { display: flex; gap: 1.2vw; flex-wrap: wrap; align-items: center; }
@@ -316,6 +332,89 @@
     }, 60000);
   }
 
+
+  // ------------------------------------------------------------ Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026)
+  // Stufe 1: Belegseite als Bild, Positionen umrandet (grün zugeordnet, orange Angabe fehlt, rot unbekannt), Tipp springt
+  // zur Karte und zurück. Stufe 2: Klartext „Gelesen: …“ je Karte. Stufe 3: beides umschaltbar (je Gerät gemerkt).
+  function pvOn() { try { return localStorage.getItem("rezeptbuch_we_vorschau") !== "0"; } catch (e) { return true; } }
+  function pvSet(on) { try { localStorage.setItem("rezeptbuch_we_vorschau", on ? "1" : "0"); } catch (e) { /* egal */ } }
+  function flash(node) {
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.classList.add("flash"); setTimeout(() => node.classList.remove("flash"), 1600);
+  }
+  function readLine(r, unit) {
+    if (!r) return null;
+    let t = "Gelesen: " + r.qty_text;
+    if (r.pack_text) t += " · Gebinde „" + r.pack_text + "“";
+    else if (r.pack_derived) t += " · Gebinde aus „" + r.bracket + "“ abgeleitet: " + r.pack_derived;
+    else t += " · kein Gebinde auf dem Beleg" + (r.bracket ? " (nur „" + r.bracket + "“)" : "");
+    if (r.pack && r.pack.count != null) t += " → 1 Scan = 1 " + r.pack.name + " = " + fmtMilli(r.pack.step_milli, unit);
+    else t += " → beim Abhaken Rückfrage, falls am Artikel kein Gebinde steht";
+    if (r.order_item) t += " · Bestellartikel";
+    return el("div", t, "read");
+  }
+  async function pvImage(key, page, holder) {
+    try {
+      const res = await fetch(RB.API + "admin/receiving/pages/" + key + "/" + page + ".png",
+                              { headers: { "X-Rezeptbuch-Session": session() || "" } });
+      if (!res.ok) throw new Error(res.status === 404 ? "Seitenbild nicht verfügbar – Leser ab 0.2.0 nötig." : "Fehler " + res.status);
+      const img = el("img"); img.alt = "Seite " + page;
+      img.src = URL.createObjectURL(await res.blob());
+      holder.replaceWith(img);
+    } catch (e) { holder.textContent = "Seite " + page + ": " + (e.message || e); }
+  }
+  // items: [{ line_no, area, node (Karte/Zeile), status() → "ok"|"warn"|"open", watch: [Elemente] }]
+  function docPreview(key, pages, items) {
+    const box = el("div");
+    document.body.classList.toggle("pv-off", !pvOn());
+    const bar = el("div", null, "pv-bar");
+    const tg = btn(pvOn() ? "🖼 Vorschau aus" : "🖼 Vorschau an", () => {
+      pvSet(!pvOn()); document.body.classList.toggle("pv-off", !pvOn());
+      tg.textContent = pvOn() ? "🖼 Vorschau aus" : "🖼 Vorschau an";
+    });
+    bar.appendChild(tg);
+    box.appendChild(bar);
+    const withArea = items.filter((i) => i.area);
+    if (!key || !pages || !pages.length || !withArea.length) {
+      box.appendChild(el("p", "Für diesen Beleg gibt es kein Vorschaubild (vor Leser 0.2.0 eingelesen oder PDF fehlt).", "hint pv-none"));
+      return { node: box, show: () => null };
+    }
+    const wrap = el("div", null, "pv-wrap");
+    bar.appendChild(btn("🔍 Größer / kleiner", () => wrap.classList.toggle("big"), "pv-extra"));
+    bar.appendChild(el("span", "grün = zugeordnet · orange = Angabe fehlt · rot = unbekannt · antippen springt zur Position", "sub pv-extra"));
+    const boxes = {};
+    pages.forEach((pg) => {
+      const mine = withArea.filter((i) => i.area.page === pg.page);
+      if (!mine.length) return;
+      const page = el("div", null, "pv-page");
+      const wait = el("div", "Seite " + pg.page + " wird geladen …", "pv-wait");
+      wait.style.aspectRatio = pg.width + " / " + pg.height;
+      page.appendChild(wait);
+      mine.forEach((i) => {
+        const b = el("div", null, "pv-box");
+        b.style.top = (i.area.top / pg.height * 100 - 0.3) + "%";
+        b.style.height = ((i.area.bottom - i.area.top) / pg.height * 100 + 0.6) + "%";
+        b.appendChild(el("span", String(i.line_no)));
+        b.addEventListener("click", () => flash(i.node));
+        const paint = () => { const st = i.status(); b.classList.toggle("warn", st === "warn"); b.classList.toggle("open", st === "open"); };
+        paint();
+        const mo = new MutationObserver(paint);
+        (i.watch || [i.node]).forEach((w) => mo.observe(w, { attributes: true, childList: true, subtree: true, characterData: true }));
+        boxes[String(i.line_no)] = b;
+        page.appendChild(b);
+      });
+      wrap.appendChild(page);
+      pvImage(key, pg.page, wait);
+    });
+    box.appendChild(wrap);
+    return { node: box, show: (lineNo) => {
+      const b = boxes[String(lineNo)];
+      if (!b) return null;
+      return btn("📍 Im Beleg zeigen", () => flash(b), "pv-show");
+    } };
+  }
+
   function preview(pre) {
     setView(pre.kind_text + " " + (pre.doc_no || ""), uploadView);
     S.view = "preview:" + pre.token;
@@ -329,6 +428,8 @@
     if (pre.duplicate) head.appendChild(el("div", "Schon eingelesen am " + date(pre.duplicate.slice(0, 10)) + " – Speichern nicht möglich.", "title"));
     (pre.plausibility || []).forEach((p) => head.appendChild(el("div", "⚠ " + (p.meldung || p.text || JSON.stringify(p)), "sub")));
     $("main").appendChild(head);
+    const pvSlot = el("div");
+    $("main").appendChild(pvSlot);
 
     const cards = {};
     pre.lines.forEach((line) => {
@@ -339,6 +440,7 @@
       c.appendChild(t);
       c.appendChild(el("div", "Art.-Nr. " + (line.article_no || "–") + " · " + fmtMilli(line.qty_milli, line.unit_code)
         + (line.pack_text ? " · " + line.pack_text : ""), "sub"));
+      { const r = readLine(line.read, line.unit_code); if (r) c.appendChild(r); }
       const state = el("div", null, "chosen");
       c.appendChild(state);
       cards[String(line.line_no)] = { line: line, card: c, state: state };
@@ -401,6 +503,12 @@
       $("main").appendChild(c);
     });
     S.cards = cards;
+    const pv = docPreview(pre.token, pre.pages, Object.values(cards).map((x) => ({
+      line_no: x.line.line_no, area: x.line.area, node: x.card, watch: [x.card],
+      status: () => !x.card.classList.contains("warn") ? "ok"
+        : (x.state.textContent || "").startsWith("Noch nicht") ? "open" : "warn" })));
+    pvSlot.appendChild(pv.node);
+    Object.values(cards).forEach((x) => { const b = pv.show(x.line.line_no); if (b) x.card.insertBefore(b, x.state.nextSibling); });
 
     // offene Positionen: unbekannt ohne Entscheidung oder „Gramm je ME“ fehlt
     function missing() {
@@ -1374,9 +1482,14 @@
     main.appendChild(el("p", a.billing ? "Artikel und Buchungsgruppe je Position. Gruppe ändern gilt für diese Position und künftig für den Artikel."
       : "Artikel je Position. Schon in den Bestand gebuchte Positionen erst über „Löschen → Zurückbuchen“ umhängen.", "hint"));
     const active = (a.groups || []).filter((g) => !g.archived);
+    const pvSlot = el("div");
+    main.appendChild(pvSlot);
+    const pvItems = [];
     const t2 = el("table", null, "simple");
     a.lines.forEach((l) => {
       const tr = el("tr");
+      pvItems.push({ line_no: l.line_no, area: l.area, node: tr,
+                     status: () => l.target === "unknown" ? "open" : "ok", tr: tr });
       const info = el("td");
       info.appendChild(el("div", "Pos. " + l.line_no + " " + (l.description || "") + (l.article_no ? " · " + l.article_no : "")));
       let what;
@@ -1388,6 +1501,7 @@
       if (a.billing) what += " · " + (l.group_name || "ohne Gruppe");
       if (l.locked) what += " · gebucht";
       info.appendChild(el("div", what, "sub"));
+      { const r = readLine(l.read, l.unit_code); if (r) info.appendChild(r); }
       tr.appendChild(info);
       const c = el("td");
       const patch = async (body) => {
@@ -1418,6 +1532,9 @@
       t2.appendChild(tr);
     });
     main.appendChild(t2);
+    const pv = docPreview(a.file_key, a.pages, pvItems);
+    pvSlot.appendChild(pv.node);
+    pvItems.forEach((i) => { const b = pv.show(i.line_no); if (b) i.tr.firstChild.appendChild(b); });
   }
 
   // ------------------------------------------------------------ Buchführung (B1, docs/buchfuehrung-export.md)

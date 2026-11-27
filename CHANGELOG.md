@@ -1,18 +1,8 @@
 # Änderungen
 
-## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig; Planer-Artikelliste, Import-Schutz; Wiegeablauf M09-20/21
+## 0.10.38 – Planer-Artikelliste nach Hauptgruppen, Import-Schutz, Admin-Reiter; Wiegeablauf M09-20/21 (Migration 0016)
 
-Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
-
-- **Menge je Scan:** Sahne („VE à 5 L“) buchte je Scan nur 1 kg. Bisher galt das Gebinde am Rohstoff (Waagen-Gebinde) vor dem Gebinde laut Beleg, und ohne beides zählte ein Scan stillschweigend 1 Belegeinheit. Neu: 1. Liefergebinde am Rohstoff, 2. Gebinde laut Beleg („2 VE à 5 L“ → 5 L je Scan), 3. Gebinde am Rohstoff, 4. ist nichts bekannt, wird einmal gefragt (gilt nur für diese Lieferung, am Rohstoff ändert sich nichts). Steht das Gebinde laut AB in einer anderen Einheit als die Menge (z. B. Menge in KG, „1 VE à 5 L“), fragt das System einmal je Lieferung und schlägt den Wert laut AB vor („laut AB 1 VE = 5 L, gezählt wird aber in KG“). Die Meldung zeigt die Menge je Scan („+1 VE = 5 L Sahne → 10 L“). Die ± Tasten an der Zeile nutzen denselben Schritt.
-- **Rückgängig beim Abhaken:** breite Taste „↶ Rückgängig – letzter Scan“ (mehrfach). War der Code bei diesem Scan neu zugeordnet, wird die Zuordnung wieder gelöst; ein begonnener Ersatz wird entfernt. Neu: `POST /api/v1/barcodes/release` (ohne PIN, nur frisch zugeordnete Codes der letzten 10 Minuten, nie umgehängt; ältere nur an der Rohstoffseite mit PIN).
-- **Fenster „Code unbekannt“:** Artikel der Lieferung, die schon einen Code haben, sind ausgeblendet; Taste „Auch Artikel mit Code zeigen (n)“. „Ersatz für …“ zeigt weiter alle.
-- **Tausenderpunkt im Gebindetext:** „1 PG à 1.000 ST“ wurde als 1 Stück gelesen (Faltenbeutel, AB AT1003549), jetzt 1 000 Stück je Scan bzw. ± Taste.
-- **Gebinde aus der Klammerzeile:** Steht auf der AB kein „… à …“, aber „(1 BIB)“ (H-Milch „10,000 L“, AT1003549), wird das Gebinde abgeleitet: 1 BIB = 10 L. Gilt beim Hochladen und für schon eingelesene Belege (aus dem gespeicherten Leserergebnis).
-- Belegzeilen liefern `rm_delivery_pack_g`, `rm_delivery_pack_label` und `rm_has_code` mit. Keine Migration.
-
-
-Planer und Admin (Modul 10, Zweig `m10-artikelliste`):
+Planer und Admin (Modul 10):
 
 - **Planer → Artikel nach Hauptgruppen gegliedert:** Zwischenzeilen „Hauptgruppe 1 · Brot“, darin nach Warengruppe und Nummer sortiert; Spalte „Warengruppe“ sitzt jetzt richtig (Michael 24.11.2026, 14:32, Screenshot).
 - **Planer im Admin als ganze Seite:** Der Reiter „Planer → Planen“ bettet den Planer nicht mehr ein, sondern öffnet ihn mit „Planer öffnen“ als ganze Seite (oben „← Admin“ zurück). In Browser und HA-App stand „Plan speichern“ sonst mitten über den Artikeln (Michael 24.11.2026, 14:38/14:39).
@@ -25,6 +15,18 @@ Wiegeablauf (Modul 09, Entscheidungen Michael 24.11.2026, 14:18):
 - **M09-20 „Behälter wechseln“ mit zu viel im Behälter:** Liegt das Ist über Soll + Toleranz, fragt die Station „… g gewogen, Soll … g – … g zu viel“: **„Trotzdem in den Teig – … g zählen“** oder **„Verwerfen – Zutat neu wiegen“**. Verworfenes steht im Protokoll („verworfen“) und wird bei bestandsgeführten Rohstoffen als Abgang („beim Wiegen verworfen“, mit Charge) gebucht. Auch auf der Prüfseite Ablauf.
 - **M09-21 Befehle erst bei ruhigem Gewicht:** Tara/Null in „Behälter wiegen/wechseln“ und beim Abschluss durch Abnehmen erst nach 1 s Ruhe (±2 g bzw. durchgehend Striche), nach 5 s Warten genügt ½ s, nach 10 s trotzdem. Die KERN verwirft Befehle bei unruhigem Gewicht und piept.
 - **Migration 0016:** Wiegeprotokoll kennt das Ereignis `discarded` (Neuaufbau von `weighing_event`, Daten und Regeln bleiben).
+
+## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig, Artikel mit Code ausblenden, Vorschaubild der Zuordnung
+
+Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
+
+- **Menge je Scan:** Sahne („VE à 5 L“) buchte je Scan nur 1 kg. Bisher galt das Gebinde am Rohstoff (Waagen-Gebinde) vor dem Gebinde laut Beleg, und ohne beides zählte ein Scan stillschweigend 1 Belegeinheit. Neu: 1. Liefergebinde am Rohstoff, 2. Gebinde laut Beleg („2 VE à 5 L“ → 5 L je Scan), 3. Gebinde am Rohstoff, 4. ist nichts bekannt, wird einmal gefragt (gilt nur für diese Lieferung, am Rohstoff ändert sich nichts). Steht das Gebinde laut AB in einer anderen Einheit als die Menge (z. B. Menge in KG, „1 VE à 5 L“), fragt das System einmal je Lieferung und schlägt den Wert laut AB vor („laut AB 1 VE = 5 L, gezählt wird aber in KG“). Die Meldung zeigt die Menge je Scan („+1 VE = 5 L Sahne → 10 L“). Die ± Tasten an der Zeile nutzen denselben Schritt.
+- **Rückgängig beim Abhaken:** breite Taste „↶ Rückgängig – letzter Scan“ (mehrfach). War der Code bei diesem Scan neu zugeordnet, wird die Zuordnung wieder gelöst; ein begonnener Ersatz wird entfernt. Neu: `POST /api/v1/barcodes/release` (ohne PIN, nur frisch zugeordnete Codes der letzten 10 Minuten, nie umgehängt; ältere nur an der Rohstoffseite mit PIN).
+- **Fenster „Code unbekannt“:** Artikel der Lieferung, die schon einen Code haben, sind ausgeblendet; Taste „Auch Artikel mit Code zeigen (n)“. „Ersatz für …“ zeigt weiter alle.
+- **Tausenderpunkt im Gebindetext:** „1 PG à 1.000 ST“ wurde als 1 Stück gelesen (Faltenbeutel, AB AT1003549), jetzt 1 000 Stück je Scan bzw. ± Taste.
+- **Gebinde aus der Klammerzeile:** Steht auf der AB kein „… à …“, aber „(1 BIB)“ (H-Milch „10,000 L“, AT1003549), wird das Gebinde abgeleitet: 1 BIB = 10 L. Gilt beim Hochladen und für schon eingelesene Belege (aus dem gespeicherten Leserergebnis).
+- **Vorschaubild der Zuordnung (Wunsch Michael 27.11.2026, Stufen 1–3; braucht Leser 0.2.0):** Beim Hochladen und unter Archiv → „Zuordnung“ steht die Belegseite als Bild über den Positionen, jede Position ist umrandet (grün zugeordnet, orange Angabe fehlt, rot unbekannt; Farbe folgt den Entscheidungen sofort). Rahmen antippen → zur Karte, „📍 Im Beleg zeigen“ an der Karte → zum Rahmen; „🔍 Größer / kleiner“ fürs iPhone. Jede Karte zeigt im Klartext, was gelesen wurde („Gelesen: 5,000 KG · Gebinde „1 KT à 5 KG“ → 1 Scan = 1 Karton = 5 kg“). Taste „🖼 Vorschau aus/an“ blendet Bild und Klartext aus und ein, je Gerät gemerkt. Seitenbilder holt Add-on 1 einmal vom Leser und legt sie unter `belege/vorschau/` ab; neu `GET /api/v1/admin/receiving/pages/{sha}/{seite}.png` (PIN). Belege, die mit Leser 0.1.x eingelesen wurden, haben kein Vorschaubild, nur den Klartext.
+- Belegzeilen liefern `rm_delivery_pack_g`, `rm_delivery_pack_label` und `rm_has_code` mit. Keine Migration.
 
 ## 0.10.36 – Handelsware und Pfand (Teil H1)
 

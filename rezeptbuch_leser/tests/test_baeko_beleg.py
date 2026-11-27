@@ -200,3 +200,22 @@ def test_echte_belege(pfad):
     assert e["status"] == "ok", e.get("warnungen")
     s = e["daten"]["summen"]
     assert s["netto_cent"] == s["gelesen_netto_cent"]
+
+
+def test_bereich_und_seitenmasse(lies):
+    """Leser 0.2.0: jede Position kennt ihren Bereich auf der Seite (Vorschaubild der Zuordnung)."""
+    from app.testpdf import beispiel_rechnung
+    import tempfile, pathlib
+    from app.leser.baeko_beleg import lese_beleg
+    with tempfile.TemporaryDirectory() as tmp:
+        pfad = pathlib.Path(tmp) / "r.pdf"
+        pfad.write_bytes(beispiel_rechnung())
+        d = lese_beleg(pfad)
+    assert d["seitenmasse"] and d["seitenmasse"][0]["breite"] > 0
+    oben = -1
+    for p in d["positionen"]:
+        b = p["bereich"]
+        assert b["seite"] >= 1 and b["unten"] > b["oben"]
+        if b["seite"] == 1:
+            assert b["oben"] > oben
+            oben = b["oben"]

@@ -1,5 +1,5 @@
 name: HA-Rezeptbuch Leser
-version: "0.1.1"
+version: "0.2.0"
 slug: rezeptbuch_leser
 description: Liest Kennzeichnungspässe und BÄKO-Belege (PDF) und liefert die Angaben als JSON an das Rezeptbuch – schreibt nichts
 url: https://github.com/mrui1987-prog/ha-rezeptbuch

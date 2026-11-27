@@ -99,3 +99,17 @@ def test_beleg_ueber_http(server):
     code, d = _anfrage(server, "POST", "/v1/lesen/baeko-beleg", beispiel_rechnung(), {"X-Dateiname": "re.pdf"})
     assert code == 200 and d["status"] == "ok" and d["leser"] == "baeko_beleg" and d["leser_schema"] == 1
     assert d["daten"]["belegnummer"] == "RE0000001" and d["daten"]["datei"] == "re.pdf"
+
+
+def test_seitenbild(server):
+    """Vorschaubild der Zuordnung (Leser 0.2.0): Seite als PNG, fehlende Seite → 404."""
+    from app.testpdf import beispiel_rechnung
+    pdf = beispiel_rechnung()
+    c = http.client.HTTPConnection("127.0.0.1", server, timeout=60)
+    c.request("POST", "/v1/seitenbild?seite=1", body=pdf)
+    r = c.getresponse()
+    roh = r.read()
+    c.close()
+    assert r.status == 200 and r.getheader("Content-Type") == "image/png" and roh.startswith(b"\x89PNG")
+    assert _anfrage(server, "POST", "/v1/seitenbild?seite=9", pdf)[0] == 404
+    assert _anfrage(server, "POST", "/v1/seitenbild?seite=1", b"hallo")[0] == 400
