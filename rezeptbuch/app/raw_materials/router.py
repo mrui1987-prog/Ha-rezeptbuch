@@ -115,6 +115,12 @@ def barcode_assign(payload: dict = Body(...), db: sqlite3.Connection = Depends(g
     return scanner.assign(db, payload)
 
 
+@router.post("/barcodes/release")
+def barcode_release(payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """Frisches Zuordnen zurücknehmen (10 Minuten, ohne PIN) – Rückgängig beim Abhaken."""
+    return scanner.release(db, payload)
+
+
 @router.get("/raw-materials/{raw_material_id}/barcodes")
 def barcodes_of(raw_material_id: int, db: sqlite3.Connection = Depends(get_db)):
     return scanner.list_for(db, raw_material_id)

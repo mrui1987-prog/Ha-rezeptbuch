@@ -251,6 +251,25 @@ def reassign(conn: sqlite3.Connection, raw: str, payload: dict) -> dict:
     return lookup(conn, code)
 
 
+def release(conn: sqlite3.Connection, payload: dict) -> dict:
+    """Versehentliches Zuordnen zurücknehmen, ohne PIN (Befund Michael 27.11.2026, Wareneingang):
+    nur ein frisch zugeordneter Code (letzte 10 Minuten, nie umgehängt) des genannten Rohstoffs."""
+    code = normalize(payload.get("code"), payload.get("format"))
+    rm_id = _int_id(payload.get("raw_material_id"), "raw_material_id")
+    with transaction(conn):
+        row = conn.execute(
+            "SELECT id, raw_material_id, created_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?) AS fresh, "
+            "updated_at = created_at AS untouched FROM raw_material_barcode WHERE code = ?",
+            (f"-{stock.UNDO_MINUTES} minutes", code)).fetchone()
+        if row is None or row["raw_material_id"] != rm_id:
+            raise NotFoundError("Code ist diesem Artikel nicht zugeordnet.", code="not_found")
+        if not (row["fresh"] and row["untouched"]):
+            raise ConflictError("Die Zuordnung ist älter als 10 Minuten – entfernen nur an der Rohstoffseite (PIN).",
+                                code="release_too_late")
+        conn.execute("DELETE FROM raw_material_barcode WHERE id = ?", (row["id"],))
+    return {"status": "released", "code": code, "raw_material_id": rm_id}
+
+
 def delete_code(conn: sqlite3.Connection, barcode_id: int) -> None:
     with transaction(conn):
         if conn.execute("DELETE FROM raw_material_barcode WHERE id = ?", (barcode_id,)).rowcount == 0:

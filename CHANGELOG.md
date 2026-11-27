@@ -1,5 +1,14 @@
 # Änderungen
 
+## 0.10.37 – Wareneingang: Gebinde je Scan, Rückgängig, Artikel mit Code ausblenden
+
+Befunde Michael 27.11.2026 beim Abhaken einer Lieferung per Kamera:
+
+- **Menge je Scan:** Sahne („VE à 5 L“) buchte je Scan nur 1 kg. Bisher galt das Gebinde am Rohstoff (Waagen-Gebinde) vor dem Gebinde laut Beleg, und ohne beides zählte ein Scan stillschweigend 1 Belegeinheit. Neu: 1. Liefergebinde am Rohstoff, 2. Gebinde laut Beleg („2 VE à 5 L“ → 5 L je Scan), 3. Gebinde am Rohstoff, 4. ist nichts bekannt, wird einmal gefragt (gilt nur für diese Lieferung, am Rohstoff ändert sich nichts). Die Meldung zeigt die Menge je Scan („+1 VE = 5 L Sahne → 10 L“). Die ± Tasten an der Zeile nutzen denselben Schritt.
+- **Rückgängig beim Abhaken:** breite Taste „↶ Rückgängig – letzter Scan“ (mehrfach). War der Code bei diesem Scan neu zugeordnet, wird die Zuordnung wieder gelöst; ein begonnener Ersatz wird entfernt. Neu: `POST /api/v1/barcodes/release` (ohne PIN, nur frisch zugeordnete Codes der letzten 10 Minuten, nie umgehängt; ältere nur an der Rohstoffseite mit PIN).
+- **Fenster „Code unbekannt“:** Artikel der Lieferung, die schon einen Code haben, sind ausgeblendet; Taste „Auch Artikel mit Code zeigen (n)“. „Ersatz für …“ zeigt weiter alle.
+- Belegzeilen liefern `rm_delivery_pack_g`, `rm_delivery_pack_label` und `rm_has_code` mit. Keine Migration.
+
 ## 0.10.36 – Handelsware und Pfand (Teil H1)
 
 - **Neue Art „Handelsware“** (docs/handelsware.md, K03-85 bis K03-93, Freigabe Michael 27.11.2026, 09:39): gebaut wie die Hilfs- und Betriebsstoffe, Bestand in Stück (intern 1 Stück = 1000), Haken **Pfand**, **Kassennummer** (Vectron, aktiv eindeutig; ohne: „ohne Kassenartikel, nur Inventur“). Nie in Rezepten, Stücklisten oder im Planer. Handelsware und übrige Arten haben getrennte Namensräume (H-Milch als Rohstoff und als Handelsware).

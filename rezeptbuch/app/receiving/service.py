@@ -502,7 +502,10 @@ def _line_dict(conn, line, dealer_id: int) -> dict:
         out.update(raw_material_name=rm["name"], raw_material_number=rm["number"], raw_material_type=rm["type"],
                    stock_g=rm["stock_g"],
                    tracked=rm["stock_g"] is not None, archived=bool(rm["archived"]), rm_pack_g=pack_g,
-                   rm_pack_label=pack_label, unit_label=rm["unit_label"])
+                   rm_pack_label=pack_label, unit_label=rm["unit_label"],
+                   rm_delivery_pack_g=rm["delivery_pack_g"], rm_delivery_pack_label=rm["delivery_pack_label"],
+                   rm_has_code=conn.execute("SELECT 1 FROM raw_material_barcode WHERE raw_material_id = ? LIMIT 1",
+                                            (line["raw_material_id"],)).fetchone() is not None)
     return out
 
 

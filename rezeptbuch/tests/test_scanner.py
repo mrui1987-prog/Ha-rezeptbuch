@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 from app.db import MIGRATIONS_DIR, init_database
-from app.errors import ConflictError, ValidationError
+from app.errors import ConflictError, NotFoundError, ValidationError
 from app.raw_materials import scanner, service, stock
 
 from conftest import add_item, add_raw_material, add_recipe
@@ -266,3 +266,30 @@ def test_migration_0011_keeps_movements(tmp_path):
     assert conn.execute("SELECT stock_movement_id FROM plan_stock_booking").fetchone()[0] is None
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         conn.execute("INSERT INTO stock_movement (raw_material_id, kind) VALUES (?, 'loss')", (rm,))
+
+
+# -- Zuordnung zurücknehmen (Befund Michael 27.11.2026) -----------------------------------
+
+def test_release_fresh_code_without_pin(conn):
+    a, b = material(conn, "A"), material(conn, "B")
+    scanner.assign(conn, {"code": "4006381333931", "raw_material_id": a})
+    with pytest.raises(NotFoundError):                                   # falscher Artikel
+        scanner.release(conn, {"code": "4006381333931", "raw_material_id": b})
+    assert scanner.release(conn, {"code": "04006381333931", "raw_material_id": a})["status"] == "released"
+    assert scanner.lookup(conn, "4006381333931")["status"] == "unknown"
+
+
+def test_release_refused_when_old_or_reassigned(conn):
+    a, b = material(conn, "A"), material(conn, "B")
+    scanner.assign(conn, {"code": "OLD", "raw_material_id": a})
+    conn.execute("UPDATE raw_material_barcode SET created_at = '2026-01-01T00:00:00Z', "
+                 "updated_at = '2026-01-01T00:00:00Z' WHERE code = 'OLD'")
+    conn.commit()
+    with pytest.raises(ConflictError) as e:
+        scanner.release(conn, {"code": "OLD", "raw_material_id": a})
+    assert e.value.code == "release_too_late"
+    scanner.assign(conn, {"code": "NEU", "raw_material_id": a})
+    conn.execute("UPDATE raw_material_barcode SET updated_at = '2099-01-01T00:00:00Z' WHERE code = 'NEU'")
+    conn.commit()
+    with pytest.raises(ConflictError):
+        scanner.release(conn, {"code": "NEU", "raw_material_id": a})

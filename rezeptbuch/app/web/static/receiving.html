@@ -103,7 +103,7 @@
     RB.store.set("rezeptbuch_device", DEVICE);
   }
 
-  const S = { view: "home", back: null, delivery: null, marks: {}, scanning: false, busy: false, temp: {} };
+  const S = { view: "home", back: null, delivery: null, marks: {}, scanning: false, busy: false, temp: {}, undo: [], steps: {} };
 
   // ------------------------------------------------------------ Hilfen
   function fmtMilli(m, unit) {
@@ -664,7 +664,7 @@
   async function openDelivery(id, keepMarks) {
     let d;
     try { d = await RB.api("receiving/deliveries/" + id); } catch (e) { fail(e); return; }
-    if (!keepMarks || !S.delivery || S.delivery.id !== id) { S.marks = {}; S.temp = {}; }
+    if (!keepMarks || !S.delivery || S.delivery.id !== id) { S.marks = {}; S.temp = {}; S.undo = []; S.steps = {}; }
     S.delivery = d;
     d.lines.forEach((l) => {
       if (l.state !== "open" && l.state !== "backorder") return;
@@ -687,6 +687,11 @@
     top.appendChild(btn("+ Nicht erwartet", () => addUnexpected(null)));
     $("main").appendChild(top);
     if (S.scanning) $("main").appendChild(camBlock());
+    if (S.scanning || S.undo.length) {
+      const u = btn("↶ Rückgängig – letzter Scan" + (S.undo.length > 1 ? " (" + S.undo.length + ")" : ""), undoScan, "big");
+      u.disabled = !S.undo.length; u.style.width = "100%";
+      $("main").appendChild(u);
+    }
 
     const lines = openLines();
     if (!lines.length) $("main").appendChild(el("p", "Alles gebucht.", "hint"));
@@ -733,7 +738,7 @@
       c.appendChild(el("div", "Sonstiger Artikel – nur abhaken, kein Bestand.", "sub"));
     }
     const qrow = el("div", null, "row");
-    const step = (l.pack && l.pack.step_milli) || 1000;
+    const step = scanStep(l, null) || (l.pack && l.pack.step_milli) || 1000;
     qrow.appendChild(btn("−", () => { m.qty = Math.max(0, m.qty - step); m.on = true; paintDelivery(); }, "pm"));
     qrow.appendChild(btn(fmtMilli(m.qty, l.unit_code) + packs(m.qty, l.pack), async () => {
       const v = await askNumber("Gelieferte Menge", l.raw_material_name || l.description, l.unit_code,
@@ -866,28 +871,83 @@
     if (S.scanning) {
       // Start bei 0: jeder Scan = +1 Gebinde
       openLines().forEach((l) => { const m = S.marks[l.id]; if (m && !m.sub) { m.on = false; m.qty = 0; } });
+      S.undo = [];
       try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
     } else stopCam();
     paintDelivery();
   }
 
+  // Menge je Scan in Belegeinheit (Befund Michael 27.11.2026, Sahne „1 VE à 5 L“ buchte 1 kg):
+  // 1. Liefergebinde am Rohstoff (F-1), 2. Gebinde laut Beleg („1 VE à 5 L“), 3. Gebinde am Rohstoff,
+  // 4. sonst einmal fragen (gilt nur für diese Lieferung, am Rohstoff wird nichts geändert).
   function scanStep(l, rm) {
+    if (S.steps[l.id]) return S.steps[l.id];
     if (l.raw_material_type === "goods") return 1000;     // Handelsware: 1 Scan = 1 Liefereinheit
+    const ab = l.pack && l.pack.count != null ? l.pack.step_milli : null;
+    if (l.raw_material_type === "aid") return ab || 1000;
     const gpu = l.grams_per_unit;
-    if (rm && rm.pack_g && gpu) return Math.round(rm.pack_g * 1000 / gpu);
-    if (l.rm_pack_g && gpu) return Math.round(l.rm_pack_g * 1000 / gpu);
-    return (l.pack && l.pack.step_milli) || 1000;
+    const dp = rm ? rm.delivery_pack_g : l.rm_delivery_pack_g;
+    if (dp && gpu) return Math.round(dp * 1000 / gpu);
+    if (ab) return ab;
+    const pg = rm ? rm.pack_g : l.rm_pack_g;
+    if (pg && gpu) return Math.round(pg * 1000 / gpu);
+    return null;
   }
 
-  function countLine(l, rm, step) {
+  function stepName(l, rm) {
+    const dp = rm ? rm.delivery_pack_label : l.rm_delivery_pack_label;
+    if (dp) return dp;
+    if (l.pack && l.pack.count != null) return l.pack.name;
+    return (rm ? rm.pack_label : l.rm_pack_label) || "Gebinde";
+  }
+
+  // extra: { code, format, rmId } = Code bei diesem Scan neu zugeordnet; { temp, sub } = Ersatz begonnen
+  async function countLine(l, rm, step, extra) {
     const m = S.marks[l.id];
-    m.qty += step || scanStep(l, rm); m.on = true;
+    let s = step || scanStep(l, rm);
+    if (!s) {
+      const v = await askNumber("Wie viel ist 1 Gebinde?", (l.raw_material_name || l.description)
+        + ": kein Gebinde bekannt. Wie viel " + (l.unit_code || "") + " zählt ein Scan? (nur für diese Lieferung)", l.unit_code);
+      if (!v) {
+        if (extra && extra.code) await releaseCode(extra);
+        msg("Nicht gezählt.", "orange");
+        paintDelivery();
+        return;
+      }
+      s = Math.round(v * 1000); S.steps[l.id] = s;
+    }
+    m.qty += s; m.on = true;
+    S.undo.push(Object.assign({ lineId: l.id, step: s, name: l.raw_material_name || l.description }, extra || {}));
     signal(true);
-    msg("+1 " + (step ? "Gebinde (Ersatz)" : rm && rm.pack_label ? rm.pack_label : (l.pack && l.pack.name) || "") + " "
-        + (l.raw_material_name || l.description)
-        + " → " + fmtMilli(m.qty, l.unit_code), "blue");
+    msg("+1 " + (step ? "Gebinde (Ersatz)" : stepName(l, rm)) + " = " + fmtMilli(s, l.unit_code) + " "
+        + (l.raw_material_name || l.description) + " → " + fmtMilli(m.qty, l.unit_code), "blue");
     paintDelivery();
   }
+
+  async function releaseCode(u) {
+    try {
+      await RB.api("barcodes/release", { method: "POST", body: { code: u.code, format: u.format || "", raw_material_id: u.rmId } });
+      return true;
+    } catch (e) { fail(e); return false; }
+  }
+
+  // Rückgängig (Befund Michael 27.11.2026): letzter Scan zurück; war der Code dabei neu zugeordnet, wird die Zuordnung gelöst
+  async function undoScan() {
+    const u = S.undo.pop();
+    if (!u) return;
+    const m = S.marks[u.lineId];
+    if (m) { m.qty = Math.max(0, m.qty - u.step); if (!m.qty) m.on = false; }
+    if (u.temp) delete S.temp[u.temp];
+    if (u.sub && m) { m.sub = null; m.qty = 0; m.on = false; }
+    let text = "Rückgängig: " + u.name + " −" + fmtMilli(u.step, (S.delivery.lines.find((x) => x.id === u.lineId) || {}).unit_code);
+    if (u.code && await releaseCode(u)) {
+      text += " · Code-Zuordnung gelöst";
+      await openDelivery(S.delivery.id, true);          // „hat schon Code“ neu laden
+    } else paintDelivery();
+    msg(text, "blue");
+  }
+
+  function markCoded(rmId) { S.delivery.lines.forEach((x) => { if (x.raw_material_id === rmId) x.rm_has_code = true; }); }
 
   async function scanned(raw, format) {
     if (S.busy) return;
@@ -895,46 +955,57 @@
     try {
       const t = S.temp[raw];
       const tl = t && openLines().find((x) => x.id === t.lineId);
-      if (tl) { countLine(tl, null, t.step); return; }
+      if (tl) { await countLine(tl, null, t.step); return; }
       const r = await RB.api("barcodes/lookup?code=" + encodeURIComponent(raw) + "&format=" + encodeURIComponent(format || ""));
       if (r.status === "location") { signal(false); msg("Lagerort-Code – hier nicht nötig.", "orange"); return; }
       if (r.status === "known") {
         const l = openLines().find((x) => x.raw_material_id === r.raw_material.id
           || (S.marks[x.id] && S.marks[x.id].sub && S.marks[x.id].sub.raw_material_id === r.raw_material.id));
-        if (l) { countLine(l, r.raw_material); return; }
+        if (l) { await countLine(l, r.raw_material); return; }
         signal(false);
         const add = await RB.dialog({ nearTap: true, title: r.raw_material.name, text: "Nicht in dieser Lieferung. Zusätzlich aufnehmen?",
           buttons: [{ label: "Nein", value: false }, { label: "Zusätzlich aufnehmen", value: true, kind: "primary" }] });
         if (!add) return;
         const id = await addUnexpected(r.raw_material);
         const nl = id && S.delivery.lines.find((x) => x.id === id);
-        if (nl) countLine(nl, r.raw_material);
+        if (nl) await countLine(nl, r.raw_material);
         return;
       }
       // unbekannter Code: Rohstoffe dieser Lieferung zur Auswahl
       signal(false);
       const wrap = el("div", null, "list");
       let chosen = null;
-      const lines = openLines().filter((l) => l.raw_material_id);
+      const all = openLines().filter((l) => l.raw_material_id);
+      // Artikel, die schon einen Code haben, ausblenden (Befund Michael 27.11.2026), auf Wunsch einblenden
+      const lines = all.filter((l) => !l.rm_has_code), coded = all.filter((l) => l.rm_has_code);
       const p = RB.dialog({ nearTap: true, title: "Code " + r.code_text + " unbekannt", text: "Was hast du gescannt? Der Code wird gespeichert.",
         content: wrap, buttons: [{ label: "Abbrechen", value: null }, { label: "Ersatz für …", value: "sub" },
                                   { label: "Nicht in der Lieferung", value: "other" }] });
-      lines.forEach((l) => wrap.appendChild(btn(l.raw_material_name, () => {
+      const pick = (l) => btn(l.raw_material_name, () => {
         chosen = l; const back = document.querySelector(".dlg-back"); if (back) back.remove();
-      })));
+      });
+      lines.forEach((l) => wrap.appendChild(pick(l)));
+      if (!lines.length) wrap.appendChild(el("p", "Alle Artikel dieser Lieferung haben schon einen Code.", "hint"));
+      if (coded.length) {
+        const more = btn("Auch Artikel mit Code zeigen (" + coded.length + ")", () => {
+          more.remove(); coded.forEach((l) => { const b = pick(l); b.appendChild(el("small", "hat schon einen Code")); wrap.appendChild(b); });
+        });
+        wrap.appendChild(more);
+      }
       const res = await Promise.race([p, new Promise((ok) => { const iv = setInterval(() => { if (chosen) { clearInterval(iv); ok("line"); } }, 80); })]);
       if (res === "line" && chosen) {
         const a = await RB.api("barcodes", { method: "POST", body: { code: raw, format: format || "", raw_material_id: chosen.raw_material_id } });
-        countLine(chosen, a.raw_material);
+        markCoded(chosen.raw_material_id);
+        await countLine(chosen, a.raw_material, null, { code: raw, format: format || "", rmId: chosen.raw_material_id });
       } else if (res === "sub") {
-        await substituteScan(raw, r.code_text, lines);
+        await substituteScan(raw, r.code_text, all);
       } else if (res === "other") {
         const m = await pickMaterial("Welcher Rohstoff?", "Code " + r.code_text + " wird ihm zugeordnet.");
         if (!m) return;
         const a = await RB.api("barcodes", { method: "POST", body: { code: raw, format: format || "", raw_material_id: m.id } });
         const id = await addUnexpected(a.raw_material);
         const nl = id && S.delivery.lines.find((x) => x.id === id);
-        if (nl) countLine(nl, a.raw_material);
+        if (nl) { markCoded(m.id); await countLine(nl, a.raw_material, null, { code: raw, format: format || "", rmId: m.id }); }
       }
     } catch (e) { signal(false); fail(e); }
     finally { S.busy = false; }
@@ -964,7 +1035,7 @@
     S.marks[l.id].sub.code = raw;          // M03-36: Code merken, um denselben Ersatz wiederzuerkennen
     S.marks[l.id].qty = 0;
     S.temp[raw] = { lineId: l.id, step: r.step };
-    countLine(l, null, r.step);
+    await countLine(l, null, r.step, { temp: raw, sub: true });
   }
 
   // Ersatz = andere Marke/anderer Hersteller für den BESTELLTEN Artikel; gebucht wird immer auf ihn

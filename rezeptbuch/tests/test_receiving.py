@@ -244,3 +244,16 @@ def test_missing_gpu_on_known_line_says_so(conn, env):
     with pytest.raises(ValidationError) as e:
         rec.commit(conn, {"token": pre["token"], "decisions": {}})
     assert e.value.code == "gpu_missing" and "Pos. 1" in str(e.value) and "Gewicht je Beutel" in str(e.value)
+
+
+def test_line_knows_delivery_pack_and_code(conn, env):
+    """Befund Michael 27.11.2026: Abhaken braucht Liefergebinde und „hat schon Code“ an der Zeile."""
+    from app.raw_materials import scanner
+    rm = mehl(conn, "Sahne 30 %", unit_size_g=1000, unit_label="Packung")
+    _, doc = load(conn, env, [position(1, "500", "Sahne 30%", 10000, me="L", gebinde="2 VE à 5 L")],
+                  {"1": {"action": "assign", "raw_material_id": rm, "grams_per_unit": 1000}})
+    line = doc["lines"][0]
+    assert line["pack"] == {"step_milli": 5000, "name": "VE", "count": 2}      # Beleg-Gebinde: 1 Scan = 5 L
+    assert line["rm_pack_g"] == 1000 and line["rm_delivery_pack_g"] is None and line["rm_has_code"] is False
+    scanner.assign(conn, {"code": "4006381333931", "raw_material_id": rm})
+    assert rec.get_delivery(conn, doc["id"])["lines"][0]["rm_has_code"] is True
