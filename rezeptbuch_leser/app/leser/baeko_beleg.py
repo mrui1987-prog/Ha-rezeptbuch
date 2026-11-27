@@ -37,9 +37,10 @@ BELEGARTEN = {
     "Gutschrift": "gutschrift",
 }
 
+PREISFAKTOR = {"EIN": 1, "HDT": 100, "TSD": 1000}
 ZAHL = r"-?\d{1,3}(?:\.\d{3})*,\d+"
 RE_RECHTS = re.compile(
-    rf"^({ZAHL})\s?([A-ZÄÖÜ]{{1,4}})\s+({ZAHL})\s+(EIN|HDT|TSD)\s+({ZAHL})\s+(\d{{1,2}})$")
+    rf"^({ZAHL})\s?([A-ZÄÖÜ]{{1,4}})\s+({ZAHL})\s+(EIN|HDT|TSD|[A-ZÄÖÜ]{{1,4}})\s+({ZAHL})\s+(\d{{1,2}})$")
 RE_KLAMMER = re.compile(r"^\(\s?(-?\d+)\s?([A-ZÄÖÜ]{1,4})\s?\)$")
 RE_GEBINDE = re.compile(r"^-?\d[\d.,]*\s+[A-ZÄÖÜ]{1,4}\s+à\s+[\d.,]+\s+[A-ZÄÖÜ]{1,4}$")
 RE_LIEFERUNG = re.compile(
@@ -453,10 +454,25 @@ class _Leser:
         if mitte:
             pos["bezeichnung_zeilen"].append(_text(mitte))
         self.positionen.append(pos)
-        self._preis_pruefen(nr, pos)
+        if pe in PREISFAKTOR:
+            self._preis_pruefen(nr, pos)
+
+    def _packungspreis_pruefen(self, pos):
+        """Preiseinheit = Verpackung (z. B. KT): Menge steht in der Klammerzeile „(2 KT)“."""
+        m = RE_KLAMMER.match(pos["gebinde_klammer"] or "")
+        if not m or m.group(2) != pos["preiseinheit"]:
+            self.plausibilitaet.append(
+                f"Seite {pos['seite']}: Artikel {pos['artikelnummer']}: Preiseinheit {pos['preiseinheit']} "
+                f"ohne passende Klammerzeile – Preis nicht prüfbar")
+            return
+        roh = Decimal(int(m.group(1))) * pos["preis_zehntausendstel_euro"] / 100
+        if abs(roh - pos["netto_cent"]) > 1 + Decimal(m.group(1)):
+            self.plausibilitaet.append(
+                f"Seite {pos['seite']}: Artikel {pos['artikelnummer']}: {m.group(1)} {pos['preiseinheit']} × Preis "
+                f"({roh / 100:.2f}) weicht vom Netto {pos['netto_text']} ab")
 
     def _preis_pruefen(self, nr, pos):
-        faktor = {"EIN": 1, "HDT": 100, "TSD": 1000}[pos["preiseinheit"]]
+        faktor = PREISFAKTOR[pos["preiseinheit"]]
         # Menge (Tausendstel) × Preis (Zehntausendstel €) / Faktor -> Cent
         roh = Decimal(pos["menge_tausendstel"]) * pos["preis_zehntausendstel_euro"] / faktor / 100000
         # gedruckte Preise sind gerundet (AB: 2 Stellen) -> Spielraum: halbe letzte Stelle × Menge
@@ -564,6 +580,8 @@ def lese_beleg(pfad):
         p["bezeichnung"] = " ".join(p["bezeichnung_zeilen"]) or None
         if p["bestellartikel"] and not p["bestell_hinweis"]:
             leser.plausibilitaet.append(f"Artikel {p['artikelnummer']}: „B“ ohne Hinweistext")
+        if p["preiseinheit"] not in PREISFAKTOR:
+            leser._packungspreis_pruefen(p)
     for i, p in enumerate(leser.positionen, start=1):
         p["nr"] = i
     return {

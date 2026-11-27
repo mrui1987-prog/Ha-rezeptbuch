@@ -122,9 +122,24 @@ def test_gutschrift_negativ_mit_grundtext(lies):
     assert p["lieferung"]["art"] == "Rücknahme" and p["auftrag"]["auftrag"] == "RN0000001"
 
 
-def test_unbekannte_preiseinheit_ist_unlesbar(lies):
+def test_packungs_preiseinheit_mit_klammer(lies):
+    # Echter Fall AT1003549: 120 ST, Preis 27,95 je KT, Klammer (2 KT) -> Netto 55,90
+    d = lies(beleg_pdf("rechnung", [_pos(menge="120,000", me="ST", preis="27,9500", pe="KT",
+                                         netto="55,90", klammer="(2 KT)")]))
+    assert not d["warnungen"] and d["plausibilitaet"] == []
+    p = d["positionen"][0]
+    assert p["preiseinheit"] == "KT" and p["netto_cent"] == 5590 and p["gebinde_klammer"] == "(2 KT)"
+
+
+def test_packungs_preiseinheit_falsches_netto_wird_gemeldet(lies):
+    d = lies(beleg_pdf("rechnung", [_pos(menge="120,000", me="ST", preis="27,9500", pe="KT",
+                                         netto="60,00", klammer="(2 KT)")]))
+    assert any("weicht" in w for w in d["plausibilitaet"])
+
+
+def test_packungs_preiseinheit_ohne_klammer_nicht_pruefbar(lies):
     d = lies(beleg_pdf("rechnung", [_pos(pe="KAR")]))
-    assert any("nicht lesbar" in w for w in d["warnungen"])
+    assert any("nicht prüfbar" in w for w in d["plausibilitaet"])
 
 
 def test_ueberdruck_wird_getrennt_und_gemeldet(lies):

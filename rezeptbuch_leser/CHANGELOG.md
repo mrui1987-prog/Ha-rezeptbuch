@@ -1,5 +1,11 @@
 # Änderungen – HA-Rezeptbuch Leser
 
+## 0.1.1 – BÄKO-Belegleser: Packungs-Preiseinheit (z. B. KT)
+
+- Fehler behoben: Positionen mit Preiseinheit wie `KT` statt EIN/HDT/TSD (Beispiel AB AT1003549, Pos. „Pru Pasteten m Deckel“: 120 ST, 27,95 je KT, Klammer „(2 KT)“) wurden verworfen, Beleg war „unlesbar“
+- Preiseinheit jetzt jede 1–4-Buchstaben-Einheit; bei Packungseinheit wird Menge × Preis über die Klammerzeile „(2 KT)“ geprüft (2 × 27,95 = 55,90); fehlt die Klammer, steht ein Hinweis in `plausibilitaet`
+- AT1003549.pdf: 33 Positionen, Netto 1.423,54 €, 7 %-Summe 1.174,18 €, keine Warnungen
+
 ## 0.1.0 – Modul 04 Teil C2-L (Add-on 3, M04-23) – freigegeben 21.11.2026 (M04-27)
 
 - Neues Add-on: PDF rein, JSON raus (Vertrag Fassung 1), schreibt nichts
