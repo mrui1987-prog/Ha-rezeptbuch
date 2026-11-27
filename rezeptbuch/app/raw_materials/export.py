@@ -25,7 +25,7 @@ HEADER = [
     "Händler (aktiv)", "Artikelnummer (aktiv)", "datenlink-ID",
 ]
 
-TYPE_LABEL = {"standard": "Standard", "flour": "Mehl", "aid": "Hilfs- und Betriebsstoff"}
+TYPE_LABEL = {"standard": "Standard", "flour": "Mehl", "aid": "Hilfs- und Betriebsstoff", "goods": "Handelsware"}
 SOURCE_LABEL = {"own": "eigen", "datenlink": "datenlink"}
 
 

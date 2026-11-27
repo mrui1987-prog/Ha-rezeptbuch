@@ -138,6 +138,7 @@
     { id: "loss_own_use", label: "−1 Eigenverbrauch", cls: "minus", reason: "own_use" },
     { id: "loss_merchandise", label: "−1 Handelsware", cls: "minus", reason: "merchandise" },
     { id: "loss_other", label: "−1 Sonstiges", cls: "minus", reason: "other" },
+    { id: "loss_deposit", label: "−1 Pfand zurück", sub: "nur Pfand", cls: "minus", reason: "deposit_return" },   // H1, K03-74
     { id: "stock", label: "Bestand setzen", sub: "🔒 PIN", pin: true },
     { id: "assign", label: "Code zuordnen", sub: "umhängen 🔒" },
     { id: "count", label: "Inventur zählen", sub: "offene Inventur", cls: "count" },
@@ -186,7 +187,7 @@
   }
 
   // ------------------------------------------------------------ Anzeige
-  function isAid(m) { return m.type === "aid"; }
+  function isAid(m) { return m.type === "aid" || m.type === "goods"; }   // Handelsware zählt in Stück (H1)
   function qty(m, g) {
     if (g === null || g === undefined) return "ohne Bestandsführung";
     if (isAid(m)) return (g / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + (m.unit_label || "VE");

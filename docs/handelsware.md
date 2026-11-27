@@ -1,6 +1,6 @@
 # Handelsware und Pfand – Konzept (Modul 03, Teil H1)
 
-Stand: 27.11.2026, 09:25. **Status: alle Fragen entschieden (Michael, Sprachchat 27.11., ca. 09:00–09:20), Freigabe zum Bauen offen.**
+Stand: 27.11.2026. **Status: entschieden, Freigabe zum Bauen Michael 27.11.2026, 09:39; gebaut mit 0.10.36 (Migration 0015).**
 Grundlage: M03-28, M03-29 (23.11., 10:05), K03-73 bis K03-76 (entschieden, eingetragen 17:20), K03-77 zurückgestellt, M03-31/K03-63 (Reihenfolge: nach I1), M03-39 (Buchungsgruppe Handelsware/Leergut).
 Entscheidungen K03-85 bis K03-93: Abschnitt 12. Die Abschnitte 3 bis 11 geben den entschiedenen Stand wieder.
 
@@ -133,3 +133,4 @@ Das ersetzt die frühere Idee einer eigenen Liste „In Handelsware umwandeln“
 |---|---|
 | 27.11.2026, 08:40 | Konzept erstellt (Claude), Vorschläge K03-85 bis K03-92 |
 | 27.11.2026, 09:25 | K03-85 bis K03-93 entschieden (Michael, Sprachchat); Abschnitte 3–12 angepasst. Freigabe zum Bauen offen |
+| 27.11.2026, 09:39 | Freigabe zum Bauen (Michael); gebaut als 0.10.36 mit Migration 0015 (Zweig `h1-handelsware`). Abweichungen: Kopie ohne BÄKO-Artikelnummer; kein „Kopieren nach Sonstiger Artikel“; Gramm ↔ Stück ohne Gewicht beendet die Bestandsführung; Kassenimport lehnt auch überlappende Zeiträume ab und lässt sich zurücknehmen |

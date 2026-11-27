@@ -81,6 +81,18 @@ Reiter **„Import/Export“** (seit 0.10.15 gemeinsam für Rezepte und Rohstoff
 - **Excel:** im Archiv je abgeschlossener Inventur – Blatt „Inventur“ mit Zwischensummen Rohstoffe und Hilfs- und Betriebsstoffe und Gesamtsumme, Blatt „ohne Preis“. Ungezählte „unverändert“ gehen mit dem Buchbestand in den Wert ein.
 - Hilfs- und Betriebsstoffe zeigen Bestand und Meldewert jetzt überall in Verpackungseinheiten („12 Karton“).
 
+### Handelsware und Pfand (seit 0.10.36)
+
+- **Neue Art „Handelsware“** (Cola, H-Milch, verpackte Ware, Pfand): Bestand in **Stück**, Preis je Stück, nie in Rezepten, an der Waage oder im Planer. Am Artikel: Haken **„Pfand“** und **Kassennummer** (Vectron-Artikelnummer, aus der Artikelliste wählbar; leer = „ohne Kassenartikel, nur Inventur“). An der Bezugsquelle steht **„Stück je Liefereinheit“** (z. B. Karton = 24).
+- **Wareneingang:** unbekannte Position → sechste Taste **„Handelsware“** → vorhandene zuordnen oder neu anlegen (Name, Stück je Liefereinheit – vorbelegt aus dem Gebindetext, Haken „Pfand“ – vorgehakt nur, wenn der Beleg Pfand/Leergut ausweist). Am Liefertag bucht Abhaken Liefermenge × Stück je Liefereinheit. **„+ Nicht erwartet“** fragt erst Rohstoff / Hilfs- und Betriebsstoff / Handelsware / Sonstiges und zeigt dann nur diese Liste; Sonstiges wird nur vermerkt.
+- **Rechnung:** setzt den Preis je Stück (Netto ÷ gelieferte Stück); Buchungsgruppe Handelsware bzw. Leergut. **Gutschrift** mit Pfand-Artikel bucht den Abgang **„Pfand zurück“** automatisch.
+- **Abgänge von Hand:** „Pfand zurück“, „Bruch/Verderb“, „Eigenverbrauch“ – am Artikel (Reiter Bestand), in „Bestand erfassen“ und an der Scan-Seite.
+- **Kassenimport** (Unterreiter Bestand): Abverkauf der Vectron als .xlsx → Probelauf → Übernehmen. Je Handelsware mit Kassennummer wird „Verkauf laut Kasse“ abgebucht. Sammelartikel 500 und nicht zugeordnete Kassenartikel werden nur angezeigt. Jeder Zeitraum nur einmal (auch überlappend abgelehnt); ein Import lässt sich zurücknehmen. Was abweicht, korrigiert die Inventur („Schwund laut Inventur“).
+- **Rohstoff + Handelsware zugleich** (z. B. H-Milch): nur der Rohstoff führt Bestand, die Handelsware ist ein Verweis mit Kassennummer und Gewicht je Stück; Kassenverkäufe buchen beim Rohstoff ab. Lieferung und Inventur laufen nur über den Rohstoff.
+- **„Verschieben nach …“ / „Kopieren nach …“** an jedem Artikel (Grunddaten) und bei den sonstigen Artikeln (Wareneingang → Archiv & Sonstige). Verschieben ändert die Art (Bestand, Preis und Bezugsquellen werden über das Gewicht je Stück umgerechnet), Kopieren legt einen neuen Artikel an. In Rezepten oder Stücklisten verwendete Rohstoffe lassen sich nur kopieren.
+- **Pfand-Übersicht** (Unterreiter Bestand) in Euro: Pfand BÄKO, Pfand Kunden, Pfand gesamt (Differenz).
+- **Inventur:** Handelsware wird in Stück gezählt; Excel und Vorschau mit eigener Zwischensumme Handelsware und getrennt Pfand (Leergut).
+
 ## Rezepte
 
 Reiter **„Rezepte“** im Admin-Bereich.

@@ -15,7 +15,8 @@ from fastapi.responses import FileResponse
 from ..auth.dependencies import require_admin
 from ..deps import get_db
 from ..errors import PayloadTooLargeError, ValidationError
-from . import bulk, scanner, service, sources, stock
+from ..imports.router import upload_body
+from . import bulk, goods, sales_import, scanner, service, sources, stock
 from .export import build_csv
 
 router = APIRouter(prefix="/api/v1", tags=["raw-materials"])
@@ -294,3 +295,59 @@ def activate_source(raw_material_id: int, source_id: int, db: sqlite3.Connection
 @router.delete("/admin/raw-materials/{raw_material_id}/sources/{source_id}", dependencies=admin)
 def delete_source(raw_material_id: int, source_id: int, db: sqlite3.Connection = Depends(get_db)):
     return sources.delete_source(db, raw_material_id, source_id)
+
+
+# -- Handelsware und Pfand, Teil H1 (docs/handelsware.md) ------------------------------------
+
+@router.post("/admin/raw-materials/{raw_material_id}/move", dependencies=admin)
+def move_article(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """„Verschieben nach …“ (K03-89): Art desselben Artikels ändern."""
+    return goods.move(db, raw_material_id, payload)
+
+
+@router.post("/admin/raw-materials/{raw_material_id}/copy", status_code=201, dependencies=admin)
+def copy_article(raw_material_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    """„Kopieren nach …“ (K03-89, K03-93)."""
+    return goods.copy(db, raw_material_id, payload)
+
+
+@router.post("/admin/other-articles/{other_id}/move", dependencies=admin)
+def move_other(other_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return goods.other_to(db, other_id, payload, keep=False)
+
+
+@router.post("/admin/other-articles/{other_id}/copy", status_code=201, dependencies=admin)
+def copy_other(other_id: int, payload: dict = Body(...), db: sqlite3.Connection = Depends(get_db)):
+    return goods.other_to(db, other_id, payload, keep=True)
+
+
+@router.get("/admin/deposit-overview", dependencies=admin)
+def deposit_overview(date_from: str | None = None, date_to: str | None = None,
+                     db: sqlite3.Connection = Depends(get_db)):
+    """Pfand BÄKO / Pfand Kunden / Pfand gesamt in Euro (K03-87)."""
+    return goods.deposit_overview(db, date_from, date_to)
+
+
+@router.post("/admin/sales-imports", dependencies=admin)
+def import_sales(request: Request, mode: str = "check", date_from: str | None = None, date_to: str | None = None,
+                 body: bytes = Depends(upload_body), db: sqlite3.Connection = Depends(get_db)):
+    """Kassenimport Vectron-Abverkauf (.xlsx): ``mode=check`` (Probelauf) → ``mode=run`` (K03-86)."""
+    from urllib.parse import unquote
+    name = unquote(request.headers.get("x-dateiname") or "") or None
+    return sales_import.import_sales(db, body, mode=mode, date_from=date_from, date_to=date_to, file_name=name)
+
+
+@router.get("/admin/sales-imports", dependencies=admin)
+def sales_imports(db: sqlite3.Connection = Depends(get_db)):
+    return sales_import.list_imports(db)
+
+
+@router.get("/admin/sales-imports/{import_id}", dependencies=admin)
+def sales_import_detail(import_id: int, db: sqlite3.Connection = Depends(get_db)):
+    return sales_import.get_import(db, import_id)
+
+
+@router.delete("/admin/sales-imports/{import_id}", dependencies=admin)
+def sales_import_delete(import_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """Kassenimport zurücknehmen (Gegenbuchungen), der Zeitraum ist danach wieder frei."""
+    return sales_import.delete_import(db, import_id)

@@ -176,6 +176,21 @@
     return box;
   }
 
+  const TYPE_WORD = { aid: "Hilfs- und Betriebsstoff", goods: "Handelsware", standard: "Rohstoff", flour: "Rohstoff (Mehl)" };
+  function isMaterial(r) { return r.type !== "aid" && r.type !== "goods"; }
+
+  // Stück je Liefereinheit (Handelsware, K03-73): Vorbelegung aus dem Gebindetext, z. B. „24 ST à …“
+  async function askPieces(line) {
+    const unit = line.unit_code;
+    if (unit === "ST") return 1;
+    const v = await RB.numpad({ nearTap: true, title: "Wie viele Stück hat 1 " + uw(unit) + "?",
+      text: (line.description || "") + (line.pack_text ? " (" + line.pack_text + ")" : "") + " – gezählt wird in Stück",
+      unit: "Stück", decimal: false, value: line.pieces_hint ? String(line.pieces_hint) : undefined });
+    if (v === null || v === "") return null;
+    const n = parseInt(v, 10);
+    return n > 0 ? n : null;
+  }
+
   async function pickMaterial(title, text, filter) {
     const wrap = el("div");
     const search = el("input"); search.placeholder = "Suchen …"; search.type = "search";
@@ -192,7 +207,7 @@
         b.type = "button";
         b.appendChild(el("b", String(r.number)));
         b.appendChild(document.createTextNode(r.name));
-        b.appendChild(el("small", r.type === "aid" ? "Hilfs- und Betriebsstoff" : "Rohstoff"));
+        b.appendChild(el("small", TYPE_WORD[r.type] || "Rohstoff"));
         b.addEventListener("click", () => { chosen = r; closeFn(); });
         list.appendChild(b);
       });
@@ -284,6 +299,7 @@
     { id: "assign", label: "Rohstoff zuordnen" },
     { id: "new", label: "Neuer Rohstoff" },
     { id: "aid", label: "Hilfs- und Betriebsstoff" },
+    { id: "goods", label: "Handelsware" },
     { id: "other", label: "Sonstiger Artikel" },
     { id: "substitute", label: "Ersatz für Rohstoff" },
   ];
@@ -328,7 +344,16 @@
       cards[String(line.line_no)] = { line: line, card: c, state: state };
       if (line.target === "raw_material") {
         state.textContent = "→ " + line.raw_material_name;
-        if (line.needs_gpu) {
+        if (line.needs_gpu && line.gpu_kind === "pieces") {
+          c.classList.add("warn");
+          state.textContent += " · Stück je " + uw(line.unit_code) + " fehlt";
+          c.appendChild(btn("Stück je " + uw(line.unit_code) + " eintragen", async () => {
+            const n = await askPieces(line); if (!n) return;
+            decisions[String(line.line_no)] = Object.assign(decisions[String(line.line_no)] || {}, { pieces_per_unit: n });
+            state.textContent = "→ " + line.raw_material_name + " · " + n + " Stück je " + uw(line.unit_code);
+            c.classList.remove("warn"); c.classList.add("done");
+          }));
+        } else if (line.needs_gpu) {
           c.classList.add("warn");
           state.textContent += " · Gewicht je " + uw(line.unit_code) + " fehlt";
           c.appendChild(gpuButton(line, decisions, state, c));
@@ -342,11 +367,21 @@
           const sug = el("div", null, "row");
           sug.appendChild(el("span", "Vorschlag:", "sub"));
           line.suggestions.slice(0, 3).forEach((s) => sug.appendChild(btn(s.name, async () => {
+            if (s.type === "goods") {
+              const n = await askPieces(line); if (!n) return;
+              return decide(line, c, state, decisions, "goods_assign", { raw_material_id: s.id, name: s.name, pieces_per_unit: n });
+            }
             const g = s.type === "aid" ? {} : await needGpu(line); if (g === null) return;
             decide(line, c, state, decisions, s.type === "aid" ? "aid_assign" : "assign",
                    Object.assign({ raw_material_id: s.id, name: s.name }, g));
           })));
           c.appendChild(sug);
+        }
+        if (line.suggest_goods) {                // Warengruppe als Handelsware/Pfand gelernt (M03-39, K03-92)
+          const r = el("div", null, "row");
+          r.appendChild(el("span", "Vorschlag: Handelsware" + (line.deposit_hint ? " (Pfand)" : ""), "sub"));
+          r.appendChild(btn("Als Handelsware", () => choose("goods", line, c, state, decisions)));
+          c.appendChild(r);
         }
         const ch = el("div", null, "choices");
         ACTIONS.forEach((a) => ch.appendChild(btn(a.label, () => choose(a.id, line, c, state, decisions))));
@@ -373,7 +408,7 @@
         const d = decisions[String(l.line_no)];
         if (l.target === "unknown") return !d || !d.action
           || (l.needs_gpu && ["assign", "new", "substitute"].includes(d.action) && !d.grams_per_unit);
-        if (l.target === "raw_material" && l.needs_gpu) return !d || !d.grams_per_unit;
+        if (l.target === "raw_material" && l.needs_gpu) return !d || !(l.gpu_kind === "pieces" ? d.pieces_per_unit : d.grams_per_unit);
         if (pre.billing && !(l.booking && l.booking.id) && (l.target === "other" || (d && d.action === "other")))
           return !d || !d.booking_group_id;                     // neue Warengruppe: Buchungsgruppe wählen (K03-84)
         return false;
@@ -517,8 +552,11 @@
     decisions[String(line.line_no)] = Object.assign({ action: action }, extra);
     card.classList.remove("warn"); card.classList.add("done");
     const text = { assign: "→ ", aid_assign: "→ Hilfs- und Betriebsstoff ", new: "→ neu: ", aid_new: "→ neu (Hilfs- und Betriebsstoff): ",
+                   goods_assign: "→ Handelsware ", goods_new: "→ neu (Handelsware): ",
                    other: "→ Sonstiger Artikel", substitute: "→ Ersatz für " }[action];
     state.textContent = text + (extra.name || "") + (extra.grams_per_unit ? " · " + extra.grams_per_unit + " g je " + uw(line.unit_code) : "")
+      + (extra.pieces_per_unit ? " · " + extra.pieces_per_unit + " Stück je " + uw(line.unit_code) : "")
+      + (extra.is_deposit ? " · Pfand" : "")
       + (copied ? " (wie Pos. " + copied + ")" : "");
     // gleicher Artikel nochmal im Beleg (z. B. Pfand): Entscheidung übernehmen, solange dort noch nichts gewählt ist
     if (copied || !line.article_no || !S.cards) return;
@@ -534,7 +572,7 @@
     if (id === "other") return decide(line, card, state, decisions, "other", {});
     if (id === "assign" || id === "substitute") {
       const m = await pickMaterial(id === "assign" ? "Rohstoff zuordnen" : "Ersatz für welchen Rohstoff?", line.description,
-                                   (r) => r.type !== "aid");
+                                   isMaterial);
       if (!m) return;
       const g = await needGpu(line); if (g === null) return;
       return decide(line, card, state, decisions, id, Object.assign({ raw_material_id: m.id, name: m.name }, g));
@@ -554,6 +592,35 @@
       const ex = { name: name.value.trim(), tolerance: tol.value.replace(",", "."), tolerance_unit: "g" };
       if (opts && opts.switchFrom) ex.switch_from = { number: opts.switchFrom.number, name: opts.switchFrom.name };
       return decide(line, card, state, decisions, "new", Object.assign(ex, g));
+    }
+    if (id === "goods") {
+      // Handelsware (K03-92): vorhandene zuordnen oder neu (Name, Stück je Liefereinheit, Haken Pfand)
+      const how = await RB.dialog({ nearTap: true, title: "Handelsware", text: line.description, buttons: [
+        { label: "Abbrechen", value: null }, { label: "Vorhandene zuordnen", value: "assign" },
+        { label: "Neu anlegen", value: "new", kind: "primary" }] });
+      if (how === "assign") {
+        const m = await pickMaterial("Handelsware zuordnen", line.description, (r) => r.type === "goods");
+        if (!m) return;
+        const n = await askPieces(line); if (!n) return;
+        decide(line, card, state, decisions, "goods_assign", { raw_material_id: m.id, name: m.name, pieces_per_unit: n });
+      } else if (how === "new") {
+        const name = el("input"); name.value = line.description || "";
+        const pieces = el("input"); pieces.inputMode = "numeric";
+        pieces.value = line.pieces_hint ? String(line.pieces_hint) : (line.unit_code === "ST" ? "1" : "");
+        const dep = el("input"); dep.type = "checkbox"; dep.checked = Boolean(line.deposit_hint);
+        const wrap = el("div"); wrap.appendChild(el("label", "Name")); wrap.appendChild(name);
+        wrap.appendChild(el("label", "Stück je " + uw(line.unit_code) + (line.pack_text ? " (" + line.pack_text + ")" : "")));
+        wrap.appendChild(pieces);
+        const dl = el("label"); dl.appendChild(dep); dl.appendChild(document.createTextNode(" Pfand (Kiste, Flasche)"));
+        dl.style.display = "flex"; dl.style.gap = ".6em"; dl.style.alignItems = "center";
+        wrap.appendChild(dl);
+        if (line.deposit_hint) wrap.appendChild(el("p", "Vorgehakt: der Beleg weist den Artikel als Pfand/Leergut aus.", "hint"));
+        const ok = await RB.dialog({ nearTap: true, title: "Neue Handelsware", content: wrap, buttons: [{ label: "Abbrechen", value: false },
+          { label: "Übernehmen", value: true, kind: "primary", check: () => name.value.trim() !== "" && parseInt(pieces.value, 10) > 0 }] });
+        if (ok) decide(line, card, state, decisions, "goods_new", { name: name.value.trim(), pieces_per_unit: parseInt(pieces.value, 10),
+                                                                    is_deposit: dep.checked });
+      }
+      return;
     }
     if (id === "aid") {
       const how = await RB.dialog({ nearTap: true, title: "Hilfs- und Betriebsstoff", text: line.description, buttons: [
@@ -713,11 +780,19 @@
       if (!m || !m.on) return;
       const it = { id: l.id, qty_milli: m.qty, rest: m.rest };
       if (m.track) it.start_tracking = true;
+      if (m.pieces) it.pieces_per_unit = m.pieces;
       if (m.sub) it.substitute = { raw_material_id: m.sub.raw_material_id, grams_per_unit: m.sub.grams_per_unit,
                                    pack_g: m.sub.pack_g || undefined, code: m.sub.code || undefined };
       items.push(it);
     });
     if (!items.length) return;
+    for (const it of items) {                  // Handelsware ohne „Stück je Liefereinheit“: jetzt fragen
+      const l = openLines().find((x) => x.id === it.id);
+      if (l && l.raw_material_type === "goods" && !l.grams_per_unit && it.qty_milli && !it.pieces_per_unit && !it.substitute) {
+        const n = await askPieces(l); if (!n) return;
+        it.pieces_per_unit = n; S.marks[l.id].pieces = n;
+      }
+    }
     try {
       const res = await RB.api("receiving/deliveries/" + S.delivery.id + "/book", { method: "POST", body: { device_id: DEVICE, lines: items } });
       msg(res.lines.length + " Positionen gebucht" + (res.status === "partial" ? " – Rest bleibt offen." : "."), "blue");
@@ -729,14 +804,60 @@
     } catch (e) { fail(e); }
   }
 
+  // „Nicht erwartet“ (K03-91): erst die Art wählen, dann nur die Liste dieser Art mit Suchfeld
   async function addUnexpected(material) {
-    const m = material || await pickMaterial("Nicht erwartet", "Welcher Rohstoff kam zusätzlich?");
-    if (!m) return null;
+    let m = material, body = null;
+    if (!m) {
+      const kind = await RB.dialog({ nearTap: true, title: "Nicht erwartet", text: "Was kam zusätzlich?", buttons: [
+        { label: "Abbrechen", value: null }, { label: "Rohstoff", value: "material" }, { label: "Hilfs- und Betriebsstoff", value: "aid" },
+        { label: "Handelsware", value: "goods" }, { label: "Sonstiges", value: "other" }] });
+      if (!kind) return null;
+      if (kind === "other") {
+        const o = await pickOther();
+        if (!o) return null;
+        body = { other_article_id: o.id };
+      } else {
+        m = await pickMaterial("Nicht erwartet – " + ({ material: "Rohstoff", aid: "Hilfs- und Betriebsstoff", goods: "Handelsware" })[kind],
+                               "Welcher Artikel kam zusätzlich?", kind === "material" ? isMaterial : (r) => r.type === kind);
+      }
+    }
+    if (!m && !body) return null;
     try {
-      const r = await RB.api("receiving/deliveries/" + S.delivery.id + "/unexpected", { method: "POST", body: { raw_material_id: m.id } });
+      const r = await RB.api("receiving/deliveries/" + S.delivery.id + "/unexpected", { method: "POST", body: body || { raw_material_id: m.id } });
       await openDelivery(S.delivery.id, true);
       return r.line_id;
     } catch (e) { fail(e); return null; }
+  }
+
+  // Sonstige Artikel (ohne Bestand) auswählen – die Lieferung wird nur vermerkt (K03-91)
+  async function pickOther() {
+    if (!(await ensurePin())) return null;
+    let rows = [];
+    try { rows = await RB.api("admin/other-articles"); } catch (e) { fail(e); return null; }
+    const wrap = el("div");
+    const search = el("input"); search.placeholder = "Suchen …"; search.type = "search";
+    const list = el("div", null, "list");
+    wrap.appendChild(search); wrap.appendChild(list);
+    let chosen = null;
+    function paint() {
+      const q = search.value.trim().toLowerCase();
+      list.textContent = "";
+      rows.filter((o) => !q || (o.description || "").toLowerCase().includes(q) || String(o.article_no).includes(q)).slice(0, 40).forEach((o) => {
+        const b = el("button"); b.type = "button";
+        b.appendChild(el("b", o.article_no)); b.appendChild(document.createTextNode(o.description || "–"));
+        b.appendChild(el("small", "Sonstiger Artikel"));
+        b.addEventListener("click", () => { chosen = o; const back = document.querySelector(".dlg-back"); if (back) back.remove(); });
+        list.appendChild(b);
+      });
+      if (!list.childNodes.length) list.appendChild(el("p", "Nichts gefunden."));
+    }
+    search.addEventListener("input", paint);
+    paint();
+    const p = RB.dialog({ nearTap: true, title: "Nicht erwartet – Sonstiges", text: "Ohne Bestand, die Lieferung wird nur vermerkt.", content: wrap,
+                          buttons: [{ label: "Abbrechen", value: null }] });
+    await Promise.race([p, new Promise((res) => { const iv = setInterval(() => { if (chosen) { clearInterval(iv); res(); } }, 80);
+                                                  p.then(() => clearInterval(iv)); })]);
+    return chosen;
   }
 
   // ------------------------------------------------------------ Scan-Abhaken (strichcode.md 6)
@@ -751,6 +872,7 @@
   }
 
   function scanStep(l, rm) {
+    if (l.raw_material_type === "goods") return 1000;     // Handelsware: 1 Scan = 1 Liefereinheit
     const gpu = l.grams_per_unit;
     if (rm && rm.pack_g && gpu) return Math.round(rm.pack_g * 1000 / gpu);
     if (l.rm_pack_g && gpu) return Math.round(l.rm_pack_g * 1000 / gpu);
@@ -850,7 +972,7 @@
   // Rezepte, Meldewert, Inventur und Kasse auf Einmal-Artikel). Nur die Gebindegröße wird gefragt.
   async function makeSub(l) {
     const m = S.marks[l.id];
-    if (l.raw_material_type === "aid") {      // Hilfs- und Betriebsstoff/Handelsware: in Einheiten, keine kg-Frage
+    if (l.raw_material_type === "aid" || l.raw_material_type === "goods") {   // Hilfs- und Betriebsstoff/Handelsware: in Einheiten, keine kg-Frage
       m.sub = { raw_material_id: l.raw_material_id, name: l.raw_material_name, grams_per_unit: null, pack_g: null };
       return { step: (l.pack && l.pack.step_milli) || 1000 };
     }
@@ -1079,6 +1201,8 @@
         try { await RB.api("admin/other-articles/" + o.id, { method: "PATCH", body: { raw_material_id: m.id } }); archive(); }
         catch (e) { fail(e); }
       }));
+      a.appendChild(btn("Verschieben nach …", () => otherMoveCopy(o, false)));
+      a.appendChild(btn("Kopieren nach …", () => otherMoveCopy(o, true)));
       a.appendChild(btn("Archivieren", async () => {
         try { await RB.api("admin/other-articles/" + o.id, { method: "PATCH", body: { archived: true } }); archive(); }
         catch (e) { fail(e); }
@@ -1087,6 +1211,34 @@
       t2.appendChild(tr);
     });
     $("main").appendChild(t2);
+  }
+
+  // „Verschieben nach …“ / „Kopieren nach …“ (K03-89): sonstiger Artikel → Rohstoff, Hilfs- und Betriebsstoff, Handelsware
+  async function otherMoveCopy(o, keep) {
+    const to = await RB.dialog({ nearTap: true, title: (keep ? "Kopieren nach …" : "Verschieben nach …"),
+      text: (o.description || o.article_no) + (keep ? " – legt einen neuen Artikel an, der sonstige Artikel bleibt."
+        : " – Belegzeilen und BÄKO-Artikelnummer wandern mit."),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Rohstoff", value: "standard" },
+                { label: "Hilfs- und Betriebsstoff", value: "aid" }, { label: "Handelsware", value: "goods", kind: "primary" }] });
+    if (!to) return;
+    const body = { to: to };
+    const unit = o.last_unit || "ST";
+    if (to === "goods") {
+      const n = await askPieces({ unit_code: unit, description: o.description });
+      if (!n) return;
+      body.pieces_per_unit = n;
+      body.is_deposit = await RB.dialog({ nearTap: true, title: "Pfand?", text: o.description || "", buttons: [
+        { label: "Kein Pfand", value: false }, { label: "Pfand (Kiste, Flasche)", value: true }] }) === true;
+    } else if (to === "standard" && unit !== "KG") {
+      const g = await askGpu(unit, o.description, null);
+      if (!g) return;
+      body.grams_per_unit = g;
+    }
+    try {
+      const r = await RB.api("admin/other-articles/" + o.id + "/" + (keep ? "copy" : "move"), { method: "POST", body: body });
+      msg((keep ? "Kopie angelegt: " : "Verschoben: ") + r.raw_material.number + " " + r.raw_material.name, "blue");
+      archive();
+    } catch (e) { fail(e); }
   }
 
   // ------------------------------------------------------------ Zuordnung eines Belegs ansehen/ändern (M03-41/M03-42)
@@ -1152,7 +1304,7 @@
       const info = el("td");
       info.appendChild(el("div", "Pos. " + l.line_no + " " + (l.description || "") + (l.article_no ? " · " + l.article_no : "")));
       let what;
-      if (l.target === "raw_material") what = (l.raw_material_type === "aid" ? "Hilfs- und Betriebsstoff " : "Rohstoff ") + l.raw_material_number + " " + l.raw_material_name;
+      if (l.target === "raw_material") what = (TYPE_WORD[l.raw_material_type] || "Rohstoff") + " " + l.raw_material_number + " " + l.raw_material_name;
       else if (l.target === "substitute") what = "Ersatz → " + l.raw_material_number + " " + l.raw_material_name;
       else if (l.target === "other") what = "Kein Rohstoff (Sonstiger Artikel)";
       else if (l.target === "strecke") what = "Streckenlieferung";
@@ -1256,7 +1408,7 @@
         if (u.checked) tr.className = "checked";
         const info = el("td");
         info.appendChild(el("div", (u.number ? u.number + " " : "") + u.name));
-        info.appendChild(el("div", u.group_name + " · " + (u.kind === "other_article" ? "Sonstiger Artikel" : u.type === "aid" ? "Hilfs- und Betriebsstoff" : "Rohstoff"), "sub"));
+        info.appendChild(el("div", u.group_name + " · " + (u.kind === "other_article" ? "Sonstiger Artikel" : (TYPE_WORD[u.type] || "Rohstoff")), "sub"));
         tr.appendChild(info);
         const a = el("td");
         const send = async (gid) => {

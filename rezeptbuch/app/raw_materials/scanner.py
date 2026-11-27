@@ -105,7 +105,8 @@ def _material(conn, raw_material_id: int) -> dict:
             "unit_size_g": row["unit_size_g"], "unit_label": row["unit_label"],
             "delivery_pack_g": row["delivery_pack_g"], "delivery_pack_label": row["delivery_pack_label"],
             "pack_g": pack_g, "pack_label": pack_label, "price_cents_per_kg": r["price_cents_per_kg"],
-            "locations": locations}
+            "locations": locations, "is_deposit": bool(row["is_deposit"]),
+            "stock_ref_name": row["stock_ref_name"]}
 
 
 def lookup(conn: sqlite3.Connection, raw: str, fmt: str | None = None) -> dict:
@@ -172,7 +173,7 @@ def _pack_input(payload: dict, row) -> dict:
     """Gebinde beim ersten Scan (Michael 23:31, H-F): nur wenn am Rohstoff noch leer."""
     if payload.get("pack_g") in (None, "") and payload.get("pack_label") in (None, ""):
         return {}
-    if row["type"] == "aid":
+    if row["type"] in ("aid", "goods"):
         size = AID_UNIT
     else:
         size = payload.get("pack_g")

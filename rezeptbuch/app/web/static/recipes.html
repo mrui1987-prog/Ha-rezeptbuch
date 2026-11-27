@@ -587,7 +587,7 @@ async function loadGroupsData() {
 }
 
 async function loadChoices() {
-  rawMaterials = (await api("raw-materials?include_archived=true")).filter((m) => m.type !== "aid");   // S8
+  rawMaterials = (await api("raw-materials?include_archived=true")).filter((m) => m.type !== "aid" && m.type !== "goods");   // S8, K03-85
   recipesAll = await api("recipes?include_locked=true&include_archived=true");
   const dlRaw = $("dl-raw"); dlRaw.textContent = "";
   rawMaterials.filter((m) => !m.archived).forEach((m) => dlRaw.appendChild(new Option(m.number + " – " + m.name)));

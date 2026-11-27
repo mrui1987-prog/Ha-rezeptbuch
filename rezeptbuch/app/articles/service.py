@@ -261,8 +261,8 @@ def _validate_line(conn: sqlite3.Connection, index: int, line, old_refs: set) ->
         if raw is None:
             raise ValidationError(f"{prefix}: Rohstoff nicht gefunden.", field=f"lines.{index}.raw_material_id",
                                   code="raw_material_not_found")
-        if raw["type"] == "aid":
-            raise ValidationError(f"{prefix}: Hilfs- und Betriebsstoffe stehen nicht in der Stückliste (F-2).",
+        if raw["type"] in ("aid", "goods"):
+            raise ValidationError(f"{prefix}: Hilfs- und Betriebsstoffe und Handelsware stehen nicht in der Stückliste (F-2).",
                                   field=f"lines.{index}.raw_material_id", code="raw_material_aid")
         if raw["archived"] and ("raw", raw_id) not in old_refs:
             raise ValidationError(f"{prefix}: Der Rohstoff ist archiviert.", field=f"lines.{index}.raw_material_id",

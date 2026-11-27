@@ -19,11 +19,12 @@ from ..errors import ConflictError, NotFoundError, ValidationError
 MAX_KG = Decimal("1000000")          # Plausibilitätsgrenze je Eingabe (1 000 t)
 KIND_TEXT = {"receipt": "Zugang", "inventory": "Bestand gesetzt", "consumption": "Verwiegung",
              "reversal": "Rückbuchung", "planner": "Planer", "planner_return": "Planer zurück",
-             "loss": "Abgang", "return": "Rückgabe", "correction": "Korrektur", "undo": "Rückgängig"}
+             "loss": "Abgang", "return": "Rückgabe", "correction": "Korrektur", "undo": "Rückgängig",
+             "sale": "Verkauf laut Kasse"}
 # Abgangsgründe (K03-54, docs/strichcode.md 7)
 # M03-27 (22.11.2026): „Bruch“ und „Verderb“ zusammengefasst; alte Buchungen mit „spoilage“ zeigen denselben Text
 REASONS = {"breakage": "Bruch/Verderb", "own_use": "Eigenverbrauch", "merchandise": "Handelsware",
-           "other": "Sonstiges"}
+           "other": "Sonstiges", "deposit_return": "Pfand zurück"}      # Pfand zurück: H1, K03-74
 SCAN = "scan"                    # Quelle der Scan-Buchungen (docs/strichcode.md 8)
 UNDO_MINUTES = 10                # Rückgängig nur eigene Scans der letzten 10 Minuten (docs/strichcode.md 3)
 MAX_PACKS = 999
@@ -83,7 +84,9 @@ def status(stock_g: int | None, alert_g: int | None, need_g: int = 0) -> str | N
 
 def _row(conn: sqlite3.Connection, raw_material_id: int) -> sqlite3.Row:
     row = conn.execute("SELECT id, number, name, type, stock_g, stock_alert_g, archived, unit_size_g, unit_label, "
-                       "delivery_pack_g, delivery_pack_label FROM raw_material WHERE id = ?",
+                       "delivery_pack_g, delivery_pack_label, is_deposit, stock_ref_id, piece_g, "
+                       "(SELECT x.name FROM raw_material x WHERE x.id = raw_material.stock_ref_id) AS stock_ref_name "
+                       "FROM raw_material WHERE id = ?",
                        (raw_material_id,)).fetchone()
     if row is None:
         raise NotFoundError("Rohstoff nicht gefunden.", code="not_found")
@@ -92,17 +95,19 @@ def _row(conn: sqlite3.Connection, raw_material_id: int) -> sqlite3.Row:
 
 def _book(conn, raw_material_id: int, kind: str, before: int | None, after: int | None, *, source: str,
           note: str | None = None, batch_id=None, batch_item_id=None, station=None, reason=None,
-          purchase_id=None, device_id=None, undo_of_id=None, receiving_line_id=None, stocktake_id=None) -> int:
+          purchase_id=None, device_id=None, undo_of_id=None, receiving_line_id=None, stocktake_id=None,
+          sales_import_id=None) -> int:
     delta = None if before is None or after is None else after - before
-    if kind in ("receipt", "consumption", "reversal", "correction") and before is None and after is not None:
+    if kind in ("receipt", "consumption", "reversal", "correction", "sale", "loss") and before is None \
+            and after is not None:
         delta = after                               # erste Buchung schaltet die Führung ein
     conn.execute("UPDATE raw_material SET stock_g = ? WHERE id = ?", (after, raw_material_id))
     cur = conn.execute(
         "INSERT INTO stock_movement (raw_material_id, kind, delta_g, stock_after_g, batch_id, batch_item_id, "
-        "station_id, source, note, reason, purchase_id, device_id, undo_of_id, receiving_line_id, stocktake_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "station_id, source, note, reason, purchase_id, device_id, undo_of_id, receiving_line_id, stocktake_id, "
+        "sales_import_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (raw_material_id, kind, delta, after, batch_id, batch_item_id, station, source, note, reason,
-         purchase_id, device_id, undo_of_id, receiving_line_id, stocktake_id))
+         purchase_id, device_id, undo_of_id, receiving_line_id, stocktake_id, sales_import_id))
     return cur.lastrowid
 
 
@@ -115,8 +120,16 @@ def _note(note) -> str | None:
     return text or None
 
 
+def no_reference(row) -> None:
+    """Handelsware als Verweis (K03-93) führt keinen eigenen Bestand – gebucht wird beim Rohstoff."""
+    if row["stock_ref_id"] is not None:
+        raise ConflictError(f"„{row['name']}“ führt keinen eigenen Bestand – der Bestand steht beim Rohstoff "
+                            f"„{row['stock_ref_name']}“.", code="stock_on_reference")
+
+
 def receipt_in_tx(conn, raw_material_id: int, grams: int, *, note=None, station=None, source="admin") -> int:
     row = _row(conn, raw_material_id)
+    no_reference(row)
     before = row["stock_g"]
     return _book(conn, raw_material_id, "receipt", before, (before or 0) + grams, source=source, note=_note(note),
                  station=station)
@@ -127,6 +140,8 @@ def inventory_in_tx(conn, raw_material_id: int, grams: int | None, *, note=None,
     row = _row(conn, raw_material_id)
     if row["stock_g"] is None and grams is None:
         return False
+    if grams is not None:
+        no_reference(row)
     _book(conn, raw_material_id, "inventory", row["stock_g"], grams, source=source, note=_note(note))
     return True
 
@@ -221,6 +236,7 @@ def inventory(conn, raw_material_id: int, payload: dict) -> int | None:
         row = _row(conn, raw_material_id)
         if row["stock_g"] is None and grams is None:
             return None
+        no_reference(row)
         return _book(conn, raw_material_id, "inventory", row["stock_g"], grams, source=source,
                      note=_note(payload.get("note")), device_id=device)
 
@@ -262,14 +278,21 @@ def _reason(payload: dict) -> str:
     if reason == "spoilage":                      # alter Wert (0.10.21) → zusammengefasst (M03-27)
         reason = "breakage"
     if reason not in REASONS:
-        raise ValidationError("Bitte einen Grund wählen (Bruch/Verderb, Eigenverbrauch, Handelsware, Sonstiges).",
-                              field="reason")
+        raise ValidationError("Bitte einen Grund wählen (Bruch/Verderb, Eigenverbrauch, Handelsware, Sonstiges, "
+                              "Pfand zurück).", field="reason")
     return reason
+
+
+def _deposit_reason(row, reason: str | None) -> None:
+    if reason == "deposit_return" and not row["is_deposit"]:
+        raise ValidationError(f"„Pfand zurück“ gibt es nur für Pfand-Artikel („{row['name']}“ ist keiner).",
+                              field="reason", code="not_deposit")
 
 
 def _bookable(row) -> None:
     if row["archived"]:
         raise ConflictError(f"„{row['name']}“ ist archiviert – keine Buchung.", code="archived")
+    no_reference(row)
 
 
 def scan_book(conn, raw_material_id: int, payload: dict, *, mode: str) -> dict:
@@ -289,6 +312,7 @@ def scan_book(conn, raw_material_id: int, payload: dict, *, mode: str) -> dict:
         purchase_id = reason = None
         if mode == "loss":
             reason = _reason(payload)
+            _deposit_reason(row, reason)
             if before is None:
                 raise ConflictError(f"„{row['name']}“ wird ohne Bestand geführt – Abgang nicht möglich.",
                                     code="not_tracked")
@@ -320,6 +344,7 @@ def loss(conn, raw_material_id: int, payload: dict) -> int:
     with transaction(conn):
         row = _row(conn, raw_material_id)
         _bookable(row)
+        _deposit_reason(row, reason)
         if row["stock_g"] is None:
             raise ConflictError(f"„{row['name']}“ wird ohne Bestand geführt – Abgang nicht möglich.",
                                 code="not_tracked")

@@ -21,7 +21,7 @@ from .models import tolerance_display
 
 MAX_BULK = 1000
 ACTIONS = ("archive", "restore", "tolerance", "type", "alert", "stock", "active_source")
-TYPE_TEXT = {"standard": "Standard", "flour": "Mehl", "aid": "Hilfs- und Betriebsstoff"}
+TYPE_TEXT = {"standard": "Standard", "flour": "Mehl", "aid": "Hilfs- und Betriebsstoff", "goods": "Handelsware"}
 NOTE = "Sammelaktion"
 
 

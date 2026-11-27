@@ -496,9 +496,10 @@ def _check_references(conn, recipe_id: int | None, clean: dict, current_items: l
             if rm is None:
                 raise ValidationError(f"{where}: Rohstoff nicht gefunden.",
                                       field=f"items.{item['position']}.raw_material_id", code="not_found")
-            if rm["type"] == "aid":
+            if rm["type"] in ("aid", "goods"):
                 raise ValidationError(
-                    f"{where}: „{rm['name']}“ ist ein Hilfs- und Betriebsstoff und gehört nicht ins Rezept.",
+                    f"{where}: „{rm['name']}“ ist {'Handelsware' if rm['type'] == 'goods' else 'ein Hilfs- und Betriebsstoff'} "
+                    "und gehört nicht ins Rezept.",
                     field=f"items.{item['position']}.raw_material_id", code="raw_material_aid")
             if rm["archived"] and item["raw_material_id"] not in kept_rm:
                 raise ValidationError(

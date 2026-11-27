@@ -72,7 +72,8 @@ COLUMN_LABEL = {
 }
 
 TYPE_VALUES = {"standard": "standard", "mehl": "flour", "flour": "flour", "aid": "aid",
-               "hilfs- und betriebsstoff": "aid", "hbs": "aid"}
+               "hilfs- und betriebsstoff": "aid", "hbs": "aid",
+               "goods": "goods", "handelsware": "goods", "hw": "goods"}
 UNIT_VALUES = {"g": "g", "%": "percent", "percent": "percent", "prozent": "percent"}
 ARCHIVED_VALUES = {"ja": True, "1": True, "nein": False, "0": False}
 
@@ -271,7 +272,7 @@ def _show(item: dict) -> dict:
     return {
         "Name": item["name"],
         "Kurzname": item["display_name"] or "(leer)",
-        "Typ": {"flour": "Mehl", "aid": "Hilfs- und Betriebsstoff"}.get(item["type"], "Standard"),
+        "Typ": {"flour": "Mehl", "aid": "Hilfs- und Betriebsstoff", "goods": "Handelsware"}.get(item["type"], "Standard"),
         "Toleranz": tolerance,
         "Gebinde": f"{item['unit_size_g']} g {item['unit_label']}" if item["unit_size_g"] else "(leer)",
         "archiviert": "ja" if item["archived"] else "nein",

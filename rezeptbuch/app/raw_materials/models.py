@@ -16,8 +16,11 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from ..errors import ValidationError
 from ..text_rules import check_no_formula_start
 
-TYPES = ("standard", "flour", "aid")       # aid = Hilfs- und Betriebsstoff (M03-26)
+TYPES = ("standard", "flour", "aid", "goods")   # aid = Hilfs- und Betriebsstoff (M03-26), goods = Handelsware (K03-85)
 AID_UNIT = 1000                            # intern 1 Verpackungseinheit = 1000 (wie 1 kg, Strichcode S1)
+GOODS_UNIT = 1000                          # Handelsware: intern 1 Stück = 1000 (wie die VE, docs/handelsware.md 3)
+COUNTED_TYPES = ("aid", "goods")           # gezählt in Einheiten statt Gramm; nie in Rezepten, Stücklisten, Planer
+TYPE_TEXT = {"standard": "Standard", "flour": "Mehl", "aid": "Hilfs- und Betriebsstoff", "goods": "Handelsware"}
 TOLERANCE_UNITS = ("g", "percent")
 
 MAX_NAME = 100
@@ -210,8 +213,22 @@ def validate(data: dict, *, base: dict | None = None) -> dict:
 
     type_ = merged.get("type") or "standard"
     if type_ not in TYPES:
-        raise ValidationError("Typ muss „standard“, „flour“ (Mehl) oder „aid“ (Hilfs- und Betriebsstoff) sein.",
-                              field="type")
+        raise ValidationError("Typ muss „standard“, „flour“ (Mehl), „aid“ (Hilfs- und Betriebsstoff) oder "
+                              "„goods“ (Handelsware) sein.", field="type")
+
+    if type_ == "goods":
+        # Handelsware (K03-85): keine Toleranz, gezählt in Stück; Liefereinheit über die Bezugsquelle
+        unit_label = _text(merged.get("unit_label"), "unit_label", "Einheit", required=False,
+                           max_len=MAX_UNIT_LABEL) or "Stück"
+        if merged.get("delivery_pack_g") not in (None, "") or merged.get("delivery_pack_label") not in (None, ""):
+            if base is None or "delivery_pack_g" in data or "delivery_pack_label" in data:
+                raise ValidationError("Handelsware hat kein Liefergebinde in Gramm; „Stück je Liefereinheit“ steht an "
+                                      "der Bezugsquelle.", field="delivery_pack_g")
+        return {
+            "number": number, "name": name, "display_name": display_name, "type": type_,
+            "tolerance_unit": "g", "tolerance_value": 0, "unit_size_g": GOODS_UNIT, "unit_label": unit_label,
+            "delivery_pack_g": None, "delivery_pack_label": None,
+        }
 
     if type_ == "aid":
         # Hilfs- und Betriebsstoff (M03-26, S8): keine Toleranz, gezählt in Verpackungseinheiten

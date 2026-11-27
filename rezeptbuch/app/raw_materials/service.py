@@ -17,7 +17,7 @@ from ..db import transaction
 from ..errors import ConflictError, NotFoundError, ValidationError
 from . import sources as sources_mod
 from . import stock as stock_mod
-from .models import normalize_text, parse_price, tolerance_display, validate
+from .models import COUNTED_TYPES, TYPES, normalize_text, parse_price, tolerance_display, validate
 
 # Ähnlichkeit ab der ein Name als „ähnlich“ gemeldet wird (R03-3)
 SIMILARITY_THRESHOLD = 0.8
@@ -33,6 +33,9 @@ _SELECT = ("SELECT * FROM (SELECT r.id, r.number, r.name, r.display_name, r.type
            "r.price_cents_per_kg, r.price_changed_at, r.stock_g, r.stock_alert_g, r.datenlink_id, "
            "r.delivery_pack_g, r.delivery_pack_label, r.location1_id, r.location1_label, r.location2_id, "
            "r.location2_label, l1.name AS location1_name, l2.name AS location2_name, "
+           "r.is_deposit, r.register_no, r.stock_ref_id, r.piece_g, ref.number AS stock_ref_number, "
+           "ref.name AS stock_ref_name, (SELECT a.name FROM sales_article a WHERE a.register_no = r.register_no) "
+           "AS register_name, "
            "(SELECT count(*) FROM raw_material_barcode c WHERE c.raw_material_id = r.id) AS barcode_count, "
            "s.id AS active_source_id, s.article_no AS active_article_no, d.id AS active_dealer_id, "
            "d.name AS active_dealer_name "
@@ -40,7 +43,8 @@ _SELECT = ("SELECT * FROM (SELECT r.id, r.number, r.name, r.display_name, r.type
            "LEFT JOIN raw_material_source s ON s.raw_material_id = r.id AND s.is_active = 1 "
            "LEFT JOIN dealer d ON d.id = s.dealer_id "
            "LEFT JOIN storage_location l1 ON l1.id = r.location1_id "
-           "LEFT JOIN storage_location l2 ON l2.id = r.location2_id)")
+           "LEFT JOIN storage_location l2 ON l2.id = r.location2_id "
+           "LEFT JOIN raw_material ref ON ref.id = r.stock_ref_id)")
 
 _NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
@@ -83,6 +87,15 @@ def _to_dict(row: sqlite3.Row) -> dict:
         "stock_status": stock_mod.status(row["stock_g"], row["stock_alert_g"]),
         # Modul 04: Herkunft own/datenlink, Pass-Zuordnung, aktive Bezugsquelle (Preis = deren Preis, M04-14)
         "datenlink_id": row["datenlink_id"],
+        # Handelsware (H1, docs/handelsware.md 3): Pfand, Kassennummer, Verweis auf den bestandsführenden Rohstoff
+        "is_deposit": bool(row["is_deposit"]),
+        "register_no": row["register_no"],
+        "register_name": row["register_name"],
+        "stock_ref": None if row["stock_ref_id"] is None else {
+            "id": row["stock_ref_id"], "number": row["stock_ref_number"], "name": row["stock_ref_name"]},
+        "piece_g": row["piece_g"],
+        "register_hint": "ohne Kassenartikel, nur Inventur" if row["type"] == "goods" and row["register_no"] is None
+        else None,
         "active_source": None if row["active_source_id"] is None else {
             "id": row["active_source_id"],
             "dealer_id": row["active_dealer_id"],
@@ -139,9 +152,14 @@ def _name_key(name: str) -> str:
 name_key = _name_key
 
 
-def _find_active_with_name(conn: sqlite3.Connection, name: str, exclude_id: int | None = None):
+def _find_active_with_name(conn: sqlite3.Connection, name: str, exclude_id: int | None = None,
+                           type_: str | None = None):
+    """Aktiver Eintrag mit gleichem Namen. Handelsware und übrige Arten zählen getrennt (K03-93: H-Milch als
+    Rohstoff und als Handelsware); ``type_`` None = alle."""
     key = _name_key(name)
-    for row in conn.execute("SELECT id, number, name FROM raw_material WHERE archived = 0"):
+    for row in conn.execute("SELECT id, number, name, type FROM raw_material WHERE archived = 0"):
+        if type_ is not None and (row["type"] == "goods") != (type_ == "goods"):
+            continue
         if row["id"] != exclude_id and _name_key(row["name"]) == key:
             return row
     return None
@@ -228,7 +246,7 @@ def list_raw_materials(conn: sqlite3.Connection, search: str | None = None,
         where.append("archived = 0 AND stock_g IS NOT NULL AND stock_alert_g IS NOT NULL "
                      "AND stock_g <= stock_alert_g")
     if type_ is not None:
-        if type_ not in ("standard", "flour", "aid"):
+        if type_ not in TYPES:
             raise ValidationError("Unbekannter Typ-Filter.", field="type")
         where.append("type = ?")
         params.append(type_)
@@ -290,6 +308,57 @@ def similar_names(conn: sqlite3.Connection, name: str, exclude_id: int | None = 
 
 
 # -- Ändern ---------------------------------------------------------------------
+
+def _goods_fields(conn: sqlite3.Connection, data: dict, type_: str, row=None) -> dict:
+    """Felder der Handelsware (H1): ``is_deposit``, ``register_no`` (Kassennummer), ``stock_ref_id`` + ``piece_g``
+    (Verweis, K03-93). Nur mitgeschickte Felder; bei anderer Art werden sie geleert (CHECK-Regeln)."""
+    if type_ != "goods":
+        if row is None:
+            return {}
+        return {c: v for c, v in (("is_deposit", 0), ("register_no", None), ("stock_ref_id", None),
+                                  ("piece_g", None)) if row[c] != v}
+    out: dict = {}
+    if "is_deposit" in data:
+        if not isinstance(data["is_deposit"], bool):
+            raise ValidationError("Pfand: ja oder nein.", field="is_deposit")
+        out["is_deposit"] = 1 if data["is_deposit"] else 0
+    if "register_no" in data:
+        value = data["register_no"]
+        if isinstance(value, str):
+            value = value.strip()
+            value = int(value) if value.isdigit() else (None if value == "" else value)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                  or not 0 < value <= 2_000_000_000):
+            raise ValidationError("Kassennummer: ganze Zahl größer 0 (leer = ohne Kassenartikel).",
+                                  field="register_no")
+        if value is not None:
+            other = conn.execute("SELECT number, name FROM raw_material WHERE register_no = ? AND archived = 0 "
+                                 "AND id IS NOT ?", (value, row["id"] if row is not None else None)).fetchone()
+            if other is not None:
+                raise ConflictError(f"Die Kassennummer {value} hat schon „{other['name']}“ (Nummer {other['number']}).",
+                                    field="register_no", code="register_no_taken")
+        out["register_no"] = value
+    if "stock_ref_id" in data or "piece_g" in data:
+        ref = data.get("stock_ref_id", row["stock_ref_id"] if row is not None else None)
+        piece = data.get("piece_g", row["piece_g"] if row is not None else None)
+        if ref in (None, ""):
+            out.update(stock_ref_id=None, piece_g=None)
+        else:
+            if isinstance(ref, bool) or not isinstance(ref, int):
+                raise ValidationError("Ungültiger Rohstoff.", field="stock_ref_id")
+            target = conn.execute("SELECT id, type, archived, name FROM raw_material WHERE id = ?", (ref,)).fetchone()
+            if target is None or target["type"] not in ("standard", "flour") or (row is not None and ref == row["id"]):
+                raise ValidationError("Bestand führen kann nur ein Rohstoff (Standard oder Mehl).", field="stock_ref_id")
+            if isinstance(piece, str) and piece.strip().isdigit():
+                piece = int(piece.strip())
+            if isinstance(piece, bool) or not isinstance(piece, int) or not 0 < piece <= 1_000_000:
+                raise ValidationError("Gewicht je Stück in g angeben (z. B. 1000 für 1 l H-Milch).", field="piece_g",
+                                      code="piece_g_missing")
+            out.update(stock_ref_id=ref, piece_g=piece)
+            if row is not None and row["stock_g"] is not None:
+                out["stock_g"] = None             # der Verweis führt keinen eigenen Bestand
+    return out
+
 
 def _integrity(exc: sqlite3.IntegrityError, what: str = "Der Rohstoff konnte nicht gespeichert werden") -> ConflictError:
     return ConflictError(f"{what}: {exc}", code="integrity")
@@ -363,11 +432,12 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
     elif conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (clean["number"],)).fetchone():
         raise ConflictError(f"Die Nummer {clean['number']} ist schon vergeben.",
                             field="number", code="number_taken")
-    same = _find_active_with_name(conn, clean["name"])
+    same = _find_active_with_name(conn, clean["name"], type_=clean["type"])
     if same is not None:
         raise ConflictError(
-            f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
-            field="name", code="name_taken")
+            f"Einen {'Handelsware-Artikel' if clean['type'] == 'goods' else 'Rohstoff'} „{same['name']}“ gibt es "
+            f"schon (Nummer {same['number']}).", field="name", code="name_taken")
+    goods = _goods_fields(conn, data, clean["type"])
     cur = conn.execute(
         "INSERT INTO raw_material (number, name, display_name, type, tolerance_unit, tolerance_value, "
         "unit_size_g, unit_label, delivery_pack_g, delivery_pack_label, source, price_cents_per_kg, "
@@ -379,6 +449,11 @@ def create_in_tx(conn: sqlite3.Connection, data: dict, source: str = "admin",
     if locs:
         conn.execute("UPDATE raw_material SET " + ", ".join(f"{c} = ?" for c in locs) + " WHERE id = ?",
                      (*locs.values(), new_id))
+    if clean["type"] == "goods" and goods.get("stock_ref_id") is None and data.get("start_stock", True):
+        goods["stock_g"] = 0                    # Handelsware führt Bestand ab Anlage (in Stück, K03-85)
+    if goods:
+        conn.execute("UPDATE raw_material SET " + ", ".join(f"{c} = ?" for c in goods) + " WHERE id = ?",
+                     (*goods.values(), new_id))
     _log(conn, "create", new_id, None, _snapshot(_fetch(conn, new_id)), source)
     return new_id
 
@@ -413,6 +488,10 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
     if alert_given and alert != row["stock_alert_g"]:
         changes["stock_alert_g"] = alert
     changes.update(_locations(conn, data, row))
+    new_type = changes.get("type", row["type"])
+    for c, v in _goods_fields(conn, data, new_type, row).items():
+        if v != row[c]:
+            changes[c] = v
     if not changes:
         return {"price_cents_per_kg": price_routed} if price_routed else {}
 
@@ -425,16 +504,18 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
         if conn.execute("SELECT 1 FROM raw_material WHERE number = ?", (changes["number"],)).fetchone():
             raise ConflictError(f"Die Nummer {changes['number']} ist schon vergeben.",
                                 field="number", code="number_taken")
-    if "name" in changes and not row["archived"]:
-        same = _find_active_with_name(conn, changes["name"], exclude_id=raw_material_id)
+    if ("name" in changes or "type" in changes) and not row["archived"]:
+        same = _find_active_with_name(conn, changes.get("name", row["name"]), exclude_id=raw_material_id,
+                                      type_=new_type)
         if same is not None:
             raise ConflictError(
                 f"Einen Rohstoff „{same['name']}“ gibt es schon (Nummer {same['number']}).",
                 field="name", code="name_taken")
-    if "type" in changes and "aid" in (row["type"], changes["type"]) and (use["used"] or _in_articles(conn, raw_material_id)):
-        # Hilfs- und Betriebsstoffe stehen nie in Rezepten, an der Waage oder im Planer (S8, W-6)
-        raise ConflictError("Der Wechsel von/zu „Hilfs- und Betriebsstoff“ geht nicht, solange der Eintrag in "
-                            "Rezepten, Aufträgen oder Verkaufsartikeln steht.", field="type", code="type_locked_aid")
+    if "type" in changes and changes["type"] in COUNTED_TYPES and (use["used"] or _in_articles(conn, raw_material_id)):
+        # Hilfs- und Betriebsstoffe und Handelsware stehen nie in Rezepten, an der Waage oder im Planer (S8, W-6, K03-85)
+        raise ConflictError("Der Wechsel zu „Hilfs- und Betriebsstoff“ oder „Handelsware“ geht nicht, solange der "
+                            "Eintrag in Rezepten, Aufträgen oder Verkaufsartikeln steht – nur kopieren (K03-89).",
+                            field="type", code="type_locked_aid")
     if "type" in changes and use["recipes"] and not confirm_type_change:
         n = use["recipes"]
         raise ConflictError(
@@ -442,6 +523,15 @@ def update_in_tx(conn: sqlite3.Connection, raw_material_id: int, data: dict,
             "„Mehl gesamt“ ändert sich dort. Bitte bestätigen.",
             field="type", code="type_change_confirmation_required", affected_recipes=n)
 
+    if "type" in changes and "goods" in (row["type"], changes["type"]) and row["stock_g"] is not None \
+            and (row["type"] in ("standard", "flour") or changes["type"] in ("standard", "flour")):
+        raise ConflictError("Gramm und Stück lassen sich nicht einfach umstellen – bitte „Verschieben nach …“ "
+                            "nehmen (rechnet den Bestand über das Gewicht je Stück um).", field="type",
+                            code="type_move_required")
+    if "stock_g" in changes:                    # Verweis (K03-93): eigenen Bestand sauber beenden
+        changes.pop("stock_g")
+        stock_mod.inventory_in_tx(conn, raw_material_id, None, note="Verweis auf Rohstoff – Bestand dort",
+                                  source=source)
     assignments = ", ".join(f"{c} = ?" for c in changes)
     if price_changed:
         assignments += f", price_changed_at = {_NOW}"

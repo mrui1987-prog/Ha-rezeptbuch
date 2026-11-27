@@ -44,6 +44,8 @@ EXPECTED_TABLES = {
     "booking_group", "commodity_group_booking",
     # Modul 03, Inventur Teil I1 (0014)
     "stocktake", "stocktake_count", "stocktake_line",
+    # Modul 03, Handelsware und Pfand H1 (0015)
+    "sales_import", "sales_import_line",
 }
 
 

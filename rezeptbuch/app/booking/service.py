@@ -113,11 +113,13 @@ def proposal(conn, dealer_id: int, commodity_group: str | None, *, raw_material_
              other_article_id: int | None = None, new_type: str | None = None) -> dict:
     """Vorschlag für eine Belegposition: {id, checked, source} – id None = muss gefragt werden."""
     if raw_material_id:
-        row = conn.execute("SELECT booking_group_id, booking_group_checked, type FROM raw_material WHERE id = ?",
-                           (raw_material_id,)).fetchone()
+        row = conn.execute("SELECT booking_group_id, booking_group_checked, type, is_deposit FROM raw_material "
+                           "WHERE id = ?", (raw_material_id,)).fetchone()
         if row and row["booking_group_id"]:
             return {"id": row["booking_group_id"], "checked": bool(row["booking_group_checked"]), "source": "article"}
         new_type = row["type"] if row else new_type
+        if row and row["type"] == "goods":           # Handelsware → HW, Pfand → Leergut (M03-31, docs/handelsware.md 5)
+            return {"id": LEERGUT if row["is_deposit"] else HANDELSWARE, "checked": False, "source": "type"}
     if other_article_id:
         row = conn.execute("SELECT booking_group_id, booking_group_checked FROM other_article WHERE id = ?",
                            (other_article_id,)).fetchone()
@@ -127,7 +129,8 @@ def proposal(conn, dealer_id: int, commodity_group: str | None, *, raw_material_
     if gid:
         return {"id": gid, "checked": False, "source": "commodity_group"}
     if new_type is not None or raw_material_id:
-        return {"id": UNKOSTEN if new_type == "aid" else ROHSTOFFE, "checked": False, "source": "type"}
+        return {"id": UNKOSTEN if new_type == "aid" else HANDELSWARE if new_type == "goods" else ROHSTOFFE,
+                "checked": False, "source": "type"}
     return {"id": None, "checked": False, "source": None}
 
 

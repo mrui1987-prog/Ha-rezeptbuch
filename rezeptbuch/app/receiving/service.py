@@ -20,7 +20,7 @@ from ..db import transaction
 from ..db.connection import default_db_path
 from ..errors import ConflictError, NotFoundError, ValidationError
 from ..raw_materials import service as raw_materials, sources, stock
-from ..raw_materials.models import AID_UNIT, normalize_text
+from ..raw_materials.models import AID_UNIT, GOODS_UNIT, normalize_text
 from ..readers import client
 
 READER = "baeko-beleg"
@@ -33,6 +33,25 @@ PACK_NAMES = {"SCK": "Sack", "KT": "Karton", "EI": "Eimer", "BT": "Beutel", "DS"
               "KA": "Kanister", "ST": "Stück", "VE": "VE", "PK": "Paket", "BL": "Block", "TB": "Tube"}
 _PACK = re.compile(r"^\s*(\d+)\s+(\S+)\s+(?:à|a)\s+([\d.,]+)\s+(\S+)\s*$", re.I)
 _WORD = re.compile(r"[a-zäöüß0-9]{3,}")
+_PIECES = re.compile(r"(\d+)\s*(?:ST|STK|STÜCK|FL|DS|BT)\b", re.I)
+DEPOSIT_GROUP = "1405"          # BÄKO-Warengruppe Pfand/Leergut (docs/handelsware.md 4)
+
+
+def pieces_hint(pack_text: str | None, unit_code: str | None) -> int | None:
+    """Stück je Liefereinheit aus dem Gebindetext vorschlagen (K03-73): „24 ST à 0,33 L“ → 24; Einheit ST → 1."""
+    if (unit_code or "").upper() == "ST":
+        return 1
+    m = _PIECES.search(pack_text or "")
+    return int(m.group(1)) if m and 0 < int(m.group(1)) <= 10000 else None
+
+
+def _goods_gpu(conn, rm_id: int, dealer_id: int, unit_code: str | None) -> int | None:
+    """Handelsware: Stück je Liefereinheit × 1000 von der Bezugsquelle; Einheit ST = 1 Stück."""
+    row = conn.execute("SELECT grams_per_unit FROM raw_material_source WHERE raw_material_id = ? AND dealer_id = ?",
+                       (rm_id, dealer_id)).fetchone()
+    if row and row["grams_per_unit"]:
+        return row["grams_per_unit"]
+    return GOODS_UNIT if (unit_code or "").upper() in ("ST", "KG") else None
 
 
 def documents_dir() -> Path:
@@ -144,15 +163,23 @@ def _preview(conn, res: dict, sha: str) -> dict:
         other = conn.execute("SELECT id, description FROM other_article WHERE dealer_id = ? AND article_no = ?",
                              (dealer_id, art)).fetchone() if art else None
         if hit:
+            goods = hit["type"] == "goods"
             line.update(target="raw_material", raw_material_id=hit["raw_material_id"], raw_material_name=hit["name"],
                         raw_material_type=hit["type"],
-                        needs_gpu=line["unit_code"] != "KG" and hit["type"] != "aid" and not hit["grams_per_unit"]
-                        and not billing)
+                        needs_gpu=line["unit_code"] not in (("KG", "ST") if goods else ("KG",)) and hit["type"] != "aid"
+                        and not hit["grams_per_unit"] and not billing)
+            if goods:
+                line.update(gpu_kind="pieces", pieces_hint=pieces_hint(line["pack_text"], line["unit_code"]))
         elif other:
             line.update(target="other", other_article_id=other["id"])
         else:
+            learned = booking.learned(conn, dealer_id, line["commodity_group"])
+            deposit = line["commodity_group"] == DEPOSIT_GROUP or learned == booking.LEERGUT
             line.update(target="unknown", suggestions=_suggestions(conn, line["description"]),
-                        needs_gpu=line["unit_code"] != "KG" and not billing)
+                        needs_gpu=line["unit_code"] != "KG" and not billing,
+                        # Vorschlag „Handelsware“ (M03-39), Pfand-Haken nur bei Pfand/Leergut laut Beleg (K03-92)
+                        suggest_goods=deposit or learned == booking.HANDELSWARE, deposit_hint=deposit,
+                        pieces_hint=pieces_hint(line["pack_text"], line["unit_code"]))
             prior = conn.execute(   # M03-36: kam dieser Artikel schon einmal als Ersatz?
                 "SELECT l.raw_material_id, r.name, r.number FROM receiving_line l JOIN raw_material r ON r.id = l.raw_material_id "
                 "WHERE l.target = 'substitute' AND l.substitute_ref = ? ORDER BY l.id DESC LIMIT 1", (art,)).fetchone() \
@@ -181,6 +208,16 @@ def book_cents(p: dict) -> int | None:
     if p.get("skonto") and p["skonto"].get("cent") is not None and p.get("netto_cent") is not None:
         return p["netto_cent"] + p["skonto"]["cent"]
     return p.get("netto_cent")
+
+
+def _pieces(value, line: dict, where: str) -> int:
+    """Stück je Liefereinheit (K03-73) → Wert für ``grams_per_unit`` (Stück × 1000)."""
+    if value in (None, ""):
+        value = line.get("pieces_hint")
+    if value in (None, ""):
+        raise ValidationError(f"{where}: Stück je {UNIT_WORDS.get(line['unit_code'], line['unit_code'])} fehlt.",
+                              field=f"{line['line_no']}.pieces_per_unit", code="pieces_missing")
+    return _int(value, f"{line['line_no']}.pieces_per_unit", minimum=1, maximum=10000) * GOODS_UNIT
 
 
 def _gpu(value, field: str, where: str = "", unit: str = "") -> int:
@@ -247,7 +284,10 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                 line.get("other_article_id"), None, None
             where = f"Pos. {line['line_no']} ({line['description']})"
             if target == "raw_material" and line.get("needs_gpu") and not pre["billing"]:
-                gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
+                if line.get("gpu_kind") == "pieces":
+                    gpu = _pieces(dec.get("pieces_per_unit"), line, where)
+                else:
+                    gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
                 _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
             elif target == "unknown":
                 action = dec.get("action")
@@ -255,25 +295,40 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                 if action in ("assign", "new", "aid_assign", "aid_new", "substitute") and line["needs_gpu"] \
                         and action not in ("aid_assign", "aid_new") and not pre["billing"]:
                     gpu = _gpu(dec.get("grams_per_unit"), f"{line['line_no']}.grams_per_unit", where, line["unit_code"])
-                if action in ("assign", "aid_assign"):
+                if action in ("goods_assign", "goods_new"):
+                    gpu = None if pre["billing"] and dec.get("pieces_per_unit") in (None, "") \
+                        and not line.get("pieces_hint") else _pieces(dec.get("pieces_per_unit"), line, where)
+                if action in ("assign", "aid_assign", "goods_assign"):
                     rm_id = _int(dec.get("raw_material_id"), f"{line['line_no']}.raw_material_id", minimum=1)
                     rm = stock._row(conn, rm_id)
-                    if (action == "aid_assign") != (rm["type"] == "aid"):
-                        raise ValidationError(f"{where}: Art passt nicht (Rohstoff/Hilfs- und Betriebsstoff).",
+                    want = {"aid_assign": "aid", "goods_assign": "goods"}.get(action)
+                    if (want or "material") != (rm["type"] if rm["type"] in ("aid", "goods") else "material"):
+                        raise ValidationError(f"{where}: Art passt nicht (Rohstoff/Hilfs- und Betriebsstoff/Handelsware).",
                                               field=f"{line['line_no']}.raw_material_id")
+                    if rm["stock_ref_id"] is not None:
+                        raise ValidationError(f"{where}: „{rm['name']}“ führt keinen eigenen Bestand – bitte den Rohstoff "
+                                              f"„{rm['stock_ref_name']}“ zuordnen (K03-93).",
+                                              field=f"{line['line_no']}.raw_material_id", code="stock_on_reference")
                     _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
+                    if action == "goods_assign" and isinstance(dec.get("is_deposit"), bool):
+                        conn.execute("UPDATE raw_material SET is_deposit = ? WHERE id = ?",
+                                     (1 if dec["is_deposit"] else 0, rm_id))
                     target = "raw_material"
-                elif action in ("new", "aid_new") and line["article_no"] and \
+                elif action in ("new", "aid_new", "goods_new") and line["article_no"] and \
                         made.get(line["article_no"], ("", 0))[0] == "raw_material":
                     rm_id = made[line["article_no"]][1]       # gleicher Artikel zweimal im Beleg
                     target = "raw_material"
-                elif action in ("new", "aid_new"):
+                elif action in ("new", "aid_new", "goods_new"):
                     data = {"name": dec.get("name") or line["description"]}
                     if action == "new":
                         data.update(type="standard", tolerance_unit=dec.get("tolerance_unit") or "g",
                                     tolerance=dec.get("tolerance"))
-                    else:
+                    elif action == "aid_new":
                         data.update(type="aid", unit_label=dec.get("unit_label") or "VE")
+                    else:
+                        deposit = dec.get("is_deposit")
+                        data.update(type="goods", unit_label="Stück",
+                                    is_deposit=deposit if isinstance(deposit, bool) else bool(line.get("deposit_hint")))
                     rm_id = raw_materials.create_in_tx(conn, data)
                     _attach_source(conn, rm_id, dealer_id, line["article_no"], line["unit_code"], gpu, where)
                     target = "raw_material"
@@ -300,7 +355,7 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
             group_id = None
             if pre["billing"]:
                 group_id = _line_group(conn, dealer_id, line, dec, where, target=target, rm_id=rm_id, other_id=other_id)
-            conn.execute(
+            new_line_id = conn.execute(
                 "INSERT INTO receiving_line (document_id, line_no, article_no, description, commodity_group, qty_milli, "
                 "unit_code, pack_text, price_e4, price_unit, net_cents, vat_percent, order_item, target, raw_material_id, "
                 "other_article_id, grams_per_unit_used, note, booking_group_id, net_book_cents, substitute_ref, "
@@ -312,7 +367,9 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
                  target, rm_id, other_id, gpu_used, note, group_id, line["net_book_cents"],
                  line["article_no"] if target == "substitute" else None,
                  _order_ref(p), (p.get("lieferung") or {}).get("lieferschein"),
-                 (p.get("lieferung") or {}).get("lieferdatum")))
+                 (p.get("lieferung") or {}).get("lieferdatum"))).lastrowid
+            if pre["billing"] and target == "raw_material" and rm_id:
+                _billing_goods(conn, pre, dealer_id, new_line_id, rm_id)
         target_dir = documents_dir()
         target_dir.mkdir(parents=True, exist_ok=True)
         final = target_dir / f"{pre['doc_no']}-{token[:8]}.pdf"
@@ -321,6 +378,35 @@ def commit(conn: sqlite3.Connection, payload: dict) -> dict:
     for ext in ("pdf", "json"):
         (tmp / f"{token}.{ext}").unlink(missing_ok=True)
     return get_delivery(conn, doc_id)
+
+
+def _billing_goods(conn, pre: dict, dealer_id: int, line_id: int, rm_id: int) -> None:
+    """Rechnung/Gutschrift auf Handelsware (H1): Preis je Stück aus der Rechnung (K03-88) und bei der Gutschrift
+    eines Pfand-Artikels der Abgang „Pfand zurück“ (K03-74)."""
+    rm = stock._row(conn, rm_id)
+    if rm["type"] != "goods":
+        return
+    line = conn.execute("SELECT * FROM receiving_line WHERE id = ?", (line_id,)).fetchone()
+    gpu = _goods_gpu(conn, rm_id, dealer_id, line["unit_code"])
+    if gpu is None or not line["qty_milli"]:
+        return
+    pieces_milli = line["qty_milli"] * gpu // 1000          # Tausendstel Stück
+    if pre["kind"] == "invoice" and line["net_cents"] is not None and pieces_milli > 0:
+        cents = min(999999, round(abs(line["net_cents"]) * 1000 / pieces_milli))
+        src = conn.execute("SELECT id, is_active FROM raw_material_source WHERE raw_material_id = ? AND dealer_id = ?",
+                           (rm_id, dealer_id)).fetchone()
+        if src is not None:
+            sources.update_in_tx(conn, rm_id, src["id"], {"price_per_kg": f"{cents / 100:.2f}".replace(".", ",")}, source="system")
+        elif not sources.has_sources(conn, rm_id):
+            conn.execute("UPDATE raw_material SET price_cents_per_kg = ?, price_changed_at = "
+                         "strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?", (cents, rm_id))
+    if pre["kind"] == "credit_note" and rm["is_deposit"] and rm["stock_ref_id"] is None:
+        before = rm["stock_g"]
+        text = f"{pre['doc_no']} Pos. {line['line_no']} · Gutschrift Pfand"
+        mid = stock._book(conn, rm_id, "loss", before, (before or 0) - pieces_milli, source=RECEIVING,
+                          note=text[:500], reason="deposit_return", receiving_line_id=line_id)
+        conn.execute("UPDATE receiving_line SET stock_movement_id = ?, delivered_qty_milli = qty_milli, grams = ?, "
+                     "grams_per_unit_used = ? WHERE id = ?", (mid, -pieces_milli, gpu, line_id))
 
 
 def _line_group(conn, dealer_id: int, line: dict, dec: dict, where: str, *, target: str, rm_id, other_id) -> int:
@@ -400,6 +486,8 @@ def _gpu_for(conn, line, dealer_id: int) -> int | None:
         return None
     if row["type"] == "aid":
         return AID_UNIT                          # 1 Einheit auf dem Beleg = 1 Verpackungseinheit (M03-26)
+    if row["type"] == "goods":
+        return _goods_gpu(conn, line["raw_material_id"], dealer_id, line["unit_code"])
     return row["grams_per_unit"]
 
 
@@ -476,7 +564,7 @@ def delete_document(conn: sqlite3.Connection, doc_id: int, reverse: bool = False
         row = _doc(conn, doc_id)
         moves = conn.execute(
             "SELECT m.id, m.raw_material_id, m.delta_g, m.kind FROM stock_movement m "
-            "JOIN receiving_line l ON l.id = m.receiving_line_id WHERE l.document_id = ? AND m.kind = 'receipt' "
+            "JOIN receiving_line l ON l.id = m.receiving_line_id WHERE l.document_id = ? AND m.kind IN ('receipt', 'loss') "
             "AND NOT EXISTS (SELECT 1 FROM stock_movement u WHERE u.undo_of_id = m.id)", (doc_id,)).fetchall()
         booked = conn.execute("SELECT 1 FROM receiving_line WHERE document_id = ? AND delivered_qty_milli > 0 LIMIT 1",
                               (doc_id,)).fetchone()
@@ -489,7 +577,8 @@ def delete_document(conn: sqlite3.Connection, doc_id: int, reverse: bool = False
                 continue                                   # Bestand wird nicht (mehr) geführt
             stock._book(conn, m["raw_material_id"], "undo", rm["stock_g"], rm["stock_g"] - m["delta_g"],
                         source=RECEIVING, undo_of_id=m["id"],
-                        note=f"Beleg {row['doc_no']} gelöscht – Zugang zurückgebucht")
+                        note=f"Beleg {row['doc_no']} gelöscht – " + ("Zugang" if m["kind"] == "receipt" else "Pfand-Abgang")
+                        + " zurückgebucht")
             reversed_n += 1
         conn.execute("UPDATE stock_movement SET receiving_line_id = NULL WHERE receiving_line_id IN "
                      "(SELECT id FROM receiving_line WHERE document_id = ?)", (doc_id,))
@@ -500,7 +589,10 @@ def delete_document(conn: sqlite3.Connection, doc_id: int, reverse: bool = False
 
 
 def add_unexpected(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict:
-    """„Nicht in der Lieferung“ / „Zusätzlich aufnehmen?“ (K03-60): Zeile „nicht erwartet“ in kg bzw. VE."""
+    """„Nicht in der Lieferung“ / „Zusätzlich aufnehmen?“ (K03-60): Zeile „nicht erwartet“ in kg bzw. VE/Stück.
+    Mit ``other_article_id``: sonstiger Artikel ohne Bestand, die Lieferung wird nur vermerkt (K03-91)."""
+    if payload.get("other_article_id") is not None:
+        return _add_unexpected_other(conn, doc_id, _int(payload.get("other_article_id"), "other_article_id", minimum=1))
     rm_id = _int(payload.get("raw_material_id"), "raw_material_id", minimum=1)
     with transaction(conn):
         doc = _doc(conn, doc_id)
@@ -509,6 +601,7 @@ def add_unexpected(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict
         rm = stock._row(conn, rm_id)
         if rm["archived"]:
             raise ConflictError(f"„{rm['name']}“ ist archiviert.", code="archived")
+        stock.no_reference(rm)
         existing = conn.execute("SELECT id FROM receiving_line WHERE document_id = ? AND raw_material_id = ? "
                                 "AND unexpected = 1 AND state = 'open'", (doc_id, rm_id)).fetchone()
         if existing:
@@ -520,6 +613,27 @@ def add_unexpected(conn: sqlite3.Connection, doc_id: int, payload: dict) -> dict
             "INSERT INTO receiving_line (document_id, line_no, description, qty_milli, unit_code, target, "
             "raw_material_id, unexpected, note) VALUES (?, ?, ?, 0, ?, 'raw_material', ?, 1, 'nicht erwartet')",
             (doc_id, no, rm["name"], unit, rm_id)).lastrowid
+    return {"line_id": line_id, "delivery": get_delivery(conn, doc_id)}
+
+
+def _add_unexpected_other(conn, doc_id: int, other_id: int) -> dict:
+    with transaction(conn):
+        doc = _doc(conn, doc_id)
+        if doc["status"] not in ("expected", "partial"):
+            raise ConflictError("Diese Lieferung ist abgeschlossen.", code="closed")
+        o = conn.execute("SELECT * FROM other_article WHERE id = ?", (other_id,)).fetchone()
+        if o is None:
+            raise NotFoundError("Sonstiger Artikel nicht gefunden.", code="not_found")
+        existing = conn.execute("SELECT id FROM receiving_line WHERE document_id = ? AND other_article_id = ? "
+                                "AND unexpected = 1 AND state = 'open'", (doc_id, other_id)).fetchone()
+        if existing:
+            return {"line_id": existing["id"], "delivery": get_delivery(conn, doc_id)}
+        no = conn.execute("SELECT coalesce(max(line_no), 0) + 1 FROM receiving_line WHERE document_id = ?",
+                          (doc_id,)).fetchone()[0]
+        line_id = conn.execute(
+            "INSERT INTO receiving_line (document_id, line_no, article_no, description, qty_milli, unit_code, target, "
+            "other_article_id, unexpected, note) VALUES (?, ?, ?, ?, 0, ?, 'other', ?, 1, 'nicht erwartet – ohne Bestand')",
+            (doc_id, no, o["article_no"], o["description"] or o["article_no"], o["last_unit"] or "ST", other_id)).lastrowid
     return {"line_id": line_id, "delivery": get_delivery(conn, doc_id)}
 
 
@@ -569,7 +683,9 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict, *, tx: bool = Tru
                     note += f" – Gebinde {pack_g / 1000:g} kg".replace(".", ",")
                 sub_ref = (str(sub.get("code") or "").strip()[:64]) or None
                 repeat = substitute_seen(conn, rm_id, sub_ref)
-                if line["unit_code"] != "KG" and sub_rm["type"] != "aid":
+                if sub_rm["type"] == "goods":
+                    gpu = _gpu_for(conn, line, doc["dealer_id"]) or GOODS_UNIT
+                elif line["unit_code"] != "KG" and sub_rm["type"] != "aid":
                     gpu = _gpu(sub.get("grams_per_unit"), f"lines.{i}.substitute.grams_per_unit")
                 elif sub_rm["type"] == "aid":
                     gpu = AID_UNIT
@@ -577,6 +693,11 @@ def book(conn: sqlite3.Connection, doc_id: int, payload: dict, *, tx: bool = Tru
                     gpu = 1000
             elif target in ("raw_material", "substitute"):
                 gpu = _gpu_for(conn, line, doc["dealer_id"])
+                if gpu is None and qty and item.get("pieces_per_unit") not in (None, ""):
+                    gpu = _int(item.get("pieces_per_unit"), f"lines.{i}.pieces_per_unit", minimum=1,
+                               maximum=10000) * GOODS_UNIT
+                    if line["article_no"]:
+                        _attach_source(conn, rm_id, doc["dealer_id"], line["article_no"], line["unit_code"], gpu)
                 if gpu is None and qty:
                     raise ConflictError(f"Pos. {line['line_no']}: g je {line['unit_code']} fehlt.",
                                         code="gpu_missing", line_id=line_id)

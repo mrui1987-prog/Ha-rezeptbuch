@@ -152,7 +152,7 @@
       </div>
       <div class="filters">
         <select id="f-status" aria-label="Status"><option value="active">aktive</option><option value="archived">archivierte</option><option value="all">alle</option></select>
-        <select id="f-ftype" aria-label="Typ"><option value="">alle Typen</option><option value="flour">nur Mehl</option><option value="standard">nur Standard</option><option value="aid">nur Hilfs- und Betriebsstoffe</option></select>
+        <select id="f-ftype" aria-label="Typ"><option value="">alle Typen</option><option value="flour">nur Mehl</option><option value="standard">nur Standard</option><option value="aid">nur Hilfs- und Betriebsstoffe</option><option value="goods">nur Handelsware</option></select>
         <select id="f-stock" aria-label="Bestand"><option value="">Bestand: alle</option><option value="below_alert">am/unter Meldewert</option><option value="negative">im Minus</option><option value="none">ohne Bestandsführung</option></select>
         <select id="f-dealer" aria-label="Händler"><option value="">alle Händler</option></select>
         <label class="inline"><input id="only-zero" type="checkbox"> Toleranz 0 %</label>
@@ -227,7 +227,13 @@
             <div><label for="f-display">Kurzname (Anzeige an der Station, optional)</label>
                  <input id="f-display" maxlength="60" style="width:100%"></div>
             <div><label for="f-type">Typ</label>
-                 <select id="f-type" style="width:100%"><option value="standard">Standard</option><option value="flour">Mehl</option><option value="aid">Hilfs- und Betriebsstoff</option></select></div>
+                 <select id="f-type" style="width:100%"><option value="standard">Standard</option><option value="flour">Mehl</option><option value="aid">Hilfs- und Betriebsstoff</option><option value="goods">Handelsware</option></select></div>
+            <div class="goods-only hidden"><label for="f-register">Kassennummer (Vectron, leer = ohne Kassenartikel)</label>
+                 <input id="f-register" inputmode="numeric" list="f-register-list" style="width:100%" placeholder="z. B. 1101">
+                 <datalist id="f-register-list"></datalist>
+                 <div class="small" id="f-register-hint"></div></div>
+            <div class="goods-only hidden"><label class="inline"><input id="f-deposit" type="checkbox"> Pfand (Kiste, Flasche – Gruppe Leergut)</label>
+                 <div class="small" id="f-ref-info"></div></div>
             <div class="no-aid"><label for="f-tol">Toleranz (±, Pflichtfeld)</label>
                  <div style="display:flex;gap:.4rem">
                    <input id="f-tol" inputmode="decimal" style="flex:1;min-width:0">
@@ -261,6 +267,7 @@
           </div>
           <p class="small no-aid">0 g = Handzugabe (nur quittieren, nicht wiegen). 0 % wird gewogen; bei der Verwiegung nie enger als 1 g.</p>
           <p class="small aid-only hidden">Hilfs- und Betriebsstoff: gezählt in Verpackungseinheiten, Preis und Meldewert je Einheit; nie in Rezepten, an der Waage oder im Planer.</p>
+          <p class="small goods-only hidden">Handelsware: gezählt in Stück, Preis je Stück (aus der letzten Rechnung), Meldewert in Stück; nie in Rezepten, an der Waage oder im Planer. „Stück je Liefereinheit“ (z. B. Karton = 24) steht an der Bezugsquelle.</p>
           <p class="small" id="f-codes"></p>
           <p class="small" id="f-info"></p>
           <div id="similar-msg" class="msg info hidden"></div>
@@ -269,7 +276,25 @@
           <button type="button" id="form-archive" class="hidden">Archivieren</button>
           <button type="button" id="form-delete" class="hidden">Löschen</button>
           <button type="button" id="form-recipes" class="hidden">Rezepte mit diesem Rohstoff</button>
+          <button type="button" id="form-move" class="hidden">Verschieben nach …</button>
+          <button type="button" id="form-copy" class="hidden">Kopieren nach …</button>
         </form>
+        <div id="mc-panel" class="panel hidden">
+          <h3 id="mc-title">Verschieben nach …</h3>
+          <p class="small" id="mc-text"></p>
+          <div class="grid">
+            <div><label for="mc-to">Nach</label><select id="mc-to" style="width:100%"></select></div>
+            <div id="mc-name-box"><label for="mc-name">Name (Kopie)</label><input id="mc-name" maxlength="100" style="width:100%"></div>
+            <div id="mc-piece-box"><label for="mc-piece">Gewicht je Stück bzw. VE in g</label><input id="mc-piece" inputmode="numeric" style="width:100%" placeholder="z. B. 1000 für 1 l H-Milch">
+              <div class="small" id="mc-piece-hint"></div></div>
+            <div id="mc-factor-box"><label for="mc-factor">Stück je VE</label><input id="mc-factor" inputmode="numeric" style="width:100%" placeholder="1"></div>
+            <div id="mc-tol-box"><label for="mc-tol">Toleranz beim Wiegen (g)</label><input id="mc-tol" inputmode="decimal" style="width:100%" value="5"></div>
+            <div id="mc-reg-box"><label for="mc-reg">Kassennummer (optional)</label><input id="mc-reg" inputmode="numeric" list="f-register-list" style="width:100%"></div>
+          </div>
+          <div id="mc-msg" class="msg error hidden" role="alert"></div>
+          <div class="toolbar"><button type="button" id="mc-go"><b>Ausführen</b></button>
+            <button type="button" id="mc-cancel">Abbrechen</button></div>
+        </div>
       </div>
 
       <div id="tab-stock" class="hidden">
@@ -285,7 +310,9 @@
           <input id="stock-photo" type="file" accept="image/*" capture="environment" class="hidden" aria-label="Beleg-Foto">
           <span id="stock-photo-state" class="small photo-state"></span></div>
         <div class="toolbar"><button type="button" id="stock-receipt">Zugang buchen</button>
-          <button type="button" id="stock-set">Bestand setzen</button></div>
+          <button type="button" id="stock-set">Bestand setzen</button>
+          <select id="stock-reason" aria-label="Abgangsgrund"><option value="breakage">Bruch/Verderb</option><option value="own_use">Eigenverbrauch</option><option value="deposit_return">Pfand zurück</option><option value="other">Sonstiges</option></select>
+          <button type="button" id="stock-loss">Abgang buchen</button></div>
         <p class="small">„Zugang buchen“ zählt dazu; ein Beleg-Foto ist freiwillig und hängt dann an der Buchung. „Bestand setzen“ ist die Inventur; leer = Bestandsführung beenden.
           Den Meldewert stellt man bei den Grunddaten ein.</p>
         <h3>Verlauf</h3>
@@ -332,7 +359,7 @@
             <select id="st-scope" aria-label="Umfang"><option value="stocked">alle bestandsgeführten</option><option value="active">alle aktiven</option></select>
             <button type="button" id="st-create">Inventur anlegen</button>
           </div>
-          <p class="small">Hilfs- und Betriebsstoffe sind immer dabei. Höchstens eine Inventur ist offen.</p>
+          <p class="small">Hilfs- und Betriebsstoffe und Handelsware (in Stück, Pfand getrennt) sind immer dabei. Höchstens eine Inventur ist offen.</p>
         </div>
         <div id="st-open" class="hidden">
           <p id="st-head"></p>
@@ -379,7 +406,7 @@
           <button type="button" data-mode="receipt" class="active">Zugang</button><button type="button" data-mode="inventory">Gesamtbestand</button><button type="button" data-mode="loss">Abgang</button>
         </div>
         <select id="q-reason" class="hidden" aria-label="Grund"><option value="breakage">Bruch/Verderb</option>
-          <option value="own_use">Eigenverbrauch</option><option value="merchandise">Handelsware</option><option value="other">Sonstiges</option></select>
+          <option value="own_use">Eigenverbrauch</option><option value="merchandise">Handelsware</option><option value="deposit_return">Pfand zurück</option><option value="other">Sonstiges</option></select>
         <input id="q-note" class="hidden" maxlength="200" placeholder="Freitext (optional)" style="width:16rem" aria-label="Freitext">
         <input id="q-search" type="search" autocomplete="off" placeholder="Rohstoff suchen …" style="width:100%" aria-label="Rohstoff suchen">
         <ul id="q-hits" class="hidden"></ul>
@@ -397,6 +424,44 @@
         <div class="scroll"><table><thead><tr><th>Zeit</th><th>Rohstoff</th><th>Art</th><th class="num">Menge kg</th><th class="num">Bestand neu kg</th></tr></thead>
           <tbody id="q-rows"></tbody></table></div>
         <p class="small" id="q-empty">Noch nichts gebucht.</p>
+      </div>
+
+      <div class="panel" id="si-panel">
+        <h2>Kassenimport (Vectron-Abverkauf)</h2>
+        <p class="small">Abverkauf als Excel-Datei aus der Vectron (Artikelnummer, Anzahl, Wert). Je Handelsware mit Kassennummer
+          wird die verkaufte Stückzahl abgebucht („Verkauf laut Kasse“); bei Rohstoff + Handelsware beim Rohstoff über das Gewicht
+          je Stück. Sammelartikel 500 und Kassenartikel ohne Zuordnung werden nur angezeigt. Jeder Zeitraum nur einmal; was
+          abweicht, korrigiert die Inventur.</p>
+        <div class="toolbar">
+          <input id="si-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Abverkauf (.xlsx)">
+          <label class="inline">von <input id="si-from" type="date"></label>
+          <label class="inline">bis <input id="si-to" type="date"></label>
+          <button type="button" id="si-check">Probelauf</button>
+          <button type="button" id="si-run" disabled><b>Übernehmen</b></button>
+        </div>
+        <div id="si-msg" class="msg error hidden" role="alert"></div>
+        <div id="si-report"></div>
+        <h3>Importierte Zeiträume</h3>
+        <div class="scroll"><table><thead><tr><th>Zeitraum</th><th>Datei</th><th class="num">gebucht</th><th class="num">Pfand Kunden €</th><th>Aktionen</th></tr></thead>
+          <tbody id="si-rows"></tbody></table></div>
+        <p class="small" id="si-empty">Noch kein Kassenimport.</p>
+        <div id="si-detail"></div>
+      </div>
+
+      <div class="panel" id="dp-panel">
+        <h2>Pfand-Übersicht</h2>
+        <p class="small">In Euro, weil die Kasse je Flasche bucht und die BÄKO teils je Kiste. Pfand BÄKO = Rechnungen − Gutschriften
+          (Pfand-Artikel bzw. Gruppe Leergut), Pfand Kunden = Pfand-Artikel aus dem Kassenimport, Pfand gesamt = Differenz.</p>
+        <div class="toolbar">
+          <label class="inline">von <input id="dp-from" type="date"></label>
+          <label class="inline">bis <input id="dp-to" type="date"></label>
+          <button type="button" id="dp-load">Anzeigen</button>
+        </div>
+        <div id="dp-sums" class="toolbar"></div>
+        <div id="dp-msg" class="msg error hidden" role="alert"></div>
+        <details><summary class="small">Belegzeilen Pfand BÄKO</summary>
+          <div class="scroll" style="max-height:20rem;overflow:auto"><table><thead><tr><th>Beleg</th><th>Datum</th><th>Position</th><th class="num">Menge</th><th class="num">€</th></tr></thead>
+            <tbody id="dp-rows"></tbody></table></div></details>
       </div>
 
       <div class="panel">
@@ -427,7 +492,7 @@
         <div class="filters">
           <label class="inline">von <input id="h-from" type="date"></label>
           <label class="inline">bis <input id="h-to" type="date"></label>
-          <select id="h-kind" aria-label="Art"><option value="">alle Arten</option><option value="receipt">Zugang</option><option value="inventory">Bestand gesetzt</option><option value="consumption">Verwiegung</option><option value="reversal">Rückbuchung</option><option value="planner">Planer</option><option value="planner_return">Planer zurück</option><option value="loss">Abgang</option><option value="correction">Korrektur</option><option value="undo">Rückgängig</option></select>
+          <select id="h-kind" aria-label="Art"><option value="">alle Arten</option><option value="receipt">Zugang</option><option value="inventory">Bestand gesetzt</option><option value="consumption">Verwiegung</option><option value="reversal">Rückbuchung</option><option value="planner">Planer</option><option value="planner_return">Planer zurück</option><option value="loss">Abgang</option><option value="correction">Korrektur</option><option value="undo">Rückgängig</option><option value="sale">Verkauf laut Kasse</option></select>
           <select id="h-rm" aria-label="Rohstoff"><option value="">alle Rohstoffe</option></select>
           <button type="button" id="h-load">Anzeigen</button>
         </div>
@@ -521,6 +586,11 @@ async function api(path, options) {
   if (opts.body !== undefined) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(opts.body);
+  }
+  if (opts.file) {
+    headers["Content-Type"] = "application/octet-stream";
+    if (opts.file.name) headers["X-Dateiname"] = encodeURIComponent(opts.file.name);
+    body = opts.file;
   }
   let res;
   try {
@@ -725,8 +795,15 @@ function parseKg(text) {
   return Math.round(Number(t) * 1000);
 }
 // Hilfs- und Betriebsstoffe zählen in Verpackungseinheiten (intern 1 VE = 1000, Strichcode S1; Anzeige seit I1)
-function isAidItem(it) { return Boolean(it) && it.type === "aid"; }
-function unitOf(it) { return isAidItem(it) ? (it.unit_label || "VE") : "kg"; }
+// Handelsware (H1): ebenso gezählt, in Stück (intern 1 Stück = 1000)
+function isAidItem(it) { return Boolean(it) && (it.type === "aid" || it.type === "goods"); }
+function unitOf(it) { return isAidItem(it) ? (it.unit_label || (it.type === "goods" ? "Stück" : "VE")) : "kg"; }
+const TYPE_LABEL = { standard: "Standard", flour: "Mehl", aid: "Hilfs-/Betriebsstoff", goods: "Handelsware" };
+function typeLabel(it) {
+  if (it.type !== "goods") return TYPE_LABEL[it.type] || it.type;
+  return "Handelsware" + (it.is_deposit ? " · Pfand" : "") + (it.stock_ref ? " → " + it.stock_ref.name : "")
+    + (it.register_no ? " · Kasse " + it.register_no : "");
+}
 function qtyText(it, grams) {
   if (grams === null || grams === undefined) return "";
   return kgText(grams) + " " + unitOf(it);
@@ -941,7 +1018,8 @@ function renderRows() {
     cell(tr, String(it.number), "num");
     cell(tr, it.name + (it.archived ? " (archiviert)" : ""), "name");
     cell(tr, it.display_name || "");
-    cell(tr, it.type === "flour" ? "Mehl" : it.type === "aid" ? "Hilfs-/Betriebsstoff" : "Standard");
+    const tc = cell(tr, typeLabel(it));
+    if (it.register_hint) { tc.title = it.register_hint; tc.appendChild(document.createElement("br")); const sm = document.createElement("span"); sm.className = "small"; sm.textContent = it.register_hint; tc.appendChild(sm); }
     cell(tr, toleranceText(it));
     const st = cell(tr, cellQty(it, it.stock_g), "num");
     if (it.stock_g !== null && it.stock_g < 0) st.classList.add("stock-neg");
@@ -1149,6 +1227,15 @@ function fillForm() {
   $("f-pack-label").value = item && item.delivery_pack_label ? item.delivery_pack_label : "";
   fillLocations(item);
   fillCodes(item);
+  $("f-register").value = item && item.register_no ? String(item.register_no) : "";
+  $("f-deposit").checked = Boolean(item && item.is_deposit);
+  $("f-register-hint").textContent = item && item.register_hint ? item.register_hint
+    : item && item.register_name ? "Kasse: " + item.register_name : "";
+  $("f-ref-info").textContent = item && item.stock_ref ? "Rohstoff + Handelsware: der Bestand steht beim Rohstoff Nr. " + item.stock_ref.number
+    + " " + item.stock_ref.name + " (1 Stück = " + item.piece_g + " g). Kassenverkäufe buchen dort ab." : "";
+  show("form-move", Boolean(item) && !item.archived);
+  show("form-copy", Boolean(item) && !item.archived);
+  show("mc-panel", false);
   typeUi();
   $("f-price").value = item ? priceText(item.price_cents_per_kg) : "";
   $("f-alert").value = item ? kgText(item.stock_alert_g) : "";
@@ -1198,8 +1285,8 @@ function formPayload() {
     tolerance: emptyToNull($("f-tol").value),
     unit_size_g: emptyToNull($("f-unit-size").value),
     unit_label: $("f-unit-label").value,
-    delivery_pack_g: $("f-type").value === "aid" ? null : emptyToNull($("f-pack-size").value),
-    delivery_pack_label: $("f-type").value === "aid" ? null : $("f-pack-label").value,
+    delivery_pack_g: isCountedType() ? null : emptyToNull($("f-pack-size").value),
+    delivery_pack_label: isCountedType() ? null : $("f-pack-label").value,
     stock_alert_kg: emptyToNull($("f-alert").value),
   };
   ["1", "2"].forEach((n) => {
@@ -1211,6 +1298,10 @@ function formPayload() {
   if (!$("f-price").readOnly) payload.price_per_kg = emptyToNull($("f-price").value);
   const number = emptyToNull($("f-number").value);
   if (number !== null) payload.number = number;
+  if ($("f-type").value === "goods") {
+    payload.register_no = emptyToNull($("f-register").value);
+    payload.is_deposit = $("f-deposit").checked;
+  }
   return payload;
 }
 // ---- Hilfs- und Betriebsstoff, Lagerorte, Codes (Strichcode S1) ------------------------
@@ -1261,11 +1352,30 @@ function formLocationsSnapshot(keep) {
   });
   return o;
 }
+function isCountedType() { return $("f-type").value === "aid" || $("f-type").value === "goods"; }
 function typeUi() {
-  const aid = $("f-type").value === "aid";
-  document.querySelectorAll("#form .no-aid").forEach((e) => e.classList.toggle("hidden", aid));
-  document.querySelectorAll("#form .aid-only").forEach((e) => e.classList.toggle("hidden", !aid));
-  $("f-unit-label-text").textContent = aid ? "Verpackungseinheit (Pflicht, z. B. Karton, Kanister)" : "Gebinde-/Stückbezeichnung (z. B. Ei, Sack)";
+  const counted = isCountedType();
+  const goods = $("f-type").value === "goods";
+  document.querySelectorAll("#form .no-aid").forEach((e) => e.classList.toggle("hidden", counted));
+  document.querySelectorAll("#form .aid-only").forEach((e) => e.classList.toggle("hidden", $("f-type").value !== "aid"));
+  document.querySelectorAll("#form .goods-only").forEach((e) => e.classList.toggle("hidden", !goods));
+  $("f-unit-label-text").textContent = goods ? "Einheit (Vorgabe Stück)" : counted ? "Verpackungseinheit (Pflicht, z. B. Karton, Kanister)" : "Gebinde-/Stückbezeichnung (z. B. Ei, Sack)";
+  const pl = document.querySelector('label[for="f-price"]');
+  if (pl) pl.textContent = goods ? "Preis je Stück (€ netto, aus der letzten Rechnung)" : counted ? "Preis je Verpackungseinheit (€ netto)" : "Preis je kg (€ netto, optional)";
+  const al = document.querySelector('label[for="f-alert"]');
+  if (al) al.textContent = goods ? "Meldewert in Stück (optional)" : counted ? "Meldewert in VE (optional)" : "Meldewert in kg (optional)";
+  if (goods) loadRegisterList();
+}
+let registerListLoaded = false;
+async function loadRegisterList() {
+  if (registerListLoaded) return;
+  registerListLoaded = true;
+  try {
+    const rows = await api("articles?status=all");
+    const dl = $("f-register-list");
+    dl.textContent = "";
+    rows.forEach((a) => { const o = document.createElement("option"); o.value = String(a.register_no); o.label = a.name; o.textContent = a.register_no + " " + a.name; dl.appendChild(o); });
+  } catch (e) { registerListLoaded = false; }
 }
 $("f-type").addEventListener("change", typeUi);
 async function fillCodes(it) {
@@ -1373,10 +1483,19 @@ $("form-recipes").addEventListener("click", async () => {
 // ---- Reiter Bestand am Rohstoff (VC03-b) ---------------------------------------------------
 
 async function refreshStock() {
+  const al = document.querySelector('label[for="stock-amount"]');
+  if (al) al.textContent = "Menge in " + unitOf(item);
+  const dep = $("stock-reason").querySelector('option[value="deposit_return"]');
+  if (dep) { dep.hidden = !item.is_deposit; dep.disabled = !item.is_deposit; }
+  if (!item.is_deposit && $("stock-reason").value === "deposit_return") $("stock-reason").value = "breakage";
+  if (item.is_deposit) $("stock-reason").value = "deposit_return";
+  const ref = Boolean(item.stock_ref);
+  ["stock-receipt", "stock-set", "stock-loss", "stock-reason", "stock-amount"].forEach((id) => { $(id).disabled = ref; });
   try {
     const fresh = await api("raw-materials/" + item.id);
     item.stock_g = fresh.stock_g; item.stock_alert_g = fresh.stock_alert_g; item.stock_status = fresh.stock_status;
-    $("stock-now").textContent = stockNow(fresh);
+    $("stock-now").textContent = fresh.stock_ref ? "Kein eigener Bestand – er steht beim Rohstoff Nr. " + fresh.stock_ref.number
+      + " " + fresh.stock_ref.name + " (Rohstoff + Handelsware, 1 Stück = " + fresh.piece_g + " g)." : stockNow(fresh);
     const body = $("stock-rows");
     body.textContent = "";
     const moves = await api("raw-materials/" + item.id + "/stock/movements");
@@ -1418,6 +1537,16 @@ $("stock-receipt").addEventListener("click", () => stockAction("receipt"));
 $("stock-photo-btn").addEventListener("click", () => $("stock-photo").click());
 $("stock-photo").addEventListener("change", () => pickPhoto("stock"));
 $("stock-set").addEventListener("click", () => stockAction("inventory"));
+$("stock-loss").addEventListener("click", async () => {
+  showMsg("stock-msg", "");
+  try {
+    await api("raw-materials/" + item.id + "/stock/loss", { method: "POST", body: { amount_kg: $("stock-amount").value.trim(),
+      reason: $("stock-reason").value, note: $("stock-note").value.trim() || null } });
+    $("stock-amount").value = ""; $("stock-note").value = "";
+    await refreshStock();
+    loadAllRaw();
+  } catch (err) { handleError(err, "stock-msg"); }
+});
 
 // ---- Reiter Bezugsquellen (Modul 04 C1, M04-5, M04-14) ------------------------------------
 
@@ -1454,6 +1583,10 @@ async function loadDealers() {
 async function loadSources() {
   showMsg("src-msg", "");
   resetSourceForm();
+  const gl = document.querySelector('label[for="s-grams"]');
+  if (gl) gl.textContent = item.type === "goods" ? "Stück je Liefereinheit (z. B. Karton = 24)" : "g je Mengeneinheit";
+  const pl = document.querySelector('label[for="s-price"]');
+  if (pl) pl.textContent = item.type === "goods" ? "Preis je Stück (€ netto)" : item.type === "aid" ? "Preis je VE (€ netto)" : "Preis je kg (€ netto)";
   let list = [];
   try { list = await api("raw-materials/" + item.id + "/sources"); }
   catch (err) { handleError(err, "src-msg"); }
@@ -1465,7 +1598,8 @@ async function loadSources() {
     cell(tr, s.dealer_name + (s.is_active ? " (aktiv)" : "") + (s.dealer_archived ? " – archiviert" : ""));
     cell(tr, s.article_no || "");
     cell(tr, priceText(s.price_cents_per_kg), "num");
-    cell(tr, s.grams_per_unit ? s.grams_per_unit + " g" + (s.unit_code ? " je " + s.unit_code : "") : "");
+    cell(tr, s.grams_per_unit ? (item.type === "goods" ? kgText(s.grams_per_unit) + " Stück" : s.grams_per_unit + " g")
+      + (s.unit_code ? " je " + s.unit_code : "") : "");
     cell(tr, s.commodity_group || "");
     cell(tr, s.note || "");
     const actions = document.createElement("td");
@@ -1494,7 +1628,7 @@ function editSource(s) {
   $("s-dealer").disabled = true;
   $("s-article").value = s.article_no || "";
   $("s-price").value = priceText(s.price_cents_per_kg);
-  $("s-grams").value = s.grams_per_unit ? String(s.grams_per_unit) : "";
+  $("s-grams").value = s.grams_per_unit ? (item.type === "goods" ? kgText(s.grams_per_unit) : String(s.grams_per_unit)) : "";
   $("s-unit").value = s.unit_code || "";
   $("s-group").value = s.commodity_group || "";
   $("s-note").value = s.note || "";
@@ -1525,7 +1659,8 @@ $("src-save").addEventListener("click", async () => {
   showMsg("src-msg", "");
   const body = {
     article_no: emptyToNull($("s-article").value),
-    grams_per_unit: emptyToNull($("s-grams").value),
+    grams_per_unit: item.type === "goods" && emptyToNull($("s-grams").value) !== null   // Stück je Liefereinheit × 1000
+      ? Math.round(Number($("s-grams").value.replace(",", ".")) * 1000) : emptyToNull($("s-grams").value),
     unit_code: emptyToNull($("s-unit").value),
     commodity_group: emptyToNull($("s-group").value),
     note: emptyToNull($("s-note").value),
@@ -1557,8 +1692,14 @@ const stZero = new Set();   // ungezählte „auf 0“ (K03-57: vorgewählt „u
 
 function stQty(ln, g) {
   if (g === null || g === undefined) return "";
-  if (ln.type === "aid") return (g / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + (ln.unit_label || ln.pack_label || "VE");
+  if (ln.type === "aid" || ln.type === "goods") return (g / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " "
+    + (ln.unit_label || ln.pack_label || (ln.type === "goods" ? "Stück" : "VE"));
   return kgText(g) + " kg";
+}
+// Abschnitte der Inventur: Rohstoffe, Hilfs- und Betriebsstoffe, Handelsware, Pfand getrennt (K03-88)
+function stSection(ln) {
+  if (ln.type === "goods") return ln.is_deposit ? "Pfand (Leergut)" : "Handelsware";
+  return ln.type === "aid" ? "Hilfs- und Betriebsstoffe" : "Rohstoffe";
 }
 function stSigned(ln, g) {
   if (g === null || g === undefined) return "";
@@ -1636,10 +1777,10 @@ function paintStocktakePreview(totals) {
   let lastAid = null;
   stLines.forEach((ln) => {
     if (onlyOpen && ln.done) return;
-    const aid = ln.type === "aid";
+    const aid = stSection(ln);
     if (aid !== lastAid) {
       const h = document.createElement("tr");
-      const c = cell(h, aid ? "Hilfs- und Betriebsstoffe" : "Rohstoffe"); c.colSpan = 11; c.style.fontWeight = "bold";
+      const c = cell(h, aid); c.colSpan = 11; c.style.fontWeight = "bold";
       body.appendChild(h);
       lastAid = aid;
     }
@@ -1671,6 +1812,7 @@ function paintStocktakePreview(totals) {
   const t = stTotals;
   if (t) {
     $("st-totals").textContent = "Rohstoffe " + priceText(t.materials_cents) + " € · Hilfs- und Betriebsstoffe " + priceText(t.aids_cents)
+      + " € · Handelsware " + priceText(t.goods_cents || 0) + " € · Pfand " + priceText(t.deposit_cents || 0)
       + " € · Gesamt " + priceText(t.total_cents) + " €" + (t.missing_price_count ? " (ohne " + t.missing_price_count + " Position(en) ohne Preis)" : "")
       + " · gezählt " + t.counted + ", ungezählt " + t.uncounted + (t.incomplete ? ", nicht an allen Orten " + t.incomplete : "");
   }
@@ -1704,7 +1846,7 @@ async function showStocktakeResult(id) {
   data.lines.forEach((ln) => {
     const tr = document.createElement("tr");
     cell(tr, String(ln.number), "num");
-    cell(tr, ln.name + (ln.type === "aid" ? " (HuB)" : ""));
+    cell(tr, ln.name + (ln.type === "aid" ? " (HuB)" : ln.type === "goods" ? (ln.is_deposit ? " (Pfand)" : " (HW)") : ""));
     cell(tr, ln.counted === null ? "–" : stQty(ln, ln.counted), "num");
     cell(tr, ln.book_before === null ? "" : stQty(ln, ln.book_before), "num");
     cell(tr, ln.stock_after === null ? "" : stQty(ln, ln.stock_after), "num");
@@ -1803,6 +1945,8 @@ $("loc-add").addEventListener("click", async () => {
 
 async function loadStockArea() {
   loadStocktake();
+  loadSalesImports();
+  loadDeposit();
   loadLocationTable();
   await loadAllRaw();
   await loadAlertList();
@@ -2077,6 +2221,213 @@ async function enterApp() {
   }
   await route();
 }
+
+// ---- Verschieben / Kopieren zwischen den Arten (H1, K03-89, K03-93) -----------------------------------
+const MC_TARGETS = [["standard", "Rohstoff"], ["flour", "Rohstoff (Mehl)"], ["aid", "Hilfs- und Betriebsstoff"],
+                    ["goods", "Handelsware"], ["other", "Sonstiger Artikel"]];
+let mcMode = "move";
+function mcGrams(type) { return type === "standard" || type === "flour"; }
+function openMoveCopy(mode) {
+  if (!item) return;
+  mcMode = mode;
+  const sel = $("mc-to");
+  sel.textContent = "";
+  MC_TARGETS.forEach(([v, t]) => {
+    if (v === item.type || (mode === "copy" && v === "other")) return;
+    const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o);
+  });
+  $("mc-title").textContent = (mode === "move" ? "Verschieben nach …" : "Kopieren nach …") + " – " + item.name;
+  $("mc-name").value = "";
+  $("mc-piece").value = item.piece_g ? String(item.piece_g) : (item.unit_size_g && mcGrams(item.type) ? String(item.unit_size_g) : "");
+  $("mc-factor").value = ""; $("mc-tol").value = "5"; $("mc-reg").value = "";
+  showMsg("mc-msg", "");
+  show("mc-panel", true);
+  mcFields();
+  $("mc-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function mcFields() {
+  const to = $("mc-to").value;
+  const fromG = mcGrams(item.type), toG = mcGrams(to);
+  const used = item.usage && item.usage.used;
+  const cross = to !== "other" && fromG !== toG;
+  show("mc-name-box", mcMode === "copy");
+  show("mc-piece-box", cross);
+  show("mc-factor-box", mcMode === "move" && !fromG && !toG && to !== "other");
+  show("mc-tol-box", toG && !fromG);
+  show("mc-reg-box", to === "goods");
+  let text = mcMode === "move"
+    ? "Ändert die Art desselben Artikels; Bezugsquelle, Belege und Verlauf bleiben dran."
+    : "Legt einen neuen Artikel an, der bisherige bleibt, wie er ist.";
+  if (mcMode === "move" && used && (to === "aid" || to === "goods" || to === "other"))
+    text += " Achtung: steckt in Rezepten oder Stücklisten – nur Kopieren geht.";
+  if (mcMode === "copy" && to === "goods" && fromG)
+    text += " Rohstoff + Handelsware: nur der Rohstoff führt Bestand; die Handelsware bekommt die Kassennummer, Kassenverkäufe buchen über das Gewicht je Stück beim Rohstoff ab.";
+  if (mcMode === "copy" && toG && item.type === "goods")
+    text += " Der neue Rohstoff übernimmt Bestand, Bezugsquellen und Codes; die Handelsware bleibt mit ihrer Kassennummer als Verweis.";
+  if (mcMode === "move" && cross) text += " Mit Gewicht werden Bestand, Preis und Bezugsquellen umgerechnet; ohne endet die Bestandsführung (neu zählen).";
+  if (to === "other") text += " Sonstige Artikel haben keinen Bestand; braucht die BÄKO-Artikelnummer.";
+  $("mc-text").textContent = text;
+  $("mc-piece-hint").textContent = cross ? (fromG ? "Wie viel Gramm hat 1 Stück/VE?" : "Wie viel Gramm hat 1 " + unitOf(item) + "?") : "";
+}
+$("mc-to").addEventListener("change", mcFields);
+$("form-move").addEventListener("click", async () => { if (await leaveItem()) openMoveCopy("move"); });
+$("form-copy").addEventListener("click", async () => { if (await leaveItem()) openMoveCopy("copy"); });
+$("mc-cancel").addEventListener("click", () => show("mc-panel", false));
+$("mc-go").addEventListener("click", async () => {
+  showMsg("mc-msg", "");
+  const to = $("mc-to").value;
+  const body = { to: to };
+  if (!$("mc-piece-box").classList.contains("hidden") && $("mc-piece").value.trim()) body.piece_g = $("mc-piece").value.trim();
+  if (!$("mc-factor-box").classList.contains("hidden") && $("mc-factor").value.trim()) body.factor = $("mc-factor").value.trim();
+  if (!$("mc-tol-box").classList.contains("hidden")) body.tolerance = $("mc-tol").value.trim().replace(",", ".") || "5";
+  if (!$("mc-reg-box").classList.contains("hidden") && $("mc-reg").value.trim()) body.register_no = $("mc-reg").value.trim();
+  if (mcMode === "copy" && $("mc-name").value.trim()) body.name = $("mc-name").value.trim();
+  const what = (MC_TARGETS.find((x) => x[0] === to) || [to, to])[1];
+  if (!(await askConfirm("„" + item.name + "“ " + (mcMode === "move" ? "verschieben" : "kopieren") + " nach „" + what + "“?",
+                         mcMode === "move" ? "Verschieben" : "Kopieren"))) return;
+  try {
+    const res = await api("admin/raw-materials/" + item.id + "/" + mcMode, { method: "POST", body: body });
+    show("mc-panel", false);
+    await loadList();
+    loadAllRaw();
+    if (res.other_article_id) {
+      showMsg("list-msg", "„" + item.name + "“ ist jetzt ein sonstiger Artikel (Wareneingang → Archiv & Sonstige).", "info");
+      openSub("list");
+      return;
+    }
+    await openItem(res.raw_material, false);
+    showMsg("item-msg", (mcMode === "move" ? "Verschoben." : "Kopie angelegt.") + (res.stock_ended ? " Bestand bitte neu zählen." : "")
+      + (res.reference ? " Rohstoff + Handelsware: Bestand beim Rohstoff." : ""), "info");
+  } catch (err) { handleError(err, "mc-msg"); }
+});
+
+// ---- Kassenimport Vectron-Abverkauf (H1, K03-86) ---------------------------------------------------
+let siReport = null;
+function siQuery(mode) {
+  const q = new URLSearchParams({ mode: mode });
+  if ($("si-from").value) q.set("date_from", $("si-from").value);
+  if ($("si-to").value) q.set("date_to", $("si-to").value);
+  return q.toString();
+}
+function dayText(iso) { if (!iso) return ""; const p = iso.split("-"); return p[2] + "." + p[1] + "." + p[0]; }
+function siRender(rep, target) {
+  const box = $(target);
+  box.textContent = "";
+  const head = document.createElement("p");
+  head.textContent = "Zeitraum " + (rep.date_from ? dayText(rep.date_from) + "–" + dayText(rep.date_to) : "– bitte angeben –")
+    + " · gebucht " + (rep.counts ? rep.counts.booked : rep.booked_count) + " · Pfand Kunden " + priceText(rep.deposit_cents || 0) + " €";
+  box.appendChild(head);
+  if (rep.duplicate) {
+    const d = document.createElement("p"); d.className = "msg error";
+    d.textContent = "Zeitraum " + dayText(rep.duplicate.date_from) + "–" + dayText(rep.duplicate.date_to) + " ist schon importiert – jeder Zeitraum nur einmal.";
+    box.appendChild(d);
+  }
+  const t = document.createElement("table");
+  const hr = document.createElement("tr");
+  ["Kasse", "Name", "Anzahl", "Wert €", "→ Artikel", "Abgang", "Status"].forEach((h) => { const th = document.createElement("th"); th.textContent = h; hr.appendChild(th); });
+  t.appendChild(hr);
+  rep.lines.forEach((l) => {
+    const tr = document.createElement("tr");
+    if (l.status !== "booked") tr.className = "uncounted";
+    cell(tr, String(l.register_no), "num");
+    cell(tr, l.name || l.goods_name || "");
+    cell(tr, (l.qty_milli / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }), "num");
+    cell(tr, l.value_cents === null || l.value_cents === undefined ? "" : priceText(l.value_cents), "num");
+    cell(tr, (l.target_name || "") + (l.is_deposit ? " (Pfand)" : ""));
+    cell(tr, l.booked_qty ? (l.unit === "g" ? kgText(l.booked_qty) + " kg" : kgText(l.booked_qty) + " Stück") : "", "num");
+    cell(tr, l.status_text);
+    t.appendChild(tr);
+  });
+  const wrap = document.createElement("div"); wrap.className = "scroll"; wrap.style.maxHeight = "24rem"; wrap.style.overflow = "auto";
+  wrap.appendChild(t);
+  box.appendChild(wrap);
+  if (rep.without_register && rep.without_register.length) {
+    const p = document.createElement("p"); p.className = "small";
+    p.textContent = "Ohne Kassenartikel, nur Inventur: " + rep.without_register.map((g) => g.name).join(", ");
+    box.appendChild(p);
+  }
+}
+$("si-check").addEventListener("click", async () => {
+  showMsg("si-msg", "");
+  const f = $("si-file").files[0];
+  if (!f) { showMsg("si-msg", "Bitte die Abverkaufs-Datei (.xlsx) wählen."); return; }
+  try {
+    siReport = await api("admin/sales-imports?" + siQuery("check"), { method: "POST", file: f });
+    if (!$("si-from").value && siReport.date_from) $("si-from").value = siReport.date_from;
+    if (!$("si-to").value && siReport.date_to) $("si-to").value = siReport.date_to;
+    siRender(siReport, "si-report");
+    $("si-run").disabled = Boolean(siReport.duplicate) || !siReport.date_from;
+    if (!siReport.date_from) showMsg("si-msg", "Zeitraum nicht erkannt – bitte von/bis eintragen und erneut prüfen.", "info");
+  } catch (err) { handleError(err, "si-msg"); }
+});
+["si-from", "si-to", "si-file"].forEach((id) => $(id).addEventListener("change", () => { $("si-run").disabled = true; }));
+$("si-run").addEventListener("click", async () => {
+  const f = $("si-file").files[0];
+  if (!f || !siReport) return;
+  if (!(await askConfirm("Kassenverkäufe " + dayText($("si-from").value) + "–" + dayText($("si-to").value) + " abbuchen?", "Übernehmen"))) return;
+  try {
+    const rep = await api("admin/sales-imports?" + siQuery("run"), { method: "POST", file: f });
+    showMsg("si-msg", rep.booked + " Artikel abgebucht.", "info");
+    $("si-run").disabled = true; $("si-file").value = ""; $("si-report").textContent = ""; siReport = null;
+    loadSalesImports(); loadDeposit(); loadAllRaw();
+  } catch (err) { handleError(err, "si-msg"); }
+});
+async function loadSalesImports() {
+  let rows = [];
+  try { rows = await api("admin/sales-imports"); } catch (err) { handleError(err, "si-msg"); return; }
+  const body = $("si-rows");
+  body.textContent = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    cell(tr, dayText(r.date_from) + "–" + dayText(r.date_to));
+    cell(tr, r.file_name || "");
+    cell(tr, String(r.booked_count), "num");
+    cell(tr, priceText(r.deposit_cents), "num");
+    const a = document.createElement("td");
+    a.appendChild(actionButton("Ansehen", async () => {
+      try { const d = await api("admin/sales-imports/" + r.id); siRender(d, "si-detail"); } catch (err) { handleError(err, "si-msg"); }
+    }));
+    a.appendChild(actionButton("Zurücknehmen", async () => {
+      if (!(await askConfirm("Kassenimport " + dayText(r.date_from) + "–" + dayText(r.date_to) + " zurücknehmen? Die Abgänge werden gegengebucht.", "Zurücknehmen"))) return;
+      try { await api("admin/sales-imports/" + r.id, { method: "DELETE" }); $("si-detail").textContent = ""; loadSalesImports(); loadDeposit(); loadAllRaw(); }
+      catch (err) { handleError(err, "si-msg"); }
+    }));
+    tr.appendChild(a);
+    body.appendChild(tr);
+  });
+  show("si-empty", rows.length === 0);
+}
+
+// ---- Pfand-Übersicht (H1, K03-87) -------------------------------------------------------------------
+function euroSigned(c) { return (c < 0 ? "−" : "") + priceText(Math.abs(c)) + " €"; }
+async function loadDeposit() {
+  showMsg("dp-msg", "");
+  const q = new URLSearchParams();
+  if ($("dp-from").value) q.set("date_from", $("dp-from").value);
+  if ($("dp-to").value) q.set("date_to", $("dp-to").value);
+  let d;
+  try { d = await api("admin/deposit-overview?" + q.toString()); } catch (err) { handleError(err, "dp-msg"); return; }
+  const sums = $("dp-sums");
+  sums.textContent = "";
+  [["Pfand BÄKO", d.baeko_cents], ["Pfand Kunden", d.customers_cents], ["Pfand gesamt", d.total_cents]].forEach(([t, c]) => {
+    const b = document.createElement("div"); b.className = "panel"; b.style.margin = "0"; b.style.minWidth = "10rem";
+    const s1 = document.createElement("div"); s1.className = "small"; s1.textContent = t;
+    const s2 = document.createElement("div"); s2.style.fontSize = "1.4rem"; s2.style.fontWeight = "bold"; s2.textContent = euroSigned(c);
+    b.appendChild(s1); b.appendChild(s2); sums.appendChild(b);
+  });
+  const body = $("dp-rows");
+  body.textContent = "";
+  d.baeko_lines.forEach((l) => {
+    const tr = document.createElement("tr");
+    cell(tr, (l.kind === "credit_note" ? "Gutschrift " : "Rechnung ") + l.doc_no);
+    cell(tr, l.doc_date ? dayText(l.doc_date) : "");
+    cell(tr, l.line_no + ". " + (l.description || ""));
+    cell(tr, (l.qty_milli / 1000).toLocaleString("de-DE", { maximumFractionDigits: 3 }) + " " + l.unit_code, "num");
+    cell(tr, euroSigned(l.cents), "num");
+    body.appendChild(tr);
+  });
+}
+$("dp-load").addEventListener("click", loadDeposit);
 
 async function start() {
   buildKeypad();
