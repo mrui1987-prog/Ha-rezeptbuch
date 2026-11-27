@@ -148,6 +148,24 @@ def test_ab_substitute_prior_hint(conn, env):
     env.append(ab([position(1, "555555", "Fremdmehl", 25000)], "AT1000002"))
     pre = rec.upload(conn, PDF + b"x2", "ab.pdf")
     assert pre["lines"][0]["prior_substitute"]["raw_material_id"] == rm
+    assert pre["lines"][0]["prior_substitute"]["number"] == conn.execute(
+        "SELECT number FROM raw_material WHERE id = ?", (rm,)).fetchone()[0]
+
+
+def test_ab_permanent_switch_creates_new_raw_material(conn, env):
+    """Befund 27.11.: „Dauerhaft umstellen“ beim Hochladen legt den neuen Rohstoff an (vorher Sprung ohne Anlegen)."""
+    rm = mehl(conn, "Magerquark")
+    load(conn, env, [position(1, "555777", "Speisequark mager Fremd", 5000)],
+         {"1": {"action": "substitute", "raw_material_id": rm}})
+    env.append(ab([position(1, "555777", "Speisequark mager Fremd", 5000)], "AT1000002"))
+    pre = rec.upload(conn, PDF + b"x2", "ab.pdf")
+    ps = pre["lines"][0]["prior_substitute"]
+    doc = rec.commit(conn, {"token": pre["token"], "decisions": {"1": {
+        "action": "new", "name": "Magerquark Fremd", "tolerance": "5", "tolerance_unit": "g",
+        "switch_from": {"number": ps["number"], "name": ps["name"]}}}})
+    line = doc["lines"][0]
+    assert line["target"] == "raw_material" and line["raw_material_name"] == "Magerquark Fremd"
+    assert line["raw_material_number"] and line["raw_material_id"] != rm
 
 
 def _ipos(nr, art, bez, menge, order):

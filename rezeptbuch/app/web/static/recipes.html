@@ -1945,9 +1945,11 @@ async function start() {
   // Sprung aus dem Wareneingang „Dauerhaft umstellen?“ (M03-36): ?view=replace&old=<Rohstoffname>
   if (view === "replace") {
     const old = new URLSearchParams(location.search).get("old");
+    const neu = new URLSearchParams(location.search).get("new");   // aus „Dauerhaft umstellen“ beim Hochladen
     try { history.replaceState(null, "", location.pathname); } catch (e) { /* egal */ }
     try { await loadChoices(); } catch (err) { handleError(err, "list-msg"); }
     if (old && old.length <= 200) $("rep-old").value = old;
+    if (neu && neu.length <= 200) $("rep-new").value = neu;
     showMsg("rep-msg", ""); showView("replace");
     loadList();
     return;

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.10.35 – Wareneingang: „Dauerhaft umstellen“ legt den neuen Rohstoff an
+
+- **Befund Michael 27.11.2026 (Quark zum zweiten Mal als Ersatz):** „Dauerhaft umstellen …“ beim Hochladen der AB sprang sofort zu „Rohstoff austauschen“, ohne den neuen Rohstoff anzulegen – dort fehlte er, die Zuordnung der AB ging verloren. Jetzt: Rückfrage → Fenster „Neuer Rohstoff“ (Name vorbelegt) → beim Speichern wird er angelegt, danach „Rohstoff austauschen“ mit alt **und** neu vorbelegt (als Nummer + Name, eindeutig auch bei mehreren Quark-Rohstoffen); „Später“ bleibt möglich.
+- Rückfrage am Liefertag (zweiter gleicher Ersatz beim Buchen) sagt jetzt, dass der neue Rohstoff dafür schon angelegt sein muss.
+- `recipes.html` versteht `?view=replace&old=…&new=…`; Belegpositionen liefern die Rohstoffnummer mit.
+
 ## 0.10.34 – Waren- und Hauptgruppen im Planer, Hinweis bei Tasten an der Waage, klarere „Weiter“-Tasten
 
 - **Waren- und Hauptgruppen mit Namen (Planer, Modul 10):** Neuer Import „Waren- und Hauptgruppen aus der Vectron (.xlsx)“ unter Rezepte → Import/Export (Probelauf → Übernehmen, PIN); erkennt Warengruppen-Export (Nummer, Name, A-Hauptgruppe) und Hauptgruppen-Export (Nummer, Name). Planer an der Station sortiert und filtert nach Hauptgruppe („7 Kuchen“, darunter Warengruppen, wenn mehrere), Artikelliste gliedert den Filter nach Hauptgruppen, Artikel zeigen Waren- und Hauptgruppe; ohne Namen bleibt die Nummer. Gespeichert als Einstellungen, keine Migration. Neu: `GET /api/v1/articles/group-names`, `POST /api/v1/admin/articles/group-names/import` (Michael 24.11.2026, 12:56/13:03/13:21).

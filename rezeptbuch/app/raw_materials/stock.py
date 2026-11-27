@@ -82,7 +82,7 @@ def status(stock_g: int | None, alert_g: int | None, need_g: int = 0) -> str | N
 # -- Buchungen -----------------------------------------------------------------------
 
 def _row(conn: sqlite3.Connection, raw_material_id: int) -> sqlite3.Row:
-    row = conn.execute("SELECT id, name, type, stock_g, stock_alert_g, archived, unit_size_g, unit_label, "
+    row = conn.execute("SELECT id, number, name, type, stock_g, stock_alert_g, archived, unit_size_g, unit_label, "
                        "delivery_pack_g, delivery_pack_label FROM raw_material WHERE id = ?",
                        (raw_material_id,)).fetchone()
     if row is None:
