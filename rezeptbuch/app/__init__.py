@@ -1,3 +1,3 @@
 """HA-Rezeptbuch – Add-on 1 (Rezeptserver)."""
 
-__version__ = "0.10.38"
+__version__ = "0.10.39"

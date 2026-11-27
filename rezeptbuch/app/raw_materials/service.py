@@ -245,7 +245,9 @@ def list_raw_materials(conn: sqlite3.Connection, search: str | None = None,
     if below_alert:
         where.append("archived = 0 AND stock_g IS NOT NULL AND stock_alert_g IS NOT NULL "
                      "AND stock_g <= stock_alert_g")
-    if type_ is not None:
+    if type_ == "raw":                       # Reiter „Rohstoffe“: Mehl und Standard (Michael 27.11.2026)
+        where.append("type IN ('flour', 'standard')")
+    elif type_ is not None:
         if type_ not in TYPES:
             raise ValidationError("Unbekannter Typ-Filter.", field="type")
         where.append("type = ?")

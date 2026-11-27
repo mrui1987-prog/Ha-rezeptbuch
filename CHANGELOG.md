@@ -1,5 +1,14 @@
 # Änderungen
 
+## 0.10.39 – Rohstoffverwaltung: eigene Reiter je Art, Sonstige Artikel dort erreichbar
+
+Befund Michael 27.11.2026, 21:06 („sonstige ist nicht zu finden … es wird auch nicht sauber getrennt, aktuell ist alles in Rohstoffe und unterscheidet sich im Typ“). Umsetzung von K03-89 („in jedem Reiter“), bisher nur Typ-Filter:
+
+- **Reiter** Rohstoffe · Hilfs- und Betriebsstoffe · Handelsware · Sonstige · Bestand · Händler (am iPhone als Auswahlliste). Adressen `/admin/rohstoffe`, `…/hilfsstoffe`, `…/handelsware`, `…/sonstige`.
+- Reiter **Rohstoffe** zeigt nur Mehl und Standard (Filter „alle Rohstoffe / nur Mehl / nur Standard“, neu `type=raw` in `GET /api/v1/raw-materials`); Hilfs- und Betriebsstoffe und Handelsware je in ihrem Reiter. „Neuer …“ legt die Art des Reiters an; ein geöffneter Artikel markiert seinen Reiter.
+- Reiter **Sonstige**: Liste der sonstigen Artikel (Suche, ausgeblendete zeigen) mit „Verschieben nach …“ / „Kopieren nach …“ (Rohstoff, Mehl, Hilfs- und Betriebsstoff, Handelsware; fragt Gramm bzw. Stück je Einheit und Pfand) und „Ausblenden“. Wird ein Artikel an der Rohstoffseite zum sonstigen Artikel verschoben, öffnet sich dieser Reiter. Wareneingang → Archiv & Sonstige bleibt.
+- Keine Migration.
+
 ## 0.10.38 – Planer-Artikelliste nach Hauptgruppen, Import-Schutz, Admin-Reiter; Wiegeablauf M09-20/21 (Migration 0016)
 
 Planer und Admin (Modul 10):

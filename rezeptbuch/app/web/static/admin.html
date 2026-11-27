@@ -134,13 +134,19 @@
     <h1>Rohstoffverwaltung <a class="small" href="../wareneingang" style="font-size:.5em">Zum Wareneingang</a></h1>
     <div class="toolbar hidden" id="back-bar"><button type="button" id="btn-back-recipe">← Zurück zum Rezept</button>
       <span class="small" id="back-info"></span></div>
+    <!-- Reiter je Art (K03-89, Michael 27.11.2026: „sauber getrennt“, Sonstige hier erreichbar) -->
     <div class="subtabs" id="subnav">
-      <button type="button" data-sub="list">Liste</button>
+      <button type="button" data-sub="list:raw">Rohstoffe</button>
+      <button type="button" data-sub="list:aid">Hilfs- und Betriebsstoffe</button>
+      <button type="button" data-sub="list:goods">Handelsware</button>
+      <button type="button" data-sub="other">Sonstige</button>
       <button type="button" data-sub="stock">Bestand</button>
       <button type="button" data-sub="dealers">Händler</button>
     </div>
     <select id="subnav-select" aria-label="Bereich">
-      <option value="list">Liste</option><option value="stock">Bestand</option><option value="dealers">Händler</option>
+      <option value="list:raw">Rohstoffe</option><option value="list:aid">Hilfs- und Betriebsstoffe</option>
+      <option value="list:goods">Handelsware</option><option value="other">Sonstige Artikel</option>
+      <option value="stock">Bestand</option><option value="dealers">Händler</option>
     </select>
     <div id="list-msg" class="msg hidden" role="alert"></div>
 
@@ -152,7 +158,7 @@
       </div>
       <div class="filters">
         <select id="f-status" aria-label="Status"><option value="active">aktive</option><option value="archived">archivierte</option><option value="all">alle</option></select>
-        <select id="f-ftype" aria-label="Typ"><option value="">alle Typen</option><option value="flour">nur Mehl</option><option value="standard">nur Standard</option><option value="aid">nur Hilfs- und Betriebsstoffe</option><option value="goods">nur Handelsware</option></select>
+        <select id="f-ftype" aria-label="Typ"><option value="raw">alle Rohstoffe</option><option value="flour">nur Mehl</option><option value="standard">nur Standard</option></select>
         <select id="f-stock" aria-label="Bestand"><option value="">Bestand: alle</option><option value="below_alert">am/unter Meldewert</option><option value="negative">im Minus</option><option value="none">ohne Bestandsführung</option></select>
         <select id="f-dealer" aria-label="Händler"><option value="">alle Händler</option></select>
         <label class="inline"><input id="only-zero" type="checkbox"> Toleranz 0 %</label>
@@ -503,6 +509,41 @@
       </div>
     </div>
 
+    <!-- Reiter Sonstige Artikel (ohne Bestand; Verschieben/Kopieren nach K03-89) -->
+    <div id="sub-other" class="hidden">
+      <div class="panel">
+        <h2>Sonstige Artikel</h2>
+        <p class="small">Artikel aus Belegen ohne Bestand (z. B. Fracht, Gebühren). Mit „Verschieben nach …“ wird daraus ein
+          Rohstoff, Hilfs- und Betriebsstoff oder eine Handelsware – Belegzeilen und BÄKO-Artikelnummer wandern mit.
+          „Kopieren nach …“ legt einen neuen Artikel an, der sonstige bleibt.</p>
+        <div class="toolbar">
+          <input id="other-search" class="grow" type="search" placeholder="Suchen (Artikelnummer, Bezeichnung)" aria-label="Suchen">
+          <label class="inline"><input id="other-archived" type="checkbox"> ausgeblendete zeigen</label>
+        </div>
+        <div id="other-msg" class="msg hidden" role="alert"></div>
+        <div class="scroll"><table><thead><tr><th>Art.-Nr.</th><th>Bezeichnung</th><th>Händler</th><th class="num">WG</th>
+          <th class="num">Belegzeilen</th><th class="num">letzter Preis</th><th>Aktionen</th></tr></thead>
+          <tbody id="other-rows"></tbody></table></div>
+        <p class="small" id="other-count"></p>
+        <div id="om-panel" class="panel hidden">
+          <h3 id="om-title">Verschieben nach …</h3>
+          <p class="small" id="om-text"></p>
+          <div class="grid">
+            <div><label for="om-to">Nach</label><select id="om-to" style="width:100%">
+              <option value="standard">Rohstoff</option><option value="flour">Rohstoff (Mehl)</option>
+              <option value="aid">Hilfs- und Betriebsstoff</option><option value="goods">Handelsware</option></select></div>
+            <div id="om-name-box"><label for="om-name">Name</label><input id="om-name" maxlength="100" style="width:100%"></div>
+            <div id="om-gpu-box"><label for="om-gpu" id="om-gpu-label">Gramm je Einheit</label><input id="om-gpu" inputmode="numeric" style="width:100%"></div>
+            <div id="om-pieces-box"><label for="om-pieces" id="om-pieces-label">Stück je Einheit</label><input id="om-pieces" inputmode="numeric" style="width:100%" placeholder="1"></div>
+            <div id="om-deposit-box"><label class="inline"><input id="om-deposit" type="checkbox"> Pfand (Kiste, Flasche)</label></div>
+          </div>
+          <div id="om-msg" class="msg error hidden" role="alert"></div>
+          <div class="toolbar"><button type="button" id="om-go"><b>Ausführen</b></button>
+            <button type="button" id="om-cancel">Abbrechen</button></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Unterreiter Händler -->
     <div id="sub-dealers" class="hidden">
       <div class="panel">
@@ -561,6 +602,12 @@ let token = null;
 try { token = sessionStorage.getItem(SESSION_KEY); } catch (e) { token = null; }
 let pendingPage = null;      // Reiter, der nach abgelaufener Sitzung nach der Anmeldung geöffnet wird
 let currentSub = "list";
+let listKind = "raw";       // Reiter: raw (Mehl + Standard), aid, goods
+const KIND_PATH = { raw: "", aid: "/hilfsstoffe", goods: "/handelsware" };
+const KIND_WORD = { raw: ["Rohstoff", "Rohstoffe", "Neuer Rohstoff"],
+                    aid: ["Hilfs- und Betriebsstoff", "Hilfs- und Betriebsstoffe", "Neuer Hilfs- und Betriebsstoff"],
+                    goods: ["Handelsware", "Handelswaren", "Neue Handelsware"] };
+function kindOf(type) { return type === "aid" || type === "goods" ? type : "raw"; }
 let item = null;             // geöffneter Rohstoff (null = neuer Rohstoff)
 let itemTab = "base";
 let formDirty = false;
@@ -886,6 +933,8 @@ $("btn-logout").addEventListener("click", async () => {
 // ---- Navigation: Unterreiter und Adressen (Abschnitt 2 und 4) ----------------------------
 
 function pathFor(sub, it) {
+  if (sub === "list") return ROOT + KIND_PATH[listKind];
+  if (sub === "other") return ROOT + "/sonstige";
   if (sub === "stock") return ROOT + "/bestand";
   if (sub === "dealers") return ROOT + "/haendler";
   if (sub === "item") return ROOT + "/" + (it ? it.number : "neu");
@@ -897,8 +946,8 @@ function navigate(sub, it, replace) {
 }
 function showSub(sub) {
   currentSub = sub;
-  ["list", "item", "stock", "dealers"].forEach((s) => show("sub-" + s, s === sub));
-  const active = sub === "item" ? "list" : sub;
+  ["list", "item", "stock", "dealers", "other"].forEach((s) => show("sub-" + s, s === sub));
+  const active = sub === "item" || sub === "list" ? "list:" + listKind : sub;
   document.querySelectorAll("#subnav button").forEach((b) => b.classList.toggle("active", b.dataset.sub === active));
   $("subnav-select").value = active;
   window.scrollTo(0, 0);
@@ -911,7 +960,8 @@ async function leaveItem() {
   return true;
 }
 async function openSub(sub) {
-  if (!(await leaveItem())) { $("subnav-select").value = "list"; return; }
+  if (!(await leaveItem())) { $("subnav-select").value = "list:" + listKind; return; }
+  if (sub.startsWith("list:")) { setKind(sub.slice(5)); sub = "list"; }
   showMsg("list-msg", "");
   navigate(sub);
   await renderSub(sub);
@@ -919,6 +969,7 @@ async function openSub(sub) {
 async function renderSub(sub) {
   showSub(sub);
   if (sub === "list") await loadList();
+  else if (sub === "other") await loadOthers();
   else if (sub === "stock") await loadStockArea();
   else if (sub === "dealers") await loadDealerTable();
 }
@@ -929,6 +980,9 @@ $("subnav-select").addEventListener("change", () => openSub($("subnav-select").v
 async function route() {
   const rest = location.pathname.slice(ROOT.length).replace(/^\//, "");
   if (rest === "bestand") return renderSub("stock");
+  if (rest === "sonstige") return renderSub("other");
+  if (rest === "hilfsstoffe") { setKind("aid"); return renderSub("list"); }
+  if (rest === "handelsware") { setKind("goods"); return renderSub("list"); }
   if (rest === "haendler") return renderSub("dealers");
   if (rest === "neu") return openItem(null, true);
   if (/^[0-9]{1,9}$/.test(rest)) {
@@ -936,6 +990,7 @@ async function route() {
     if (found) return openItem(found, true);
     showMsg("list-msg", "Rohstoff Nr. " + rest + " nicht gefunden.");
   }
+  setKind("raw");
   return renderSub("list");
 }
 window.addEventListener("popstate", async () => {
@@ -956,7 +1011,7 @@ async function findByNumber(number) {
 
 // ---- Liste mit Filtern (Abschnitt 3) -----------------------------------------------------
 
-const FILTER_FIELDS = { search: "", "f-status": "active", "f-ftype": "", "f-stock": "", "f-dealer": "",
+const FILTER_FIELDS = { search: "", "f-status": "active", "f-ftype": "raw", "f-stock": "", "f-dealer": "",
                         "only-zero": false, "only-noprice": false, "only-unused": false };
 function saveFilter() {
   const data = {};
@@ -970,12 +1025,13 @@ function restoreFilter(reset) {
     const value = id in data ? data[id] : FILTER_FIELDS[id];
     if (typeof FILTER_FIELDS[id] === "boolean") $(id).checked = value === true; else $(id).value = String(value);
   });
+  if (!$("f-ftype").value) $("f-ftype").value = "raw";          // alter gespeicherter Wert (z. B. „aid“) gilt nicht mehr
 }
 function listQuery() {
   const q = new URLSearchParams();
   if ($("search").value.trim()) q.set("search", $("search").value.trim());
   q.set("status", $("f-status").value);
-  if ($("f-ftype").value) q.set("type", $("f-ftype").value);
+  q.set("type", listKind === "raw" ? ($("f-ftype").value || "raw") : listKind);
   if ($("f-stock").value) q.set("stock", $("f-stock").value);
   if ($("f-dealer").value === "none") q.set("no_source", "true");
   else if ($("f-dealer").value) q.set("dealer_id", $("f-dealer").value);
@@ -1031,7 +1087,7 @@ function renderRows() {
     body.appendChild(tr);
   });
   show("empty", lastItems.length === 0);
-  $("list-count").textContent = lastItems.length ? lastItems.length + " Rohstoff" + (lastItems.length === 1 ? "" : "e") + " angezeigt" : "";
+  $("list-count").textContent = lastItems.length ? lastItems.length + " " + KIND_WORD[listKind][lastItems.length === 1 ? 0 : 1] + " angezeigt" : "";
   updateBulkBar();
 }
 
@@ -1188,7 +1244,14 @@ async function stepItem(delta) {
 }
 $("item-prev").addEventListener("click", () => stepItem(-1));
 $("item-next").addEventListener("click", () => stepItem(1));
-$("item-back").addEventListener("click", () => openSub("list"));
+$("item-back").addEventListener("click", () => openSub("list:" + listKind));
+
+function setKind(kind) {
+  listKind = KIND_WORD[kind] ? kind : "raw";
+  show("f-ftype", listKind === "raw");
+  $("btn-new").textContent = KIND_WORD[listKind][2];
+  $("empty").textContent = "Keine " + KIND_WORD[listKind][1] + " gefunden.";
+}
 
 async function openItem(it, fromRoute, tab) {
   if (!fromRoute && !(await leaveItem())) return;
@@ -1197,6 +1260,7 @@ async function openItem(it, fromRoute, tab) {
     try { it = await api("raw-materials/" + it.id); } catch (err) { handleError(err); return; }
   }
   item = it || null;
+  if (item) setKind(kindOf(item.type));
   if (!fromRoute) navigate("item", item);
   showSub("item");
   showMsg("item-msg", "");
@@ -1218,7 +1282,7 @@ function fillForm() {
   if (item) $("form-archive").textContent = item.archived ? "Wiederherstellen" : "Archivieren";
   $("f-name").value = item ? item.name : "";
   $("f-display").value = item && item.display_name ? item.display_name : "";
-  $("f-type").value = item ? item.type : "standard";
+  $("f-type").value = item ? item.type : (listKind === "raw" ? "standard" : listKind);
   $("f-tol-unit").value = item ? item.tolerance_unit : "g";
   $("f-tol").value = item ? String(item.tolerance).replace(".", ",") : "";      // neu: leer, Pflichtfeld
   $("f-unit-size").value = item && item.unit_size_g ? String(item.unit_size_g) : "";
@@ -1470,7 +1534,7 @@ $("form-delete").addEventListener("click", async () => {
     formDirty = false;
     const name = item.name;
     item = null;
-    await openSub("list");
+    await openSub("list:" + listKind);
     loadAllRaw();
     showMsg("list-msg", "„" + name + "“ gelöscht.", "info");
   } catch (err) { handleError(err, "form-msg"); }
@@ -2222,6 +2286,98 @@ async function enterApp() {
   await route();
 }
 
+// ---- Reiter Sonstige Artikel (Michael 27.11.2026: Sonstige in der Rohstoffverwaltung, verschiebbar) ----------
+let others = [];
+let omOther = null, omMode = "move";
+async function loadOthers() {
+  try { others = await api("admin/other-articles" + ($("other-archived").checked ? "?include_archived=true" : "")); }
+  catch (err) { handleError(err); return; }
+  renderOthers();
+}
+function renderOthers() {
+  const body = $("other-rows");
+  body.textContent = "";
+  const q = $("other-search").value.trim().toLowerCase();
+  const rows = others.filter((o) => !q || ((o.article_no || "") + " " + (o.description || "")).toLowerCase().includes(q));
+  rows.forEach((o) => {
+    const tr = document.createElement("tr");
+    if (o.archived) tr.className = "archived";
+    cell(tr, o.article_no || "");
+    cell(tr, (o.description || "") + (o.archived ? " (ausgeblendet)" : ""), "name");
+    cell(tr, o.dealer_name || "");
+    cell(tr, o.commodity_group || "", "num");
+    cell(tr, String(o.lines || 0), "num");
+    cell(tr, o.last_price_e4 != null ? (o.last_price_e4 / 10000).toFixed(2).replace(".", ",") + " €" + (o.last_unit ? " / " + o.last_unit : "") : "", "num");
+    const td = document.createElement("td");
+    const mk = (label, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+                                b.addEventListener("click", (ev) => { ev.stopPropagation(); fn(); }); td.appendChild(b); };
+    mk("Verschieben nach …", () => openOtherMove(o, "move"));
+    mk("Kopieren nach …", () => openOtherMove(o, "copy"));
+    mk(o.archived ? "Einblenden" : "Ausblenden", async () => {
+      try { await api("admin/other-articles/" + o.id, { method: "PATCH", body: { archived: !o.archived } }); await loadOthers(); }
+      catch (err) { handleError(err); }
+    });
+    tr.appendChild(td);
+    body.appendChild(tr);
+  });
+  $("other-count").textContent = rows.length ? rows.length + " sonstige Artikel" : "Keine sonstigen Artikel.";
+}
+function openOtherMove(o, mode) {
+  omOther = o; omMode = mode;
+  $("om-title").textContent = (mode === "move" ? "Verschieben nach …" : "Kopieren nach …") + " – " + (o.description || o.article_no);
+  $("om-name").value = o.description || "";
+  $("om-gpu").value = ""; $("om-pieces").value = ""; $("om-deposit").checked = /pfand|leergut/i.test(o.description || "");
+  $("om-to").value = "goods";
+  showMsg("om-msg", "");
+  show("om-panel", true);
+  omFields();
+  $("om-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function omFields() {
+  const to = $("om-to").value, unit = (omOther.last_unit || "ST").toUpperCase();
+  const grams = to === "standard" || to === "flour";
+  show("om-name-box", omMode === "copy");
+  show("om-gpu-box", grams && unit !== "KG");
+  $("om-gpu-label").textContent = "Wie viel Gramm hat 1 " + unit + "?";
+  show("om-pieces-box", to === "goods" && unit !== "ST");
+  $("om-pieces-label").textContent = "Wie viel Stück sind in 1 " + unit + "?";
+  show("om-deposit-box", to === "goods");
+  $("om-text").textContent = (omMode === "move"
+    ? "Belegzeilen und BÄKO-Artikelnummer wandern mit, der sonstige Artikel entfällt."
+    : "Legt einen neuen Artikel ohne BÄKO-Artikelnummer an, der sonstige Artikel bleibt.")
+    + (grams ? " Toleranz beim Wiegen zunächst 5 g – an der Rohstoffseite anpassen." : "")
+    + " Bestand beginnt erst mit der nächsten Lieferung oder Inventur.";
+}
+$("om-to").addEventListener("change", omFields);
+$("om-cancel").addEventListener("click", () => show("om-panel", false));
+$("other-search").addEventListener("input", renderOthers);
+$("other-archived").addEventListener("change", loadOthers);
+$("om-go").addEventListener("click", async () => {
+  showMsg("om-msg", "");
+  const to = $("om-to").value;
+  const body = { to: to };
+  if (!$("om-gpu-box").classList.contains("hidden")) {
+    if (!/^[0-9]+$/.test($("om-gpu").value.trim())) { showMsg("om-msg", "Bitte Gramm je Einheit als ganze Zahl eingeben."); return; }
+    body.grams_per_unit = $("om-gpu").value.trim();
+  }
+  if (!$("om-pieces-box").classList.contains("hidden")) {
+    if (!/^[0-9]+$/.test($("om-pieces").value.trim())) { showMsg("om-msg", "Bitte Stück je Einheit als ganze Zahl eingeben."); return; }
+    body.pieces_per_unit = $("om-pieces").value.trim();
+  }
+  if (to === "goods") body.is_deposit = $("om-deposit").checked;
+  if (omMode === "copy" && $("om-name").value.trim()) body.name = $("om-name").value.trim();
+  try {
+    const res = await api("admin/other-articles/" + omOther.id + "/" + omMode, { method: "POST", body: body });
+    show("om-panel", false);
+    loadAllRaw();
+    await loadOthers();
+    showMsg("other-msg", (omMode === "move" ? "Verschoben: " : "Kopie angelegt: ") + res.raw_material.number + " " + res.raw_material.name
+      + " – zu finden im Reiter „" + KIND_WORD[kindOf(res.raw_material.type)][1] + "“.", "info");
+  } catch (err) {
+    if (err && err.message) showMsg("om-msg", err.message); else handleError(err);
+  }
+});
+
 // ---- Verschieben / Kopieren zwischen den Arten (H1, K03-89, K03-93) -----------------------------------
 const MC_TARGETS = [["standard", "Rohstoff"], ["flour", "Rohstoff (Mehl)"], ["aid", "Hilfs- und Betriebsstoff"],
                     ["goods", "Handelsware"], ["other", "Sonstiger Artikel"]];
@@ -2291,8 +2447,8 @@ $("mc-go").addEventListener("click", async () => {
     await loadList();
     loadAllRaw();
     if (res.other_article_id) {
-      showMsg("list-msg", "„" + item.name + "“ ist jetzt ein sonstiger Artikel (Wareneingang → Archiv & Sonstige).", "info");
-      openSub("list");
+      await openSub("other");
+      showMsg("other-msg", "„" + item.name + "“ ist jetzt ein sonstiger Artikel.", "info");
       return;
     }
     await openItem(res.raw_material, false);

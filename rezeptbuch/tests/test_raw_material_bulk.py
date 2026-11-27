@@ -175,3 +175,12 @@ def test_movements_all_and_quick_entry_source(conn, rms):
         stock.movements_all(conn, date_from="1.1.2026")
     with pytest.raises(ValidationError):
         stock.movements_all(conn, kind="x")
+
+
+def test_filter_raw_tab_excludes_aid_and_goods(conn, rms):
+    """Reiter „Rohstoffe“ (Michael 27.11.2026): nur Mehl und Standard, ohne Hilfs- und Betriebsstoffe und Handelsware."""
+    a, b, c = rms
+    d = service.create_raw_material(conn, {"name": "Tüten", "type": "aid", "unit_label": "Paket"})["id"]
+    rows = service.list_raw_materials(conn, status="all", type_="raw")
+    assert ids(rows) == [a, b, c] and d not in ids(rows)
+    assert ids(service.list_raw_materials(conn, status="all", type_="aid")) == [d]
