@@ -215,6 +215,9 @@ def test_pack_step():
     assert rec.pack_step("3 VE à 5 KG", "KG")["step_milli"] == 5000
     assert rec.pack_step("1 VE à 3 BT", "BT") == {"step_milli": 3000, "name": "VE", "count": 1}
     assert rec.pack_step(None, "L")["step_milli"] == 1000
+    other = rec.pack_step("2 VE à 5 L", "KG")            # Menge in KG, Gebinde in L → nur Vorschlag
+    assert other["step_milli"] == 1000 and other["count"] is None
+    assert other["hint"] == {"name": "VE", "size_milli": 5000, "unit": "L"}
 
 
 def test_same_article_twice_in_one_ab(conn, env):

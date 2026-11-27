@@ -74,10 +74,15 @@ def _int(value, field: str, *, minimum: int = 0, maximum: int = 10 ** 12) -> int
 def pack_step(pack_text: str | None, unit_code: str) -> dict:
     """± Gebinde-Tasten (K03-45): „16 SCK à 25 KG“ → Schritt 25 KG, Name Sack."""
     m = _PACK.match(pack_text or "")
-    if m and m.group(4).upper() == (unit_code or "").upper():
+    if m:
         size = float(m.group(3).replace(".", "").replace(",", ".")) if "," in m.group(3) else float(m.group(3))
         name = PACK_NAMES.get(m.group(2).upper(), m.group(2))
-        return {"step_milli": max(1, round(size * 1000)), "name": name, "count": int(m.group(1))}
+        if m.group(4).upper() == (unit_code or "").upper():
+            return {"step_milli": max(1, round(size * 1000)), "name": name, "count": int(m.group(1))}
+        # Gebinde in anderer Einheit als die Menge (z. B. Menge KG, „1 VE à 5 L“, Befund Sahne 27.11.2026):
+        # nicht umrechenbar, aber als Vorschlag für die einmalige Rückfrage beim Abhaken
+        return {"step_milli": 1000, "name": unit_code, "count": None,
+                "hint": {"name": name, "size_milli": max(1, round(size * 1000)), "unit": m.group(4).upper()}}
     return {"step_milli": 1000, "name": unit_code, "count": None}
 
 

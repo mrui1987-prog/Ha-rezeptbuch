@@ -898,6 +898,7 @@
     const dp = rm ? rm.delivery_pack_label : l.rm_delivery_pack_label;
     if (dp) return dp;
     if (l.pack && l.pack.count != null) return l.pack.name;
+    if (S.steps[l.id] && l.pack && l.pack.hint) return l.pack.hint.name;
     return (rm ? rm.pack_label : l.rm_pack_label) || "Gebinde";
   }
 
@@ -906,8 +907,12 @@
     const m = S.marks[l.id];
     let s = step || scanStep(l, rm);
     if (!s) {
-      const v = await askNumber("Wie viel ist 1 Gebinde?", (l.raw_material_name || l.description)
-        + ": kein Gebinde bekannt. Wie viel " + (l.unit_code || "") + " zählt ein Scan? (nur für diese Lieferung)", l.unit_code);
+      const h = l.pack && l.pack.hint;           // z. B. Menge in KG, Gebinde laut AB „1 VE à 5 L“
+      const v = await askNumber("Wie viel ist 1 " + (h ? h.name : "Gebinde") + "?", (l.raw_material_name || l.description)
+        + (h ? ": laut AB 1 " + h.name + " = " + fmtMilli(h.size_milli, h.unit) + ", gezählt wird aber in " + (l.unit_code || "")
+             : ": kein Gebinde bekannt")
+        + ". Wie viel " + (l.unit_code || "") + " zählt ein Scan? (nur für diese Lieferung)", l.unit_code,
+        h ? String(h.size_milli / 1000).replace(".", ",") : undefined);
       if (!v) {
         if (extra && extra.code) await releaseCode(extra);
         msg("Nicht gezählt.", "orange");
