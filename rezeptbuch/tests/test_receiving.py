@@ -215,6 +215,9 @@ def test_pack_step():
     assert rec.pack_step("3 VE à 5 KG", "KG")["step_milli"] == 5000
     assert rec.pack_step("1 VE à 3 BT", "BT") == {"step_milli": 3000, "name": "VE", "count": 1}
     assert rec.pack_step(None, "L")["step_milli"] == 1000
+    assert rec.pack_step("1 PG à 1.000 ST", "ST")["step_milli"] == 1_000_000      # Tausenderpunkt
+    assert rec.pack_step("1 VE à 2,5 KG", "KG")["step_milli"] == 2500
+    assert rec.pack_step("1 KT à 5 KG", "KG") == {"step_milli": 5000, "name": "Karton", "count": 1}  # Sahne AT1003549
     other = rec.pack_step("2 VE à 5 L", "KG")            # Menge in KG, Gebinde in L → nur Vorschlag
     assert other["step_milli"] == 1000 and other["count"] is None
     assert other["hint"] == {"name": "VE", "size_milli": 5000, "unit": "L"}

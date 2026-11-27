@@ -75,7 +75,8 @@ def pack_step(pack_text: str | None, unit_code: str) -> dict:
     """± Gebinde-Tasten (K03-45): „16 SCK à 25 KG“ → Schritt 25 KG, Name Sack."""
     m = _PACK.match(pack_text or "")
     if m:
-        size = float(m.group(3).replace(".", "").replace(",", ".")) if "," in m.group(3) else float(m.group(3))
+        # deutsches Zahlformat: „1.000“ = tausend, „2,5“ = zweieinhalb (Befund AT1003549 Faltenbeutel, 27.11.2026)
+        size = float(m.group(3).replace(".", "").replace(",", "."))
         name = PACK_NAMES.get(m.group(2).upper(), m.group(2))
         if m.group(4).upper() == (unit_code or "").upper():
             return {"step_milli": max(1, round(size * 1000)), "name": name, "count": int(m.group(1))}
