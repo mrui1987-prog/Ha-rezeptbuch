@@ -1,11 +1,12 @@
 # Änderungen
 
-## 0.10.40 – Admin: Taste „⌂ Stationswahl“, Verschieben/Kopieren oben an der Artikelseite
+## 0.10.40 – Admin: „⌂ Stationswahl“, Verschieben/Kopieren oben; Station: „Nullen“ bei Strichen
 
 Befunde Michael 28.11.2026, 03:24:
 
 - **„⌂ Stationswahl“** in der Kopfleiste aller Admin-Seiten (Rohstoffe, Rezepte, Berechnung, Planer, Waagen, Ablauf) neben „Abmelden“: zurück zur Startseite mit der Stationswahl.
 - **„⇄ Verschieben nach …“ / „⧉ Kopieren nach …“** jetzt oben an jeder Artikelseite (Rohstoff, Hilfs- und Betriebsstoff, Handelsware), neben „← Zurück zur Liste“, in jedem Reiter. Bisher nur unten im Formular Grunddaten, dort nicht gefunden. Öffnet Grunddaten und springt zum Fenster.
+- **Station: „Nullen“ bei Strichen** (Entscheidung Michael 28.11.2026, 04:32; Anlass Teig 20261128-001: Behälter nach dem Mehl ausgekippt ohne „Behälter wechseln“, Waage zeigte Striche, genullt wurde an der Waage – entgegen „Tasten nur auf Anweisung des Tablets“). Zeigt die Waage während eines laufenden Teigs länger als 1 s Striche, erscheint in der Wiegeansicht „Waage im Minus – Behälter abgenommen?“ mit der Taste **„Nullen“**; die Meldeleiste sagt „am Tablet ‚Nullen‘ tippen, nicht an der Waage“. Wirkung wie „Null von Hand auf der leeren Waage“ (27.11., 14:39): Gesamtlast = Anzeige, das Ist bleibt, mit dem wieder aufgestellten Behälter stimmt es weiter. Neu `POST /api/v1/stations/{n}/zero-empty` (ohne PIN, nur bei Strichen, nicht im Behälter-Schritt); der Wiege-Stand liefert `strokes_s`. Null an der Waage bleibt wie bisher erkannt.
 - Keine Migration.
 
 ## 0.10.39 – Rohstoffverwaltung: eigene Reiter je Art, Sonstige Artikel; Stück und Ganze in den Aufträgen

@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from ..errors import ConflictError
 from ..scales import messages
 from .settings import SETTINGS
 from .weigh import Sample, StationWeigh
@@ -296,6 +297,27 @@ class ProductionRunner:
             if result == "sent":
                 self.weigh_state(station).zeroed()
             return result
+
+    def zero_empty(self, station: int) -> str:
+        """„Nullen“ am Tablet, solange die Waage Striche zeigt (Behälter abgenommen, Michael 28.11.2026, 04:32)."""
+        with self._lock:
+            if station in self._flows:
+                raise ConflictError("Erst den Behälter-Schritt abschließen.", code="container_busy")
+            sw, sample, _ = self.observe(station)
+            if sample.status != "invalid" or sw.strokes_since is None:
+                raise ConflictError("Die Waage zeigt keine Striche – Nullen hier nicht nötig.", code="no_strokes")
+            sw.zero_empty()
+            result = self.send(station, "zero")
+            self._notice.pop(station, None)
+            log.info("Waage %d: Nullen am Tablet bei Strichen – wie Null auf der leeren Waage, Ist bleibt (%s)",
+                     station, result)
+            return result
+
+    def strokes_for(self, station: int) -> float | None:
+        """Wie lange die Waage schon Striche zeigt (für den Hinweis am Tablet), sonst None."""
+        with self._lock:
+            since = self.weigh_state(station).strokes_since
+            return None if since is None else max(0.0, self.clock() - since)
 
     def clear(self, station: int) -> None:
         with self._lock:

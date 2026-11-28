@@ -42,6 +42,10 @@
   #main > * { flex-shrink: 0; }
   #main > .weigh-area { flex-shrink: 1; }
   #notice { grid-area: notice; }
+  .minus-box { display: flex; align-items: center; gap: 2vw; margin: 0 0 1.5vh; padding: 1.2vh 1.5vw; border-radius: 10px;
+               background: #fff3cd; color: #5c4400; border: 3px solid #e0a800; }
+  .minus-box.hidden { display: none; }
+  .minus-text { flex: 1; font-size: 3vh; font-weight: 600; }
   /* Untere Tastenleiste beim Wiegen ausgeblendet, „☰ Mehr“ blendet sie ein (Michael 17:34) */
   body.bar-hidden { grid-template-rows: 29vh 1fr auto 0; }
   body.bar-hidden #bottom { display: none; }
@@ -261,7 +265,9 @@
     if (!S.configured) { RB.notice.set("scale", "orange", "Waage " + ST + " ist nicht eingerichtet."); return; }
     if (!s) { RB.notice.clear("scale"); return; }
     if (s.status === "offline") RB.notice.set("scale", "red", "Waage getrennt: " + (OFFLINE_TEXT[s.offline_reason] || "keine Werte"));
-    else if (s.status === "invalid") RB.notice.set("scale", "orange", "Waage zeigt keinen gültigen Wert (Überlast oder unter Null?)");
+    else if (s.status === "invalid") RB.notice.set("scale", "orange", S.mine && S.mine.status === "running"
+      ? "Waage im Minus (Striche) – Behälter abgenommen? Am Tablet „Nullen“ tippen, nicht an der Waage."
+      : "Waage zeigt keinen gültigen Wert (Überlast oder unter Null?)");
     else if (s.status === "error") RB.notice.set("scale", "orange", "Waage meldet einen Fehler");
     else RB.notice.clear("scale");
     if (S.weigh && S.weigh.capacity_warning) RB.notice.set("capacity", "orange", "Waage fast voll – Höchstlast bald erreicht");
@@ -407,7 +413,18 @@
     }
     update();
   }
-  function update() { if (updater) updater(); renderButtons(); renderCompact(); }
+  function update() { if (updater) updater(); minusUpdate(); renderButtons(); renderCompact(); }
+  // Striche länger als 1 s (Behälter weg) → Hinweis „Waage im Minus“ mit Taste „Nullen“ (Michael 28.11.2026, 04:32)
+  let minusBox = null, invalidSince = null, minusTimer = null;
+  function minusUpdate() {
+    const invalid = !!(S.station && S.station.status === "invalid");
+    if (!invalid) invalidSince = null;
+    else if (invalidSince === null) invalidSince = Date.now();
+    const show = invalid && invalidSince !== null && Date.now() - invalidSince >= 1000
+      && !(S.weigh && S.weigh.container_step) && !!(S.mine && S.mine.status === "running");
+    if (minusBox && document.body.contains(minusBox)) minusBox.classList.toggle("hidden", !show);
+    if (invalid && !show && !minusTimer) minusTimer = setTimeout(() => { minusTimer = null; minusUpdate(); }, 1100);
+  }
 
   // ------------------------------------------------------------ Kompaktansicht
   let compact = false;
@@ -592,6 +609,12 @@
     const sub = el("div", "", "item-sub hidden");
     const area = el("div", null, "weigh-area");
     main.appendChild(area);
+    // Waage im Minus (Behälter abgenommen/ausgekippt): Nullen am Tablet statt Taste an der Waage (Michael 28.11.2026)
+    const minus = el("div", null, "minus-box hidden");
+    minus.appendChild(el("div", "Waage im Minus – Behälter abgenommen? Leere Waage nullen, dann den Behälter wieder draufstellen. Das Ist bleibt.", "minus-text"));
+    minus.appendChild(btn("Nullen", "go", (bt) => act(bt, "stations/" + ST + "/zero-empty", {})));
+    area.appendChild(minus);
+    minusBox = minus;
     const bigRow = el("div", null, "main-actions");
     // „Zutat überspringen“: Zutat bleibt offen, weiter mit der nächsten offenen; sie kommt am Ende wieder (Michael 21:18).
     // Endgültig weglassen nur noch in der Übersicht.

@@ -855,3 +855,27 @@ def test_null_with_load_short_strokes_still_hidden():
     assert sw.gross() == 0 and sw.offset() == 0
     sw.observe(3.0, Sample("ok", 1100, True, net=False), 3, 5, watch_manual=True)
     assert sw.actual() == 300                                     # Behälter wieder drauf: Ist stimmt
+
+
+# -- Taste „Nullen“ am Tablet bei Strichen (Michael 28.11.2026, 04:32) --------------------------------------
+
+def test_tablet_zero_on_strokes_keeps_actual(conn, brot, runner, hub, clock):
+    """Behälter ausgekippt, ohne „Behälter wechseln“: Striche → „Nullen“ am Tablet statt Taste an der Waage;
+    wirkt wie Null von Hand auf der leeren Waage, das Ist bleibt."""
+    from app.errors import ConflictError
+    hub.put(1, 1100)                                              # 300 g Mehl im Behälter (800 g tariert)
+    run(conn, runner, clock, 3.2)
+    with pytest.raises(ConflictError):
+        runner.zero_empty(1)                                      # keine Striche: abgelehnt
+    batches.pause(conn, brot["id"], st(), runner, reason="hand_scale")
+    run(conn, runner, clock, 0.4)
+    hub.put(1, 0)                                                 # Behälter abgenommen: Striche
+    run(conn, runner, clock, 1.4)
+    assert runner.strokes_for(1) >= 1.0
+    assert runner.zero_empty(1) == "sent" and hub.commands[-1] == (1, "zero")
+    run(conn, runner, clock, 0.6)
+    assert runner.live_offset(1) == 0 and runner.strokes_for(1) is None
+    hub.put(1, 1100)                                              # Behälter mit 300 g wieder drauf (brutto)
+    run(conn, runner, clock, 0.4)
+    batch = batches.resume(conn, brot["id"], st(), runner)
+    assert batch["resume_mode"] == "keep" and actual_now(conn, runner, brot["id"]) == 300

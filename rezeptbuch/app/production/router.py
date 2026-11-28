@@ -128,6 +128,16 @@ def hand_tare(station: int, request: Request, db: sqlite3.Connection = Depends(g
     return batches.hand_tare(db, station, get_runner(request))
 
 
+@router.post("/stations/{station}/zero-empty")
+def zero_empty(station: int, request: Request, db: sqlite3.Connection = Depends(get_db)):
+    """Taste „Nullen“ bei Strichen (Behälter abgenommen) – ersetzt den Griff an die Waage (Michael 28.11.2026)."""
+    from .common import station_row
+    st = station_row(db, station)["id"]
+    runner = get_runner(request)
+    result = runner.zero_empty(st)
+    return {"status": result, **runner.reading(st).to_dict()}
+
+
 @router.post("/stations/{station}/hand/zero")
 def hand_zero(station: int, request: Request, db: sqlite3.Connection = Depends(get_db)):
     return batches.hand_zero(db, station, get_runner(request))

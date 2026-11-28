@@ -189,6 +189,19 @@ class StationWeigh:
         self.reference_g = sample.weight_g if sample.ok else None
         return self.reference_g
 
+    def zero_empty(self) -> None:
+        """Taste „Nullen“ am Tablet bei Strichen (Michael 28.11.2026, 04:32 – Tasten an der Waage nur auf Anweisung
+        des Tablets): gleiche Wirkung wie „Null von Hand auf der leeren Waage“ (27.11., 14:39) – Gesamtlast =
+        Anzeige, Ausgleich 0, die Tara-Summe geht in den Bezug, damit das Ist mit dem wieder aufgestellten Behälter
+        weiterstimmt."""
+        if self.reference_g is not None:
+            self.reference_g += (self.scale_tare_g or 0) + self.hidden_g
+        self.scale_tare_g, self.hidden_g = 0, 0
+        self.taring_since = None
+        self.late_tare_g = None
+        self.anchor, self.anchor_at, self.anchor_dirty = None, None, False
+        self.before_strokes = None
+
     def zeroed(self) -> None:
         """Nach ``zero``: Waage zeigt brutto 0, Tara der Waage 0."""
         self.scale_tare_g = 0
