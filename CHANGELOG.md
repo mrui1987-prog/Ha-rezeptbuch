@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.10.40 – Admin: Taste „⌂ Stationswahl“, Verschieben/Kopieren oben an der Artikelseite
+
+Befunde Michael 28.11.2026, 03:24:
+
+- **„⌂ Stationswahl“** in der Kopfleiste aller Admin-Seiten (Rohstoffe, Rezepte, Berechnung, Planer, Waagen, Ablauf) neben „Abmelden“: zurück zur Startseite mit der Stationswahl.
+- **„⇄ Verschieben nach …“ / „⧉ Kopieren nach …“** jetzt oben an jeder Artikelseite (Rohstoff, Hilfs- und Betriebsstoff, Handelsware), neben „← Zurück zur Liste“, in jedem Reiter. Bisher nur unten im Formular Grunddaten, dort nicht gefunden. Öffnet Grunddaten und springt zum Fenster.
+- Keine Migration.
+
 ## 0.10.39 – Rohstoffverwaltung: eigene Reiter je Art, Sonstige Artikel; Stück und Ganze in den Aufträgen
 
 Befund Michael 27.11.2026, 21:06 („sonstige ist nicht zu finden … es wird auch nicht sauber getrennt, aktuell ist alles in Rohstoffe und unterscheidet sich im Typ“). Umsetzung von K03-89 („in jedem Reiter“), bisher nur Typ-Filter:

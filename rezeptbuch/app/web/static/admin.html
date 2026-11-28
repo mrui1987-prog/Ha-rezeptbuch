@@ -81,6 +81,7 @@
   /* Rohstoffseite */
   .itemnav { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin-bottom: .4rem; }
   .itemnav .pos { color: #555; font-size: .9rem; margin: 0 .4rem; }
+  .itemnav .grow { flex: 1; }
   /* Schnellerfassung */
   .mode button { margin: 0; border: 1px solid #2563eb; background: #fff; color: #2563eb; }
   .mode button.active { background: #2563eb; color: #fff; }
@@ -130,7 +131,7 @@
   <!-- Rohstoffverwaltung (M03-20, docs/rohstoffverwaltung.md) -->
   <section id="view-app" class="hidden">
     <div class="tabs"><a class="active" href="#">Rohstoffe</a><a id="tab-recipes" href="#">Rezepte</a><a id="tab-groups" href="#">Gruppen</a><a id="tab-io" href="#">Import/Export</a><a id="tab-calc" href="#">Berechnung</a><a id="tab-planner" href="#">Planer</a><a id="tab-scales" href="#">Waagen</a><a id="tab-production" href="#">Ablauf</a>
-      <span class="grow"></span><button type="button" id="btn-logout">Abmelden</button></div>
+      <span class="grow"></span><button type="button" class="nav-home" title="Zur Startseite mit der Stationswahl" onclick="location.href = BASE">⌂ Stationswahl</button> <button type="button" id="btn-logout">Abmelden</button></div>
     <h1>Rohstoffverwaltung <a class="small" href="../wareneingang" style="font-size:.5em">Zum Wareneingang</a></h1>
     <div class="toolbar hidden" id="back-bar"><button type="button" id="btn-back-recipe">← Zurück zum Rezept</button>
       <span class="small" id="back-info"></span></div>
@@ -216,6 +217,10 @@
         <button type="button" id="item-prev" title="vorheriger Rohstoff der Liste">‹</button>
         <button type="button" id="item-next" title="nächster Rohstoff der Liste">›</button>
         <span class="pos" id="item-pos"></span>
+        <span class="grow"></span>
+        <!-- oben gut sichtbar (Befund Michael 28.11.2026, 03:24: unten im Formular nicht gefunden) -->
+        <button type="button" id="nav-move" class="hidden">⇄ Verschieben nach …</button>
+        <button type="button" id="nav-copy" class="hidden">⧉ Kopieren nach …</button>
       </div>
       <h2 id="item-title">Rohstoff</h2>
       <div class="subtabs" id="item-tabs">
@@ -1299,6 +1304,8 @@ function fillForm() {
     + " " + item.stock_ref.name + " (1 Stück = " + item.piece_g + " g). Kassenverkäufe buchen dort ab." : "";
   show("form-move", Boolean(item) && !item.archived);
   show("form-copy", Boolean(item) && !item.archived);
+  show("nav-move", Boolean(item) && !item.archived);
+  show("nav-copy", Boolean(item) && !item.archived);
   show("mc-panel", false);
   typeUi();
   $("f-price").value = item ? priceText(item.price_cents_per_kg) : "";
@@ -2428,6 +2435,14 @@ function mcFields() {
 $("mc-to").addEventListener("change", mcFields);
 $("form-move").addEventListener("click", async () => { if (await leaveItem()) openMoveCopy("move"); });
 $("form-copy").addEventListener("click", async () => { if (await leaveItem()) openMoveCopy("copy"); });
+async function moveCopyFromTop(mode) {
+  if (!(await leaveItem())) return;
+  setItemTab("base");
+  openMoveCopy(mode);
+  $("mc-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$("nav-move").addEventListener("click", () => moveCopyFromTop("move"));
+$("nav-copy").addEventListener("click", () => moveCopyFromTop("copy"));
 $("mc-cancel").addEventListener("click", () => show("mc-panel", false));
 $("mc-go").addEventListener("click", async () => {
   showMsg("mc-msg", "");
